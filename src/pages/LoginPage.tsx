@@ -203,6 +203,17 @@ export default function LoginPage() {
                 </p>
               </div>
 
+              {showAuth0Error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2 mb-4"
+                >
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>Authentication error: {auth0ErrorMessage}</span>
+                </motion.div>
+              )}
+
               <AnimatePresence mode="wait">
                 {!emailVerified ? (
                   <motion.form
