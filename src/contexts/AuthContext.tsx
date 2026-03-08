@@ -14,6 +14,7 @@ interface UserProfile {
 interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
+  isInitializing: boolean;
   user: UserProfile | null;
   roles: AppRole[];
   primaryRole: AppRole | null;
@@ -112,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         isAuthenticated: auth0IsAuth,
         isLoading: auth0Loading || syncLoading,
+        isInitializing: auth0Loading,
         user: profile,
         roles,
         primaryRole,
