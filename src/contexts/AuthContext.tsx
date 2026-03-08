@@ -74,10 +74,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    console.log('[Auth] State:', { auth0Loading, auth0IsAuth, auth0User: auth0User?.email });
     if (auth0IsAuth && auth0User) {
       const userId = auth0User.sub || '';
+      console.log('[Auth] Authenticated, syncing profile for:', userId);
       syncProfile(userId, auth0User.email || '', auth0User.name || '', auth0User.picture);
     } else if (!auth0Loading) {
+      console.log('[Auth] Not authenticated, clearing state');
       setRoles([]);
       setProfile(null);
     }
