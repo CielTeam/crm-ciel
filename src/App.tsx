@@ -28,7 +28,6 @@ const queryClient = new QueryClient();
 // Auth0 configuration — replace with your Auth0 tenant values
 const AUTH0_DOMAIN = import.meta.env.VITE_AUTH0_DOMAIN || "your-tenant.auth0.com";
 const AUTH0_CLIENT_ID = import.meta.env.VITE_AUTH0_CLIENT_ID || "your-client-id";
-const AUTH0_AUDIENCE = import.meta.env.VITE_AUTH0_AUDIENCE || "https://ciel-crm-api";
 
 const App = () => (
   <Auth0Provider
@@ -36,7 +35,6 @@ const App = () => (
     clientId={AUTH0_CLIENT_ID}
     authorizationParams={{
       redirect_uri: window.location.origin,
-      audience: AUTH0_AUDIENCE,
     }}
   >
     <QueryClientProvider client={queryClient}>
