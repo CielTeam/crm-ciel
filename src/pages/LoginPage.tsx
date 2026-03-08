@@ -83,6 +83,10 @@ export default function LoginPage() {
     );
   }
 
+  // Show Auth0 configuration errors (e.g. invalid redirect_uri)
+  const auth0ErrorMessage = authError?.message || '';
+  const showAuth0Error = !!authError && !isAuthenticated;
+
   const handleVerifyEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLocked) return;
