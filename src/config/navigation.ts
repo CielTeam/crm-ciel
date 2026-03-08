@@ -1,0 +1,69 @@
+import {
+  LayoutDashboard,
+  Calendar,
+  CheckSquare,
+  Palmtree,
+  MessageSquare,
+  Video,
+  Bell,
+  Users,
+  Settings,
+  Shield,
+  Activity,
+} from 'lucide-react';
+import type { NavGroup } from '@/types/navigation';
+import type { AppRole } from '@/types/roles';
+import { ADMIN_ROLES } from '@/types/roles';
+
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Main',
+    items: [
+      { title: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      { title: 'Calendar', path: '/calendar', icon: Calendar },
+      { title: 'Tasks', path: '/tasks', icon: CheckSquare },
+      { title: 'Leaves', path: '/leaves', icon: Palmtree },
+    ],
+  },
+  {
+    label: 'Communication',
+    items: [
+      { title: 'Messages', path: '/messages', icon: MessageSquare },
+      { title: 'Meetings', path: '/meetings', icon: Video },
+      { title: 'Notifications', path: '/notifications', icon: Bell },
+    ],
+  },
+  {
+    label: 'Organization',
+    items: [
+      { title: 'Directory', path: '/directory', icon: Users },
+      { title: 'Settings', path: '/settings', icon: Settings },
+    ],
+  },
+  {
+    label: 'Administration',
+    items: [
+      {
+        title: 'Admin Console',
+        path: '/admin',
+        icon: Shield,
+        allowedRoles: ADMIN_ROLES,
+      },
+      {
+        title: 'Audit Logs',
+        path: '/admin/audit',
+        icon: Activity,
+        allowedRoles: ADMIN_ROLES,
+      },
+    ],
+  },
+];
+
+export function getFilteredNavGroups(role: AppRole): NavGroup[] {
+  return NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter(
+      (item) => !item.allowedRoles || item.allowedRoles.includes(role)
+    ),
+  })).filter((group) => group.items.length > 0);
+}
