@@ -35,7 +35,7 @@ function clearRateLimit() {
 }
 
 export default function LoginPage() {
-  const { isAuthenticated, isLoading, login } = useAuth();
+  const { isAuthenticated, isLoading, login, authError } = useAuth();
   const [email, setEmail] = useState('');
   const [emailVerified, setEmailVerified] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -75,7 +75,7 @@ export default function LoginPage() {
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (isLoading) {
+  if (isLoading && !authError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
