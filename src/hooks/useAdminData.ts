@@ -46,7 +46,7 @@ export function useAdminUsers() {
       const teamMap = new Map((teams || []).map((t: any) => [t.id, t.name as string]));
 
       return (profiles || []).map((p: any) => {
-        const role = roleMap.get(p.user_id) || null;
+        const role = (roleMap.get(p.user_id) || null) as AppRole | null;
         return {
           id: p.id,
           userId: p.user_id,
