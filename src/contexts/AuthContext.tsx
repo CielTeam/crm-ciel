@@ -33,6 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user: auth0User,
     loginWithRedirect,
     logout: auth0Logout,
+    error: auth0Error,
   } = useAuth0();
 
   const [roles, setRoles] = useState<AppRole[]>([]);
