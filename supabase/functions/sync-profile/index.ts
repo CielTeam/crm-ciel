@@ -32,27 +32,104 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Use service role to bypass RLS for upsert
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Upsert profile
-    const { data: profile, error: profileError } = await supabaseAdmin
+    // Check if a profile already exists for this Auth0 user_id
+    const { data: existingProfile } = await supabaseAdmin
       .from("profiles")
-      .upsert(
-        {
-          user_id,
+      .select("id")
+      .eq("user_id", user_id)
+      .limit(1);
+
+    let profile;
+    let profileError;
+
+    if (existingProfile && existingProfile.length > 0) {
+      // Profile exists — update it
+      const result = await supabaseAdmin
+        .from("profiles")
+        .update({
           email: email || null,
           display_name: display_name || null,
           avatar_url: avatar_url || null,
           updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id" }
-      )
-      .select()
-      .single();
+        })
+        .eq("user_id", user_id)
+        .select()
+        .single();
+      profile = result.data;
+      profileError = result.error;
+    } else if (email) {
+      // No profile for this user_id — check for a pending profile by email
+      const { data: pendingProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("id, user_id")
+        .eq("email", email.toLowerCase().trim())
+        .is("deleted_at", null)
+        .limit(1);
+
+      if (pendingProfile && pendingProfile.length > 0 && pendingProfile[0].user_id.startsWith("pending|")) {
+        // Link pending profile to real Auth0 user_id
+        const result = await supabaseAdmin
+          .from("profiles")
+          .update({
+            user_id,
+            display_name: display_name || null,
+            avatar_url: avatar_url || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", pendingProfile[0].id)
+          .select()
+          .single();
+        profile = result.data;
+        profileError = result.error;
+
+        // Also update user_roles to use the real user_id
+        await supabaseAdmin
+          .from("user_roles")
+          .update({ user_id })
+          .eq("user_id", pendingProfile[0].user_id);
+      } else {
+        // No pending profile — create new
+        const result = await supabaseAdmin
+          .from("profiles")
+          .upsert(
+            {
+              user_id,
+              email: email || null,
+              display_name: display_name || null,
+              avatar_url: avatar_url || null,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" }
+          )
+          .select()
+          .single();
+        profile = result.data;
+        profileError = result.error;
+      }
+    } else {
+      // No email, just upsert
+      const result = await supabaseAdmin
+        .from("profiles")
+        .upsert(
+          {
+            user_id,
+            email: email || null,
+            display_name: display_name || null,
+            avatar_url: avatar_url || null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" }
+        )
+        .select()
+        .single();
+      profile = result.data;
+      profileError = result.error;
+    }
 
     if (profileError) {
       console.error("Profile upsert error:", profileError);

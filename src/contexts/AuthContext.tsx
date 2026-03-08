@@ -17,7 +17,7 @@ interface AuthState {
   user: UserProfile | null;
   roles: AppRole[];
   primaryRole: AppRole | null;
-  login: () => void;
+  login: (loginHint?: string) => void;
   logout: () => void;
 }
 
@@ -50,7 +50,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('Sync profile error:', error);
-        // Fallback to Auth0 data
         setProfile({ id: userId, email, displayName: name, avatarUrl: avatar });
         setRoles([]);
         return;
@@ -84,7 +83,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [auth0IsAuth, auth0User, auth0Loading, syncProfile]);
 
-  const login = () => loginWithRedirect();
+  const login = (loginHint?: string) =>
+    loginWithRedirect({
+      authorizationParams: {
+        login_hint: loginHint,
+      },
+    });
+
   const logout = () => auth0Logout({ logoutParams: { returnTo: window.location.origin } });
 
   const isLoading = auth0Loading || syncLoading;
