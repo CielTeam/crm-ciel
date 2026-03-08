@@ -71,16 +71,16 @@ export default function LoginPage() {
     return `${m}:${sec.toString().padStart(2, '0')}`;
   }, []);
 
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
-  }
-
-  if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
   }
 
   const handleVerifyEmail = async (e: React.FormEvent) => {
