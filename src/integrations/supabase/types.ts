@@ -14,16 +14,198 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audit_logs: {
+        Row: {
+          action: string
+          actor_id: string
+          created_at: string
+          id: string
+          ip_address: string | null
+          metadata: Json | null
+          target_id: string | null
+          target_type: string | null
+        }
+        Insert: {
+          action: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          metadata?: Json | null
+          target_id?: string | null
+          target_type?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          metadata?: Json | null
+          target_id?: string | null
+          target_type?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          deleted_at: string | null
+          display_name: string | null
+          email: string | null
+          id: string
+          phone: string | null
+          status: string
+          team_id: string | null
+          updated_at: string
+          user_id: string
+          working_hours: Json | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          phone?: string | null
+          status?: string
+          team_id?: string | null
+          updated_at?: string
+          user_id: string
+          working_hours?: Json | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          phone?: string | null
+          status?: string
+          team_id?: string | null
+          updated_at?: string
+          user_id?: string
+          working_hours?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      team_members: {
+        Row: {
+          id: string
+          joined_at: string
+          team_id: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          joined_at?: string
+          team_id: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          joined_at?: string
+          team_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_members_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teams: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          department: string
+          id: string
+          lead_user_id: string | null
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          department: string
+          id?: string
+          lead_user_id?: string | null
+          name: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          department?: string
+          id?: string
+          lead_user_id?: string | null
+          name?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      app_role:
+        | "chairman"
+        | "vice_president"
+        | "hr"
+        | "head_of_operations"
+        | "operations_employee"
+        | "team_development_lead"
+        | "developer_employee"
+        | "technical_lead"
+        | "technical_employee"
+        | "head_of_accounting"
+        | "accounting_employee"
+        | "head_of_marketing"
+        | "marketing_employee"
+        | "sales_lead"
+        | "sales_employee"
+        | "driver"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +332,25 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: [
+        "chairman",
+        "vice_president",
+        "hr",
+        "head_of_operations",
+        "operations_employee",
+        "team_development_lead",
+        "developer_employee",
+        "technical_lead",
+        "technical_employee",
+        "head_of_accounting",
+        "accounting_employee",
+        "head_of_marketing",
+        "marketing_employee",
+        "sales_lead",
+        "sales_employee",
+        "driver",
+      ],
+    },
   },
 } as const
