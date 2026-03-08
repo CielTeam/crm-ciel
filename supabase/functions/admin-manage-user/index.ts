@@ -65,6 +65,20 @@ Deno.serve(async (req) => {
           });
         }
 
+        // Check for duplicate email
+        const { data: existing } = await adminClient
+          .from('profiles')
+          .select('id')
+          .eq('email', email)
+          .maybeSingle();
+
+        if (existing) {
+          return new Response(JSON.stringify({ error: 'A user with this email already exists' }), {
+            status: 409,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
         // Create a pending profile with a placeholder user_id (email-based)
         const userId = `pending|${email}`;
         const { data: profile, error: pErr } = await adminClient

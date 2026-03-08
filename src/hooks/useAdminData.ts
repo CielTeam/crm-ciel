@@ -30,26 +30,23 @@ export interface AdminTeam {
 }
 
 export function useAdminUsers() {
+  const { user } = useAuth();
+
   return useQuery({
     queryKey: ['admin-users'],
     queryFn: async (): Promise<AdminUser[]> => {
-      // Fetch ALL profiles including soft-deleted
-      const { data: profiles, error: pErr } = await supabase
-        .from('profiles')
-        .select('*');
-      if (pErr) throw pErr;
+      const { data, error } = await supabase.functions.invoke('admin-list-data', {
+        body: { actor_id: user?.id, type: 'users' },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
-      const { data: roles, error: rErr } = await supabase.from('user_roles').select('*');
-      if (rErr) throw rErr;
+      const { profiles, roles, teams } = data;
+      const roleMap = new Map((roles || []).map((r: any) => [r.user_id, r.role as AppRole]));
+      const teamMap = new Map((teams || []).map((t: any) => [t.id, t.name as string]));
 
-      const { data: teams, error: tErr } = await supabase.from('teams').select('*');
-      if (tErr) throw tErr;
-
-      const roleMap = new Map(roles?.map(r => [r.user_id, r.role as AppRole]));
-      const teamMap = new Map(teams?.map(t => [t.id, t.name]));
-
-      return (profiles || []).map(p => {
-        const role = roleMap.get(p.user_id) || null;
+      return (profiles || []).map((p: any) => {
+        const role = (roleMap.get(p.user_id) || null) as AppRole | null;
         return {
           id: p.id,
           userId: p.user_id,
@@ -65,27 +62,28 @@ export function useAdminUsers() {
         };
       });
     },
+    enabled: !!user?.id,
   });
 }
 
 export function useAdminTeams() {
+  const { user } = useAuth();
+
   return useQuery({
     queryKey: ['admin-teams'],
     queryFn: async (): Promise<AdminTeam[]> => {
-      const { data: teams, error: tErr } = await supabase.from('teams').select('*').is('deleted_at', null);
-      if (tErr) throw tErr;
+      const { data, error } = await supabase.functions.invoke('admin-list-data', {
+        body: { actor_id: user?.id, type: 'teams' },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
-      const { data: members, error: mErr } = await supabase.from('team_members').select('*');
-      if (mErr) throw mErr;
-
-      const { data: profiles, error: pErr } = await supabase.from('profiles').select('user_id, display_name').is('deleted_at', null);
-      if (pErr) throw pErr;
-
-      const profileMap = new Map(profiles?.map(p => [p.user_id, p.display_name]));
+      const { teams, members, profiles } = data;
+      const profileMap = new Map(profiles?.map((p: any) => [p.user_id, p.display_name]));
       const memberCounts = new Map<string, number>();
-      members?.forEach(m => memberCounts.set(m.team_id, (memberCounts.get(m.team_id) || 0) + 1));
+      members?.forEach((m: any) => memberCounts.set(m.team_id, (memberCounts.get(m.team_id) || 0) + 1));
 
-      return (teams || []).map(t => ({
+      return (teams || []).map((t: any) => ({
         id: t.id,
         name: t.name,
         department: t.department,
@@ -95,6 +93,7 @@ export function useAdminTeams() {
         createdAt: t.created_at,
       }));
     },
+    enabled: !!user?.id,
   });
 }
 

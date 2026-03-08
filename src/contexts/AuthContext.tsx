@@ -15,6 +15,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   isInitializing: boolean;
+  authError: Error | null;
   user: UserProfile | null;
   roles: AppRole[];
   primaryRole: AppRole | null;
@@ -33,6 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user: auth0User,
     loginWithRedirect,
     logout: auth0Logout,
+    error: auth0Error,
   } = useAuth0();
 
   const [roles, setRoles] = useState<AppRole[]>([]);
@@ -114,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: auth0IsAuth,
         isLoading: auth0Loading || syncLoading,
         isInitializing: auth0Loading,
+        authError: auth0Error || null,
         user: profile,
         roles,
         primaryRole,

@@ -35,7 +35,7 @@ function clearRateLimit() {
 }
 
 export default function LoginPage() {
-  const { isAuthenticated, isLoading, login } = useAuth();
+  const { isAuthenticated, isLoading, login, authError } = useAuth();
   const [email, setEmail] = useState('');
   const [emailVerified, setEmailVerified] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -75,13 +75,17 @@ export default function LoginPage() {
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (isLoading) {
+  if (isLoading && !authError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
+
+  // Show Auth0 configuration errors (e.g. invalid redirect_uri)
+  const auth0ErrorMessage = authError?.message || '';
+  const showAuth0Error = !!authError && !isAuthenticated;
 
   const handleVerifyEmail = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -198,6 +202,17 @@ export default function LoginPage() {
                     : 'Enter your email to verify your account.'}
                 </p>
               </div>
+
+              {showAuth0Error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2 mb-4"
+                >
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>Authentication error: {auth0ErrorMessage}</span>
+                </motion.div>
+              )}
 
               <AnimatePresence mode="wait">
                 {!emailVerified ? (
