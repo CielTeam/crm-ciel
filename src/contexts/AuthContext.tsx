@@ -23,6 +23,8 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
+const SYNC_TIMEOUT_MS = 10_000;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const {
     isAuthenticated: auth0IsAuth,
@@ -38,7 +40,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const syncProfile = useCallback(async (userId: string, email: string, name: string, avatar?: string) => {
     setSyncLoading(true);
+
+    const fallbackProfile: UserProfile = { id: userId, email, displayName: name, avatarUrl: avatar };
+
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), SYNC_TIMEOUT_MS);
+
       const { data, error } = await supabase.functions.invoke('sync-profile', {
         body: {
           user_id: userId,
@@ -48,9 +56,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       });
 
+      clearTimeout(timeout);
+
       if (error) {
         console.error('Sync profile error:', error);
-        setProfile({ id: userId, email, displayName: name, avatarUrl: avatar });
+        setProfile(fallbackProfile);
         setRoles([]);
         return;
       }
@@ -65,8 +75,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       setRoles((data.roles || []) as AppRole[]);
     } catch (err) {
-      console.error('Failed to sync profile:', err);
-      setProfile({ id: userId, email, displayName: name, avatarUrl: avatar });
+      console.error('Failed to sync profile (timeout or network):', err);
+      setProfile(fallbackProfile);
       setRoles([]);
     } finally {
       setSyncLoading(false);
@@ -95,14 +105,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => auth0Logout({ logoutParams: { returnTo: window.location.origin } });
 
-  const isLoading = auth0Loading || syncLoading;
   const primaryRole = roles.length > 0 ? roles[0] : null;
 
   return (
     <AuthContext.Provider
       value={{
-        isAuthenticated: auth0IsAuth && !isLoading,
-        isLoading,
+        isAuthenticated: auth0IsAuth,
+        isLoading: auth0Loading || syncLoading,
         user: profile,
         roles,
         primaryRole,
