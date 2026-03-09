@@ -7,6 +7,7 @@ import { Auth0Provider } from "@auth0/auth0-react";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ADMIN_ROLES } from "@/types/roles";
 
 import LoginPage from "./pages/LoginPage";
@@ -23,7 +24,14 @@ import SettingsPage from "./pages/SettingsPage";
 import AdminConsolePage from "./pages/AdminConsolePage";
 import AuditLogsPage from "./pages/AuditLogsPage";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 // Auth0 configuration — replace with your Auth0 tenant values
 const AUTH0_DOMAIN = import.meta.env.VITE_AUTH0_DOMAIN || "your-tenant.auth0.com";
@@ -43,6 +51,7 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
+            <ErrorBoundary>
             <Routes>
               {/* Public */}
               <Route path="/login" element={<LoginPage />} />
@@ -88,6 +97,7 @@ const App = () => (
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </ErrorBoundary>
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>
