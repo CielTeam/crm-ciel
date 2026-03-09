@@ -1,11 +1,18 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bell, Check, CheckCheck, Palmtree, CheckSquare, MessageSquare, Loader2 } from 'lucide-react';
+import { Bell, Check, CheckCheck, Palmtree, CheckSquare, MessageSquare, Loader2, ExternalLink } from 'lucide-react';
 import { useNotifications, useMarkRead } from '@/hooks/useNotifications';
 import { formatDistanceToNow } from 'date-fns';
+
+const REFERENCE_ROUTES: Record<string, string> = {
+  leave: '/leaves',
+  task: '/tasks',
+  conversation: '/messages',
+};
 
 const TYPE_CONFIG: Record<string, { icon: typeof Bell; color: string; label: string }> = {
   leave_approved: { icon: Palmtree, color: 'text-success', label: 'Leave Approved' },
@@ -18,6 +25,14 @@ export default function NotificationsPage() {
   const [filter, setFilter] = useState<'all' | 'unread' | 'read'>('all');
   const { data: notifications = [], isLoading } = useNotifications(filter);
   const markRead = useMarkRead();
+
+  const navigate = useNavigate();
+
+  const handleClick = (n: { reference_type: string | null; reference_id: string | null; id: string; is_read: boolean }) => {
+    if (!n.is_read) markRead.mutate(n.id);
+    const route = n.reference_type ? REFERENCE_ROUTES[n.reference_type] : null;
+    if (route) navigate(route);
+  };
 
   return (
     <div className="space-y-6">
@@ -63,7 +78,8 @@ export default function NotificationsPage() {
             return (
               <Card
                 key={n.id}
-                className={`border transition-colors ${!n.is_read ? 'bg-primary/5 border-primary/20' : ''}`}
+                className={`border transition-colors cursor-pointer hover:shadow-sm ${!n.is_read ? 'bg-primary/5 border-primary/20' : ''}`}
+                onClick={() => handleClick(n)}
               >
                 <CardContent className="flex items-start gap-3 py-3 px-4">
                   <div className={`mt-0.5 ${config.color}`}>
