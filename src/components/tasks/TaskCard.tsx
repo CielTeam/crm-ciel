@@ -1,8 +1,9 @@
 import { format, isPast, isToday } from 'date-fns';
-import { Calendar, Trash2 } from 'lucide-react';
+import { Calendar, Trash2, User } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Select,
   SelectContent,
@@ -25,15 +26,28 @@ const statusLabels: Record<string, string> = {
   done: 'Done',
 };
 
+export interface TaskAssignee {
+  displayName: string;
+  avatarUrl: string | null;
+}
+
 interface TaskCardProps {
   task: Task;
+  assignee?: TaskAssignee | null;
   onStatusChange: (id: string, status: string) => void;
   onDelete: (id: string) => void;
 }
 
-export function TaskCard({ task, onStatusChange, onDelete }: TaskCardProps) {
+export function TaskCard({ task, assignee, onStatusChange, onDelete }: TaskCardProps) {
   const priority = priorityConfig[task.priority] || priorityConfig.medium;
   const overdue = task.due_date && !task.completed_at && isPast(new Date(task.due_date)) && !isToday(new Date(task.due_date));
+
+  const initials = assignee?.displayName
+    ?.split(' ')
+    .map((n) => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || '';
 
   return (
     <Card className={`border transition-colors ${task.status === 'done' ? 'opacity-60' : ''}`}>
@@ -71,6 +85,20 @@ export function TaskCard({ task, onStatusChange, onDelete }: TaskCardProps) {
                 {format(new Date(task.due_date), 'MMM d')}
                 {overdue && ' (overdue)'}
               </span>
+            )}
+
+            {assignee && (
+              <div className="flex items-center gap-1.5">
+                <Avatar className="h-5 w-5">
+                  <AvatarImage src={assignee.avatarUrl || undefined} alt={assignee.displayName} />
+                  <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                    {initials || <User className="h-3 w-3" />}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-xs text-muted-foreground truncate max-w-[100px]">
+                  {assignee.displayName}
+                </span>
+              </div>
             )}
           </div>
 

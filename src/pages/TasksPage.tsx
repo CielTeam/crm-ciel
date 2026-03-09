@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Plus, CheckSquare, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { TaskCard } from '@/components/tasks/TaskCard';
+import { TaskCard, type TaskAssignee } from '@/components/tasks/TaskCard';
 import { AddTaskDialog } from '@/components/tasks/AddTaskDialog';
 import { PageError } from '@/components/PageError';
 import { useTasks, useCreateTask, useUpdateTask, useDeleteTask } from '@/hooks/useTasks';
+import { useDirectoryData } from '@/hooks/useDirectoryData';
 import { toast } from 'sonner';
 
 type StatusFilter = 'all' | 'todo' | 'in_progress' | 'done';
@@ -24,9 +25,18 @@ export default function TasksPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const { data: tasks = [], isLoading, error, refetch } = useTasks(tab);
+  const { data: directoryUsers } = useDirectoryData();
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
+
+  const assigneeMap = useMemo(() => {
+    const map = new Map<string, TaskAssignee>();
+    directoryUsers?.forEach((u) => {
+      map.set(u.userId, { displayName: u.displayName, avatarUrl: u.avatarUrl });
+    });
+    return map;
+  }, [directoryUsers]);
 
   const filtered = statusFilter === 'all' ? tasks : tasks.filter((t) => t.status === statusFilter);
 
@@ -99,6 +109,7 @@ export default function TasksPage() {
                 <TaskCard
                   key={task.id}
                   task={task}
+                  assignee={task.assigned_to ? assigneeMap.get(task.assigned_to) || null : null}
                   onStatusChange={handleStatusChange}
                   onDelete={handleDelete}
                 />
