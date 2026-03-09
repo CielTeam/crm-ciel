@@ -1,11 +1,18 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bell, Check, CheckCheck, Palmtree, CheckSquare, MessageSquare, Loader2 } from 'lucide-react';
+import { Bell, Check, CheckCheck, Palmtree, CheckSquare, MessageSquare, Loader2, ExternalLink } from 'lucide-react';
 import { useNotifications, useMarkRead } from '@/hooks/useNotifications';
 import { formatDistanceToNow } from 'date-fns';
+
+const REFERENCE_ROUTES: Record<string, string> = {
+  leave: '/leaves',
+  task: '/tasks',
+  conversation: '/messages',
+};
 
 const TYPE_CONFIG: Record<string, { icon: typeof Bell; color: string; label: string }> = {
   leave_approved: { icon: Palmtree, color: 'text-success', label: 'Leave Approved' },
