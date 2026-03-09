@@ -62,6 +62,18 @@ Deno.serve(async (req) => {
 
       if (error) throw error;
 
+      // Notify assignee
+      if (data.assigned_to && data.assigned_to !== actor_id) {
+        await adminClient.from('notifications').insert({
+          user_id: data.assigned_to,
+          type: 'task_assigned',
+          title: `You've been assigned a new task: ${data.title}`,
+          body: data.description || null,
+          reference_id: data.id,
+          reference_type: 'task',
+        });
+      }
+
       return new Response(JSON.stringify({ task: data }), {
         status: 201,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -91,6 +103,18 @@ Deno.serve(async (req) => {
 
       const { data, error } = await adminClient.from('tasks').update(updates).eq('id', id).select().single();
       if (error) throw error;
+
+      // Notify new assignee if assigned_to changed
+      if (updates.assigned_to && updates.assigned_to !== actor_id) {
+        await adminClient.from('notifications').insert({
+          user_id: updates.assigned_to,
+          type: 'task_assigned',
+          title: `You've been assigned a task: ${data.title}`,
+          body: data.description || null,
+          reference_id: data.id,
+          reference_type: 'task',
+        });
+      }
 
       return new Response(JSON.stringify({ task: data }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

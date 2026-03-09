@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.messages]
 verify_jwt = false
+
+[functions.notifications]
+verify_jwt = false
