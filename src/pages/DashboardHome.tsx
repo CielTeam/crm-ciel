@@ -1,8 +1,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROLE_LABELS } from '@/types/roles';
+import { useTasks } from '@/hooks/useTasks';
+import { useLeaves } from '@/hooks/useLeaves';
+import { useConversations } from '@/hooks/useMessages';
 import { LayoutDashboard, Calendar, CheckSquare, MessageSquare, Users, Palmtree } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
 
 const quickLinks = [
   { title: 'Calendar', icon: Calendar, path: '/calendar', color: 'text-info' },
@@ -16,9 +20,34 @@ export default function DashboardHome() {
   const { user, primaryRole } = useAuth();
   const navigate = useNavigate();
 
+  const { data: myTasks } = useTasks('my_tasks');
+  const { data: assignedTasks } = useTasks('assigned');
+  const { data: myLeaves } = useLeaves(false);
+  const { data: conversations } = useConversations();
+
+  const openTaskCount = useMemo(() => {
+    const all = [...(myTasks || []), ...(assignedTasks || [])];
+    const unique = new Map(all.map(t => [t.id, t]));
+    return [...unique.values()].filter(t => t.status !== 'done').length;
+  }, [myTasks, assignedTasks]);
+
+  const pendingLeaveCount = useMemo(() => {
+    return (myLeaves || []).filter(l => l.status === 'pending').length;
+  }, [myLeaves]);
+
+  const unreadMessageCount = useMemo(() => {
+    return (conversations || []).reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+  }, [conversations]);
+
+  const stats = [
+    { label: 'Open Tasks', value: openTaskCount, icon: CheckSquare },
+    { label: 'Pending Leaves', value: pendingLeaveCount, icon: Palmtree },
+    { label: 'Upcoming Meetings', value: '—', icon: Calendar },
+    { label: 'Unread Messages', value: unreadMessageCount, icon: MessageSquare },
+  ];
+
   return (
     <div className="space-y-6">
-      {/* Welcome header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground">
           Welcome back, {user?.displayName?.split(' ')[0] || 'User'}
@@ -28,14 +57,8 @@ export default function DashboardHome() {
         </p>
       </div>
 
-      {/* Quick stats placeholder */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Open Tasks', value: '—', icon: CheckSquare },
-          { label: 'Pending Leaves', value: '—', icon: Palmtree },
-          { label: 'Upcoming Meetings', value: '—', icon: Calendar },
-          { label: 'Unread Messages', value: '—', icon: MessageSquare },
-        ].map((stat) => (
+        {stats.map((stat) => (
           <Card key={stat.label} className="border">
             <CardContent className="p-4 flex items-center gap-4">
               <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
@@ -50,7 +73,6 @@ export default function DashboardHome() {
         ))}
       </div>
 
-      {/* Quick links */}
       <Card className="border">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold text-foreground">Quick Access</CardTitle>
@@ -71,7 +93,6 @@ export default function DashboardHome() {
         </CardContent>
       </Card>
 
-      {/* Activity placeholder */}
       <Card className="border">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold text-foreground">Recent Activity</CardTitle>

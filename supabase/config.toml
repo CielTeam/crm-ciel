@@ -17,3 +17,9 @@ verify_jwt = false
 
 [functions.tasks]
 verify_jwt = false
+
+[functions.leaves]
+verify_jwt = false
+
+[functions.messages]
+verify_jwt = false

@@ -1,0 +1,59 @@
+import { useEffect, useRef } from 'react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import type { Message } from '@/hooks/useMessages';
+import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
+
+interface Props {
+  messages: Message[];
+  currentUserId: string;
+  userMap: Map<string, string>;
+}
+
+export function MessageThread({ messages, currentUserId, userMap }: Props) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length]);
+
+  if (messages.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+        No messages yet. Start the conversation!
+      </div>
+    );
+  }
+
+  return (
+    <ScrollArea className="flex-1 px-4">
+      <div className="space-y-3 py-4">
+        {messages.map(msg => {
+          const isMine = msg.sender_id === currentUserId;
+          const senderName = userMap.get(msg.sender_id) || 'Unknown';
+
+          return (
+            <div key={msg.id} className={cn('flex', isMine ? 'justify-end' : 'justify-start')}>
+              <div className={cn(
+                'max-w-[75%] rounded-xl px-3 py-2',
+                isMine ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'
+              )}>
+                {!isMine && (
+                  <p className="text-[10px] font-medium opacity-70 mb-0.5">{senderName}</p>
+                )}
+                <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                <p className={cn(
+                  'text-[10px] mt-1',
+                  isMine ? 'text-primary-foreground/60' : 'text-muted-foreground/60'
+                )}>
+                  {format(new Date(msg.created_at), 'HH:mm')}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+    </ScrollArea>
+  );
+}
