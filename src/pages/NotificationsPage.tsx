@@ -26,6 +26,14 @@ export default function NotificationsPage() {
   const { data: notifications = [], isLoading } = useNotifications(filter);
   const markRead = useMarkRead();
 
+  const navigate = useNavigate();
+
+  const handleClick = (n: { reference_type: string | null; reference_id: string | null; id: string; is_read: boolean }) => {
+    if (!n.is_read) markRead.mutate(n.id);
+    const route = n.reference_type ? REFERENCE_ROUTES[n.reference_type] : null;
+    if (route) navigate(route);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
