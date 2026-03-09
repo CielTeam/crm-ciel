@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { TaskCard } from '@/components/tasks/TaskCard';
 import { AddTaskDialog } from '@/components/tasks/AddTaskDialog';
+import { PageError } from '@/components/PageError';
 import { useTasks, useCreateTask, useUpdateTask, useDeleteTask } from '@/hooks/useTasks';
 import { toast } from 'sonner';
 
@@ -22,7 +23,7 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const { data: tasks = [], isLoading } = useTasks(tab);
+  const { data: tasks = [], isLoading, error, refetch } = useTasks(tab);
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
@@ -80,7 +81,9 @@ export default function TasksPage() {
         </div>
 
         <TabsContent value={tab} className="mt-4">
-          {isLoading ? (
+          {error ? (
+            <PageError message="Failed to load tasks. Please try again." onRetry={() => refetch()} />
+          ) : isLoading ? (
             <div className="flex items-center justify-center py-20 text-muted-foreground">
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
