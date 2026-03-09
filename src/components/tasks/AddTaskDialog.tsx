@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { useDirectoryData } from '@/hooks/useDirectoryData';
 
 interface AddTaskDialogProps {
   open: boolean;
@@ -18,21 +19,25 @@ interface AddTaskDialogProps {
     description?: string;
     priority: string;
     due_date?: string | null;
+    assigned_to?: string | null;
   }) => void;
   isLoading?: boolean;
 }
 
 export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTaskDialogProps) {
+  const { data: users } = useDirectoryData();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('medium');
   const [dueDate, setDueDate] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
 
   const reset = () => {
     setTitle('');
     setDescription('');
     setPriority('medium');
     setDueDate('');
+    setAssignedTo('');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -43,6 +48,7 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTa
       description: description.trim() || undefined,
       priority,
       due_date: dueDate || null,
+      assigned_to: assignedTo || null,
     });
     reset();
     onOpenChange(false);
@@ -86,6 +92,23 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTa
               <Label htmlFor="due">Due Date</Label>
               <Input id="due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Assign To</Label>
+            <Select value={assignedTo} onValueChange={setAssignedTo}>
+              <SelectTrigger>
+                <SelectValue placeholder="Unassigned" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                {users?.map((user) => (
+                  <SelectItem key={user.userId} value={user.userId}>
+                    {user.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <DialogFooter>
