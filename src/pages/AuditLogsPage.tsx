@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
+import { PageError } from '@/components/PageError';
 
 const PAGE_SIZE = 20;
 
@@ -21,7 +22,7 @@ export default function AuditLogsPage() {
   const [actionFilter, setActionFilter] = useState('all');
   const [search, setSearch] = useState('');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['audit-logs', page, actionFilter],
     queryFn: async () => {
       let query = supabase
@@ -81,7 +82,9 @@ export default function AuditLogsPage() {
         </Select>
       </div>
 
-      {isLoading ? (
+      {error ? (
+        <PageError message="Failed to load audit logs." onRetry={() => refetch()} />
+      ) : isLoading ? (
         <div className="flex justify-center py-20">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
