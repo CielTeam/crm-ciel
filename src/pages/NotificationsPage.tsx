@@ -78,7 +78,8 @@ export default function NotificationsPage() {
             return (
               <Card
                 key={n.id}
-                className={`border transition-colors ${!n.is_read ? 'bg-primary/5 border-primary/20' : ''}`}
+                className={`border transition-colors cursor-pointer hover:shadow-sm ${!n.is_read ? 'bg-primary/5 border-primary/20' : ''}`}
+                onClick={() => handleClick(n)}
               >
                 <CardContent className="flex items-start gap-3 py-3 px-4">
                   <div className={`mt-0.5 ${config.color}`}>
