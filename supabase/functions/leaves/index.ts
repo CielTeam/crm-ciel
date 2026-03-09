@@ -196,6 +196,20 @@ Deno.serve(async (req) => {
         metadata: { decision, reviewer_note },
       });
 
+      // Notify the leave owner
+      const notifType = decision === 'approved' ? 'leave_approved' : 'leave_rejected';
+      const notifTitle = decision === 'approved'
+        ? 'Your leave request has been approved'
+        : 'Your leave request has been rejected';
+      await admin.from('notifications').insert({
+        user_id: leave.user_id,
+        type: notifType,
+        title: notifTitle,
+        body: reviewer_note || `${leave.leave_type} leave: ${leave.start_date} – ${leave.end_date}`,
+        reference_id: leave_id,
+        reference_type: 'leave',
+      });
+
       return new Response(JSON.stringify({ leave: updated }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

@@ -16,14 +16,24 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getFilteredNavGroups } from '@/config/navigation';
 import { ROLE_LABELS } from '@/types/roles';
 import { Badge } from '@/components/ui/badge';
+import { useUnreadCount } from '@/hooks/useNotifications';
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
   const location = useLocation();
   const { primaryRole, user } = useAuth();
+  const { data: unreadCount = 0 } = useUnreadCount();
 
   const navGroups = primaryRole ? getFilteredNavGroups(primaryRole) : [];
+
+  // Inject unread badge into Notifications nav item
+  const enrichedGroups = navGroups.map((group) => ({
+    ...group,
+    items: group.items.map((item) =>
+      item.path === '/notifications' ? { ...item, badge: unreadCount } : item
+    ),
+  }));
 
   return (
     <Sidebar collapsible="icon" className="border-r-0">
@@ -42,7 +52,7 @@ export function AppSidebar() {
         </div>
 
         {/* Navigation groups */}
-        {navGroups.map((group) => (
+        {enrichedGroups.map((group) => (
           <SidebarGroup key={group.label}>
             {!collapsed && (
               <SidebarGroupLabel className="text-sidebar-muted text-[10px] uppercase tracking-wider font-semibold px-4">

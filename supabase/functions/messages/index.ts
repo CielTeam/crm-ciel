@@ -177,6 +177,25 @@ Deno.serve(async (req) => {
         .eq('conversation_id', conversation_id)
         .eq('user_id', actor_id);
 
+      // Notify other members
+      const { data: members } = await admin
+        .from('conversation_members')
+        .select('user_id')
+        .eq('conversation_id', conversation_id)
+        .neq('user_id', actor_id);
+
+      if (members && members.length > 0) {
+        const notifications = members.map((m) => ({
+          user_id: m.user_id,
+          type: 'new_message',
+          title: 'New message received',
+          body: content.trim().substring(0, 100),
+          reference_id: conversation_id,
+          reference_type: 'conversation',
+        }));
+        await admin.from('notifications').insert(notifications);
+      }
+
       return new Response(JSON.stringify({ message: data }), {
         status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
