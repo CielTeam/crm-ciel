@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.notifications]
 verify_jwt = false
+
+[functions.dashboard-stats]
+verify_jwt = false
