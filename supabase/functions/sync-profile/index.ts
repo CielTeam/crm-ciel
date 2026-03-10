@@ -55,6 +55,7 @@ Deno.serve(async (req) => {
           email: email || null,
           display_name: display_name || null,
           avatar_url: avatar_url || null,
+          status: 'active',
           updated_at: new Date().toISOString(),
         })
         .eq("user_id", user_id)
@@ -79,6 +80,7 @@ Deno.serve(async (req) => {
             user_id,
             display_name: display_name || null,
             avatar_url: avatar_url || null,
+            status: 'active',
             updated_at: new Date().toISOString(),
           })
           .eq("id", pendingProfile[0].id)
@@ -102,6 +104,7 @@ Deno.serve(async (req) => {
               email: email || null,
               display_name: display_name || null,
               avatar_url: avatar_url || null,
+              status: 'active',
               updated_at: new Date().toISOString(),
             },
             { onConflict: "user_id" }
@@ -121,6 +124,7 @@ Deno.serve(async (req) => {
             email: email || null,
             display_name: display_name || null,
             avatar_url: avatar_url || null,
+            status: 'active',
             updated_at: new Date().toISOString(),
           },
           { onConflict: "user_id" }
