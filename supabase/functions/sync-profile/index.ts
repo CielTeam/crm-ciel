@@ -80,6 +80,7 @@ Deno.serve(async (req) => {
             user_id,
             display_name: display_name || null,
             avatar_url: avatar_url || null,
+            status: 'active',
             updated_at: new Date().toISOString(),
           })
           .eq("id", pendingProfile[0].id)
