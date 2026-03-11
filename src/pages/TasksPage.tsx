@@ -241,6 +241,62 @@ export default function TasksPage() {
         }}
         isLoading={createTask.isPending}
       />
+
+      <TaskDetailSheet
+        task={selectedTask}
+        open={!!selectedTask}
+        onOpenChange={(open) => { if (!open) setSelectedTask(null); }}
+        assignee={selectedTask?.assigned_to ? assigneeMap.get(selectedTask.assigned_to) || null : null}
+        creator={selectedTask ? assigneeMap.get(selectedTask.created_by) || null : null}
+        currentUserId={user?.id || ''}
+        onStatusChange={(id, status, extra) => {
+          handleStatusChange(id, status, extra);
+          setSelectedTask(null);
+        }}
+        onActionClick={(action) => setSheetAction(action)}
+      />
+
+      {/* Sheet-triggered dialogs */}
+      {selectedTask && sheetAction && (sheetAction === 'accept' || sheetAction === 'decline') && (
+        <AcceptDeclineDialog
+          open
+          onOpenChange={() => setSheetAction(null)}
+          mode={sheetAction}
+          taskTitle={selectedTask.title}
+          onConfirm={(reason) => {
+            handleStatusChange(selectedTask.id, sheetAction === 'accept' ? 'accepted' : 'declined', sheetAction === 'decline' ? { decline_reason: reason } : undefined);
+            setSheetAction(null);
+            setSelectedTask(null);
+          }}
+        />
+      )}
+
+      {selectedTask && sheetAction === 'submit' && (
+        <SubmitTaskDialog
+          open
+          onOpenChange={() => setSheetAction(null)}
+          taskTitle={selectedTask.title}
+          onConfirm={(data) => {
+            handleStatusChange(selectedTask.id, 'submitted', data);
+            setSheetAction(null);
+            setSelectedTask(null);
+          }}
+        />
+      )}
+
+      {selectedTask && sheetAction && (sheetAction === 'approve' || sheetAction === 'reject') && (
+        <ReviewTaskDialog
+          open
+          onOpenChange={() => setSheetAction(null)}
+          mode={sheetAction}
+          taskTitle={selectedTask.title}
+          onConfirm={(feedback) => {
+            handleStatusChange(selectedTask.id, sheetAction === 'approve' ? 'approved' : 'rejected', { feedback });
+            setSheetAction(null);
+            setSelectedTask(null);
+          }}
+        />
+      )}
     </div>
   );
 }
