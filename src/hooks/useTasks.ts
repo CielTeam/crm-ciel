@@ -166,3 +166,19 @@ export function useDeleteTask() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
   });
 }
+
+export function useTaskActivity(taskId: string | null) {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ['task-activity', taskId],
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke('tasks', {
+        body: { action: 'list_activity', actor_id: user!.id, task_id: taskId },
+      });
+      if (error) throw error;
+      return (data.activity || []) as TaskActivityLog[];
+    },
+    enabled: !!user?.id && !!taskId,
+  });
+}
