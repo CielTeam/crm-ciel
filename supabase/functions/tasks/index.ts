@@ -171,6 +171,54 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ─── LIST ACTIVITY ───────────────────────────────────────
+    if (action === 'list_activity') {
+      const { task_id } = payload;
+      if (!task_id) throw new Error('Missing task_id');
+
+      // Verify actor has access to this task
+      const { data: task } = await adminClient.from('tasks')
+        .select('created_by, assigned_to')
+        .eq('id', task_id)
+        .single();
+
+      if (!task || (task.created_by !== actor_id && task.assigned_to !== actor_id)) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: logs, error } = await adminClient
+        .from('task_activity_logs')
+        .select('*')
+        .eq('task_id', task_id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      // Resolve actor names
+      const actorIds = [...new Set((logs || []).map((l: any) => l.actor_id))];
+      const { data: profiles } = await adminClient.from('profiles')
+        .select('user_id, display_name, avatar_url')
+        .in('user_id', actorIds);
+
+      const profileMap: Record<string, { display_name: string; avatar_url: string | null }> = {};
+      (profiles || []).forEach((p: any) => {
+        profileMap[p.user_id] = { display_name: p.display_name, avatar_url: p.avatar_url };
+      });
+
+      const enriched = (logs || []).map((l: any) => ({
+        ...l,
+        actor_name: profileMap[l.actor_id]?.display_name || 'Unknown',
+        actor_avatar: profileMap[l.actor_id]?.avatar_url || null,
+      }));
+
+      return new Response(JSON.stringify({ activity: enriched }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // ─── CREATE ──────────────────────────────────────────────
     if (action === 'create') {
       const { title, description, priority, due_date, assigned_to, team_id, estimated_duration } = payload;
