@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
   Calendar, Clock, User, AlertTriangle, MessageSquare, CheckCircle2,
@@ -7,11 +8,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
-import { useTaskActivity, type Task, type TaskActivityLog } from '@/hooks/useTasks';
+import { useTaskActivity, useTaskComments, useAddTaskComment, type Task, type TaskActivityLog } from '@/hooks/useTasks';
 import type { TaskAssignee } from './TaskCard';
+import { toast } from 'sonner';
 
 const statusConfig: Record<string, { label: string; className: string; icon: typeof Circle }> = {
   todo: { label: 'To Do', className: 'bg-muted text-muted-foreground', icon: Circle },
