@@ -69,7 +69,15 @@ export function TaskCard({ task, assignee, creator, currentUserId, onStatusChang
 
   return (
     <>
-      <Card className={`border transition-colors ${task.status === 'done' || task.status === 'approved' ? 'opacity-60' : ''}`}>
+      <Card
+        className={`border transition-colors cursor-pointer hover:border-primary/40 ${task.status === 'done' || task.status === 'approved' ? 'opacity-60' : ''}`}
+        onClick={(e) => {
+          // Don't open sheet if clicking buttons/selects
+          const target = e.target as HTMLElement;
+          if (target.closest('button, [role="combobox"], [role="listbox"], [role="option"]')) return;
+          onCardClick?.();
+        }}
+      >
         <CardContent className="p-4 space-y-3">
           {/* Header row */}
           <div className="flex items-start justify-between gap-2">
