@@ -1,41 +1,52 @@
 import { useState, useMemo } from 'react';
-import { Plus, CheckSquare, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Filter } from 'lucide-react';
+import { Plus, CheckSquare, Loader2, ArrowUp, ArrowDown, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { TaskCard, type TaskAssignee } from '@/components/tasks/TaskCard';
 import { AddTaskDialog } from '@/components/tasks/AddTaskDialog';
 import { PageError } from '@/components/PageError';
-import { useTasks, useCreateTask, useUpdateTask, useDeleteTask } from '@/hooks/useTasks';
+import { useTasks, useCreateTask, useUpdateTask, useDeleteTask, type TaskTab } from '@/hooks/useTasks';
 import { useDirectoryData } from '@/hooks/useDirectoryData';
+import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 
-type StatusFilter = 'all' | 'todo' | 'in_progress' | 'done';
+type StatusFilter = string;
 type PriorityFilter = 'all' | 'low' | 'medium' | 'high' | 'urgent';
 type SortField = 'created_at' | 'due_date' | 'priority';
 type SortDir = 'asc' | 'desc';
 
-const statusFilters: { value: StatusFilter; label: string }[] = [
+const GLOBAL_ROLES = ['chairman', 'vice_president', 'hr', 'head_of_operations'];
+const LEAD_ROLES = ['head_of_accounting', 'head_of_marketing', 'sales_lead', 'technical_lead', 'team_development_lead'];
+
+const personalStatusFilters = [
   { value: 'all', label: 'All' },
   { value: 'todo', label: 'To Do' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'done', label: 'Done' },
 ];
 
+const assignedStatusFilters = [
+  { value: 'all', label: 'All' },
+  { value: 'pending_accept', label: 'Pending' },
+  { value: 'accepted', label: 'Accepted' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'submitted', label: 'Submitted' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'rejected', label: 'Rejected' },
+  { value: 'declined', label: 'Declined' },
+];
+
 const priorityOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 
 export default function TasksPage() {
-  const [tab, setTab] = useState<'my_tasks' | 'assigned'>('my_tasks');
+  const { user, roles } = useAuth();
+  const [tab, setTab] = useState<TaskTab>('my_tasks');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
-  const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -46,6 +57,8 @@ export default function TasksPage() {
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
 
+  const canSeeTeamTab = roles.some((r) => [...GLOBAL_ROLES, ...LEAD_ROLES].includes(r));
+
   const assigneeMap = useMemo(() => {
     const map = new Map<string, TaskAssignee>();
     directoryUsers?.forEach((u) => {
@@ -54,21 +67,12 @@ export default function TasksPage() {
     return map;
   }, [directoryUsers]);
 
-  // Unique assignees present in current tasks for the filter dropdown
-  const taskAssignees = useMemo(() => {
-    const ids = new Set<string>();
-    tasks.forEach((t) => { if (t.assigned_to) ids.add(t.assigned_to); });
-    return [...ids].map((id) => ({
-      id,
-      name: assigneeMap.get(id)?.displayName || id,
-    })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [tasks, assigneeMap]);
+  const currentStatusFilters = tab === 'my_tasks' ? personalStatusFilters : assignedStatusFilters;
 
   const filtered = useMemo(() => {
     let result = tasks;
     if (statusFilter !== 'all') result = result.filter((t) => t.status === statusFilter);
     if (priorityFilter !== 'all') result = result.filter((t) => t.priority === priorityFilter);
-    if (assigneeFilter !== 'all') result = result.filter((t) => t.assigned_to === assigneeFilter);
 
     result = [...result].sort((a, b) => {
       let cmp = 0;
@@ -85,28 +89,27 @@ export default function TasksPage() {
     });
 
     return result;
-  }, [tasks, statusFilter, priorityFilter, assigneeFilter, sortField, sortDir]);
+  }, [tasks, statusFilter, priorityFilter, sortField, sortDir]);
 
-  const counts = {
-    all: tasks.length,
-    todo: tasks.filter((t) => t.status === 'todo').length,
-    in_progress: tasks.filter((t) => t.status === 'in_progress').length,
-    done: tasks.filter((t) => t.status === 'done').length,
-  };
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: tasks.length };
+    tasks.forEach((t) => {
+      counts[t.status] = (counts[t.status] || 0) + 1;
+    });
+    return counts;
+  }, [tasks]);
 
-  const handleStatusChange = (id: string, status: string) => {
-    updateTask.mutate({ id, status }, {
-      onError: () => toast.error('Failed to update task'),
+  const handleStatusChange = (id: string, status: string, extra?: Record<string, unknown>) => {
+    updateTask.mutate({ id, status, ...extra }, {
+      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to update task'),
     });
   };
 
   const handleDelete = (id: string) => {
     deleteTask.mutate(id, {
-      onError: () => toast.error('Failed to delete task'),
+      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to delete task'),
     });
   };
-
-  const activeFilterCount = [priorityFilter !== 'all', assigneeFilter !== 'all'].filter(Boolean).length;
 
   const toggleSortDir = () => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
 
@@ -119,15 +122,18 @@ export default function TasksPage() {
         </Button>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => { setTab(v as typeof tab); setStatusFilter('all'); }}>
+      <Tabs value={tab} onValueChange={(v) => { setTab(v as TaskTab); setStatusFilter('all'); }}>
         <TabsList>
           <TabsTrigger value="my_tasks">My Tasks</TabsTrigger>
           <TabsTrigger value="assigned">Assigned to Me</TabsTrigger>
+          {canSeeTeamTab && (
+            <TabsTrigger value="team_tasks">Team Tasks</TabsTrigger>
+          )}
         </TabsList>
 
         {/* Status filter chips */}
         <div className="flex gap-2 mt-4 flex-wrap">
-          {statusFilters.map((f) => (
+          {currentStatusFilters.map((f) => (
             <Button
               key={f.value}
               variant={statusFilter === f.value ? 'default' : 'outline'}
@@ -136,19 +142,16 @@ export default function TasksPage() {
             >
               {f.label}
               <Badge variant="secondary" className="ml-1.5 h-5 min-w-[20px] px-1.5 text-xs">
-                {counts[f.value]}
+                {statusCounts[f.value] || 0}
               </Badge>
             </Button>
           ))}
         </div>
 
-        {/* Advanced filters & sorting */}
+        {/* Filters & sorting */}
         <div className="flex items-center gap-3 mt-3 flex-wrap">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Filter className="h-3.5 w-3.5" />
-            {activeFilterCount > 0 && (
-              <Badge variant="secondary" className="h-4 min-w-[16px] px-1 text-[10px]">{activeFilterCount}</Badge>
-            )}
           </div>
 
           <Select value={priorityFilter} onValueChange={(v) => setPriorityFilter(v as PriorityFilter)}>
@@ -163,20 +166,6 @@ export default function TasksPage() {
               <SelectItem value="low">Low</SelectItem>
             </SelectContent>
           </Select>
-
-          {taskAssignees.length > 0 && (
-            <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-              <SelectTrigger className="h-8 w-[150px] text-xs">
-                <SelectValue placeholder="Assignee" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Assignees</SelectItem>
-                {taskAssignees.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
 
           <div className="ml-auto flex items-center gap-1.5">
             <Select value={sortField} onValueChange={(v) => setSortField(v as SortField)}>
@@ -195,39 +184,41 @@ export default function TasksPage() {
           </div>
         </div>
 
-        <TabsContent value={tab} className="mt-4">
-          {error ? (
-            <PageError message="Failed to load tasks. Please try again." onRetry={() => refetch()} />
-          ) : isLoading ? (
-            <div className="flex items-center justify-center py-20 text-muted-foreground">
-              <Loader2 className="h-6 w-6 animate-spin" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-              <CheckSquare className="h-12 w-12 mb-4 opacity-30" />
-              <p className="text-lg font-medium">
-                {tasks.length === 0 ? 'No tasks yet' : 'No tasks match filters'}
-              </p>
-              <p className="text-sm mt-1">
-                {tasks.length === 0
-                  ? 'Create your first task to get started.'
-                  : 'Try adjusting your filters.'}
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-3">
-              {filtered.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  assignee={task.assigned_to ? assigneeMap.get(task.assigned_to) || null : null}
-                  onStatusChange={handleStatusChange}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </div>
-          )}
-        </TabsContent>
+        {['my_tasks', 'assigned', 'team_tasks'].map((tabValue) => (
+          <TabsContent key={tabValue} value={tabValue} className="mt-4">
+            {error ? (
+              <PageError message="Failed to load tasks. Please try again." onRetry={() => refetch()} />
+            ) : isLoading ? (
+              <div className="flex items-center justify-center py-20 text-muted-foreground">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+                <CheckSquare className="h-12 w-12 mb-4 opacity-30" />
+                <p className="text-lg font-medium">
+                  {tasks.length === 0 ? 'No tasks yet' : 'No tasks match filters'}
+                </p>
+                <p className="text-sm mt-1">
+                  {tasks.length === 0 ? 'Create your first task to get started.' : 'Try adjusting your filters.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {filtered.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    currentUserId={user?.id || ''}
+                    assignee={task.assigned_to ? assigneeMap.get(task.assigned_to) || null : null}
+                    creator={task.created_by !== user?.id ? assigneeMap.get(task.created_by) || null : null}
+                    onStatusChange={handleStatusChange}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        ))}
       </Tabs>
 
       <AddTaskDialog
@@ -235,7 +226,7 @@ export default function TasksPage() {
         onOpenChange={setDialogOpen}
         onSubmit={(payload) => {
           createTask.mutate(payload, {
-            onError: () => toast.error('Failed to create task'),
+            onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to create task'),
           });
         }}
         isLoading={createTask.isPending}
