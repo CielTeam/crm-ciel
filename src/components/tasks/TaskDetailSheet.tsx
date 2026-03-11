@@ -152,7 +152,10 @@ interface TaskDetailSheetProps {
 export function TaskDetailSheet({
   task, open, onOpenChange, assignee, creator, currentUserId, onStatusChange, onActionClick,
 }: TaskDetailSheetProps) {
+  const [commentText, setCommentText] = useState('');
   const { data: activityLogs = [], isLoading: activityLoading } = useTaskActivity(open && task ? task.id : null);
+  const { data: comments = [], isLoading: commentsLoading } = useTaskComments(open && task ? task.id : null);
+  const addComment = useAddTaskComment();
 
   if (!task) return null;
 
