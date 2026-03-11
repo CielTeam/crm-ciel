@@ -25,6 +25,18 @@ export interface Task {
   decline_reason: string | null;
 }
 
+export interface TaskActivityLog {
+  id: string;
+  task_id: string;
+  actor_id: string;
+  actor_name: string;
+  actor_avatar: string | null;
+  old_status: string | null;
+  new_status: string | null;
+  note: string | null;
+  created_at: string;
+}
+
 export type TaskTab = 'my_tasks' | 'assigned' | 'team_tasks';
 
 export function useTasksRealtime() {
