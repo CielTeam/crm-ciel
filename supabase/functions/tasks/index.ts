@@ -261,6 +261,9 @@ Deno.serve(async (req) => {
 
       if (error) throw error;
 
+      // Log activity: task created
+      await logActivity(adminClient, data.id, actor_id, null, data.status, 'Task created');
+
       // Notify assignee
       if (isAssigned) {
         const { data: creatorProfile } = await adminClient.from('profiles')
