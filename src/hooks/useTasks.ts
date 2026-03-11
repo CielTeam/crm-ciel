@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,8 +27,42 @@ export interface Task {
 
 export type TaskTab = 'my_tasks' | 'assigned' | 'team_tasks';
 
+export function useTasksRealtime() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel('tasks-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks' },
+        (payload) => {
+          const row = (payload.new || payload.old) as any;
+          // Only invalidate if this user is involved
+          if (
+            row &&
+            (row.created_by === user.id || row.assigned_to === user.id)
+          ) {
+            qc.invalidateQueries({ queryKey: ['tasks'] });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, qc]);
+}
+
 export function useTasks(tab: TaskTab = 'my_tasks') {
   const { user } = useAuth();
+
+  // Subscribe to realtime updates
+  useTasksRealtime();
 
   return useQuery({
     queryKey: ['tasks', tab, user?.id],
