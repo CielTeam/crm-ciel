@@ -4,12 +4,19 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { TaskCard, type TaskAssignee } from '@/components/tasks/TaskCard';
+import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { AddTaskDialog } from '@/components/tasks/AddTaskDialog';
+import { AcceptDeclineDialog } from '@/components/tasks/AcceptDeclineDialog';
+import { SubmitTaskDialog } from '@/components/tasks/SubmitTaskDialog';
+import { ReviewTaskDialog } from '@/components/tasks/ReviewTaskDialog';
 import { PageError } from '@/components/PageError';
-import { useTasks, useCreateTask, useUpdateTask, useDeleteTask, type TaskTab } from '@/hooks/useTasks';
+import { useTasks, useCreateTask, useUpdateTask, useDeleteTask, type TaskTab, type Task } from '@/hooks/useTasks';
 import { useDirectoryData } from '@/hooks/useDirectoryData';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
