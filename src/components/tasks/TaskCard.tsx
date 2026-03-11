@@ -47,7 +47,7 @@ interface TaskCardProps {
   onCardClick?: () => void;
 }
 
-export function TaskCard({ task, assignee, creator, currentUserId, onStatusChange, onDelete }: TaskCardProps) {
+export function TaskCard({ task, assignee, creator, currentUserId, onStatusChange, onDelete, onCardClick }: TaskCardProps) {
   const [acceptDeclineMode, setAcceptDeclineMode] = useState<'accept' | 'decline' | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [reviewMode, setReviewMode] = useState<'approve' | 'reject' | null>(null);
