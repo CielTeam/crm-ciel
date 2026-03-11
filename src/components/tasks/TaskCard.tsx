@@ -44,6 +44,7 @@ interface TaskCardProps {
   currentUserId: string;
   onStatusChange: (id: string, status: string, extra?: Record<string, unknown>) => void;
   onDelete: (id: string) => void;
+  onCardClick?: () => void;
 }
 
 export function TaskCard({ task, assignee, creator, currentUserId, onStatusChange, onDelete }: TaskCardProps) {
