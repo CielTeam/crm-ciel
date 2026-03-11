@@ -17,9 +17,6 @@ import { toast } from 'sonner';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
 
 type StatusFilter = string;
 type PriorityFilter = 'all' | 'low' | 'medium' | 'high' | 'urgent';
