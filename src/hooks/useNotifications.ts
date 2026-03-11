@@ -43,6 +43,11 @@ export function useNotificationsRealtime() {
   const { user } = useAuth();
   const qc = useQueryClient();
 
+  // Request permission on mount
+  useEffect(() => {
+    if (user?.id) requestNotificationPermission();
+  }, [user?.id]);
+
   useEffect(() => {
     if (!user?.id) return;
 
@@ -60,9 +65,28 @@ export function useNotificationsRealtime() {
           const row = payload.new as any;
           qc.invalidateQueries({ queryKey: ['notifications'] });
           qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
-          // Show a toast for instant feedback
+
+          const isUrgent = row?.type === 'task_urgent' ||
+            (row?.title && (row.title as string).toLowerCase().includes('urgent'));
+
+          // Play sound
+          playNotificationSound(isUrgent);
+
+          // Show in-app toast
           if (row?.title) {
-            toast.info(row.title, { description: row.body || undefined });
+            toast.info(row.title, {
+              description: row.body || undefined,
+              duration: isUrgent ? 10000 : 5000,
+            });
+          }
+
+          // Show browser push notification (works even when tab is background)
+          if (row?.title) {
+            showBrowserNotification(row.title, {
+              body: row.body || undefined,
+              tag: row.id || 'notification',
+              urgent: isUrgent,
+            });
           }
         }
       )
