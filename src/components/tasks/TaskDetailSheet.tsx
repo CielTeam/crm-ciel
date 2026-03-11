@@ -1,7 +1,7 @@
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import {
   Calendar, Clock, User, AlertTriangle, MessageSquare, CheckCircle2,
-  XCircle, Send, ThumbsUp, ThumbsDown, ArrowRight, Circle,
+  XCircle, Send, ThumbsUp, ThumbsDown, ArrowRight, Circle, History, Loader2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
-import type { Task } from '@/hooks/useTasks';
+import { useTaskActivity, type Task, type TaskActivityLog } from '@/hooks/useTasks';
 import type { TaskAssignee } from './TaskCard';
 
 const statusConfig: Record<string, { label: string; className: string; icon: typeof Circle }> = {
@@ -149,6 +149,8 @@ interface TaskDetailSheetProps {
 export function TaskDetailSheet({
   task, open, onOpenChange, assignee, creator, currentUserId, onStatusChange, onActionClick,
 }: TaskDetailSheetProps) {
+  const { data: activityLogs = [], isLoading: activityLoading } = useTaskActivity(open && task ? task.id : null);
+
   if (!task) return null;
 
   const priority = priorityConfig[task.priority] || priorityConfig.medium;
@@ -295,6 +297,65 @@ export function TaskDetailSheet({
               </div>
             </>
           )}
+
+          {/* Activity Log */}
+          <Separator />
+          <div>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1">
+              <History className="h-3 w-3" /> Activity Log
+            </h4>
+            {activityLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            ) : activityLogs.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">No activity recorded yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {activityLogs.map((log) => {
+                  const initials = log.actor_name
+                    ?.split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase() || '';
+                  const statusLabel = (s: string | null) =>
+                    s ? (statusConfig[s]?.label || s) : '';
+
+                  return (
+                    <div key={log.id} className="flex gap-2.5">
+                      <Avatar className="h-6 w-6 mt-0.5 shrink-0">
+                        <AvatarImage src={log.actor_avatar || undefined} />
+                        <AvatarFallback className="text-[9px] bg-primary/10 text-primary">{initials}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-medium text-foreground">{log.actor_name}</span>
+                          {log.old_status && log.new_status ? (
+                            <span className="text-xs text-muted-foreground">
+                              {statusLabel(log.old_status)} → {statusLabel(log.new_status)}
+                            </span>
+                          ) : log.new_status ? (
+                            <span className="text-xs text-muted-foreground">
+                              → {statusLabel(log.new_status)}
+                            </span>
+                          ) : null}
+                        </div>
+                        {log.note && (
+                          <p className="text-xs text-muted-foreground mt-0.5">{log.note}</p>
+                        )}
+                        <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                          {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
+                          {' · '}
+                          {format(new Date(log.created_at), 'MMM d, h:mm a')}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           <Separator />
 
