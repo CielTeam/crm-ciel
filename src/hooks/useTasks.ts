@@ -182,3 +182,49 @@ export function useTaskActivity(taskId: string | null) {
     enabled: !!user?.id && !!taskId,
   });
 }
+
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  author_id: string;
+  author_name: string;
+  author_avatar: string | null;
+  content: string;
+  created_at: string;
+}
+
+export function useTaskComments(taskId: string | null) {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ['task-comments', taskId],
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke('tasks', {
+        body: { action: 'list_comments', actor_id: user!.id, task_id: taskId },
+      });
+      if (error) throw error;
+      return (data.comments || []) as TaskComment[];
+    },
+    enabled: !!user?.id && !!taskId,
+  });
+}
+
+export function useAddTaskComment() {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async (payload: { task_id: string; content: string }) => {
+      const { data, error } = await supabase.functions.invoke('tasks', {
+        body: { action: 'add_comment', actor_id: user!.id, ...payload },
+      });
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+      return data.comment as TaskComment;
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['task-comments', variables.task_id] });
+      qc.invalidateQueries({ queryKey: ['task-activity', variables.task_id] });
+    },
+  });
+}
