@@ -1,7 +1,7 @@
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import {
   Calendar, Clock, User, AlertTriangle, MessageSquare, CheckCircle2,
-  XCircle, Send, ThumbsUp, ThumbsDown, ArrowRight, Circle,
+  XCircle, Send, ThumbsUp, ThumbsDown, ArrowRight, Circle, History, Loader2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
-import type { Task } from '@/hooks/useTasks';
+import { useTaskActivity, type Task, type TaskActivityLog } from '@/hooks/useTasks';
 import type { TaskAssignee } from './TaskCard';
 
 const statusConfig: Record<string, { label: string; className: string; icon: typeof Circle }> = {
