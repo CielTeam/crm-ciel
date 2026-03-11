@@ -381,8 +381,17 @@ Deno.serve(async (req) => {
         .single();
       if (error) throw error;
 
-      // Notifications
+      // Log activity for status changes
       const newStatus = updates.status;
+      if (newStatus) {
+        const note = newStatus === 'declined' ? updates.decline_reason
+          : newStatus === 'rejected' ? updates.feedback
+          : newStatus === 'submitted' ? (updates.challenges ? `Challenges: ${updates.challenges}` : null)
+          : null;
+        await logActivity(adminClient, id, actor_id, existing.status, newStatus, note);
+      }
+
+      // Notifications
       if (newStatus) {
         const { data: actorProfile } = await adminClient.from('profiles')
           .select('display_name')
