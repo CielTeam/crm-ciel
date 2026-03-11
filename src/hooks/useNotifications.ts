@@ -34,8 +34,46 @@ export function useNotifications(filter: 'all' | 'unread' | 'read' = 'all') {
   });
 }
 
+export function useNotificationsRealtime() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel('notifications-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const row = payload.new as any;
+          qc.invalidateQueries({ queryKey: ['notifications'] });
+          qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
+          // Show a toast for instant feedback
+          if (row?.title) {
+            toast.info(row.title, { description: row.body || undefined });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, qc]);
+}
+
 export function useUnreadCount() {
   const { user } = useAuth();
+
+  // Subscribe to realtime notification inserts
+  useNotificationsRealtime();
 
   return useQuery({
     queryKey: ['notifications-unread-count', user?.id],
