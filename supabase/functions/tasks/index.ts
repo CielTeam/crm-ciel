@@ -468,6 +468,112 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ─── ADD COMMENT ─────────────────────────────────────────
+    if (action === 'add_comment') {
+      const { task_id, content } = payload;
+      if (!task_id || !content?.trim()) {
+        return new Response(JSON.stringify({ error: 'task_id and content are required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Verify actor has access
+      const { data: task } = await adminClient.from('tasks')
+        .select('created_by, assigned_to, title')
+        .eq('id', task_id)
+        .single();
+
+      if (!task || (task.created_by !== actor_id && task.assigned_to !== actor_id)) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: comment, error } = await adminClient.from('task_comments').insert({
+        task_id,
+        author_id: actor_id,
+        content: content.trim(),
+      }).select().single();
+
+      if (error) throw error;
+
+      // Log in activity
+      await logActivity(adminClient, task_id, actor_id, null, null, content.trim());
+
+      // Notify the other party
+      const notifyUserId = task.created_by === actor_id ? task.assigned_to : task.created_by;
+      if (notifyUserId && notifyUserId !== actor_id) {
+        const { data: actorProfile } = await adminClient.from('profiles')
+          .select('display_name')
+          .eq('user_id', actor_id)
+          .single();
+        const actorName = actorProfile?.display_name || 'Someone';
+
+        await adminClient.from('notifications').insert({
+          user_id: notifyUserId,
+          type: 'task_comment',
+          title: `${actorName} commented on: ${task.title}`,
+          body: content.trim().slice(0, 200),
+          reference_id: task_id,
+          reference_type: 'task',
+        });
+      }
+
+      return new Response(JSON.stringify({ comment }), {
+        status: 201,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ─── LIST COMMENTS ───────────────────────────────────────
+    if (action === 'list_comments') {
+      const { task_id } = payload;
+      if (!task_id) throw new Error('Missing task_id');
+
+      const { data: task } = await adminClient.from('tasks')
+        .select('created_by, assigned_to')
+        .eq('id', task_id)
+        .single();
+
+      if (!task || (task.created_by !== actor_id && task.assigned_to !== actor_id)) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: comments, error } = await adminClient
+        .from('task_comments')
+        .select('*')
+        .eq('task_id', task_id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      // Resolve author names
+      const authorIds = [...new Set((comments || []).map((c: any) => c.author_id))];
+      const { data: profiles } = await adminClient.from('profiles')
+        .select('user_id, display_name, avatar_url')
+        .in('user_id', authorIds);
+
+      const profileMap: Record<string, { display_name: string; avatar_url: string | null }> = {};
+      (profiles || []).forEach((p: any) => {
+        profileMap[p.user_id] = { display_name: p.display_name, avatar_url: p.avatar_url };
+      });
+
+      const enriched = (comments || []).map((c: any) => ({
+        ...c,
+        author_name: profileMap[c.author_id]?.display_name || 'Unknown',
+        author_avatar: profileMap[c.author_id]?.avatar_url || null,
+      }));
+
+      return new Response(JSON.stringify({ comments: enriched }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({ error: 'Unknown action' }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

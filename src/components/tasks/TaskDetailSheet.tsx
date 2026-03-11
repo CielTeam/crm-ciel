@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
   Calendar, Clock, User, AlertTriangle, MessageSquare, CheckCircle2,
@@ -7,11 +8,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
-import { useTaskActivity, type Task, type TaskActivityLog } from '@/hooks/useTasks';
+import { useTaskActivity, useTaskComments, useAddTaskComment, type Task, type TaskActivityLog } from '@/hooks/useTasks';
 import type { TaskAssignee } from './TaskCard';
+import { toast } from 'sonner';
 
 const statusConfig: Record<string, { label: string; className: string; icon: typeof Circle }> = {
   todo: { label: 'To Do', className: 'bg-muted text-muted-foreground', icon: Circle },
@@ -149,7 +152,10 @@ interface TaskDetailSheetProps {
 export function TaskDetailSheet({
   task, open, onOpenChange, assignee, creator, currentUserId, onStatusChange, onActionClick,
 }: TaskDetailSheetProps) {
+  const [commentText, setCommentText] = useState('');
   const { data: activityLogs = [], isLoading: activityLoading } = useTaskActivity(open && task ? task.id : null);
+  const { data: comments = [], isLoading: commentsLoading } = useTaskComments(open && task ? task.id : null);
+  const addComment = useAddTaskComment();
 
   if (!task) return null;
 
@@ -355,6 +361,89 @@ export function TaskDetailSheet({
                 })}
               </div>
             )}
+          </div>
+
+          {/* Comments */}
+          <Separator />
+          <div>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1">
+              <MessageSquare className="h-3 w-3" /> Comments
+            </h4>
+
+            {commentsLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            ) : comments.length > 0 ? (
+              <div className="space-y-3 mb-4">
+                {comments.map((c) => {
+                  const initials = c.author_name
+                    ?.split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase() || '';
+
+                  return (
+                    <div key={c.id} className="flex gap-2.5">
+                      <Avatar className="h-6 w-6 mt-0.5 shrink-0">
+                        <AvatarImage src={c.author_avatar || undefined} />
+                        <AvatarFallback className="text-[9px] bg-primary/10 text-primary">{initials}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-medium text-foreground">{c.author_name}</span>
+                          <span className="text-[10px] text-muted-foreground/60">
+                            {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
+                          </span>
+                        </div>
+                        <p className="text-sm text-foreground mt-0.5 whitespace-pre-wrap">{c.content}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic mb-3">No comments yet.</p>
+            )}
+
+            {/* Comment input */}
+            <div className="flex gap-2">
+              <Textarea
+                placeholder="Add a comment..."
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                className="min-h-[60px] text-sm resize-none"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && commentText.trim()) {
+                    addComment.mutate(
+                      { task_id: task.id, content: commentText.trim() },
+                      {
+                        onSuccess: () => setCommentText(''),
+                        onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to add comment'),
+                      }
+                    );
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                className="self-end"
+                disabled={!commentText.trim() || addComment.isPending}
+                onClick={() => {
+                  addComment.mutate(
+                    { task_id: task.id, content: commentText.trim() },
+                    {
+                      onSuccess: () => setCommentText(''),
+                      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to add comment'),
+                    }
+                  );
+                }}
+              >
+                {addComment.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+            <p className="text-[10px] text-muted-foreground/50 mt-1">Press ⌘+Enter to send</p>
           </div>
 
           <Separator />
