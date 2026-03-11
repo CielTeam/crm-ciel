@@ -55,6 +55,23 @@ const ASSIGNED_TRANSITIONS_CREATOR: Record<string, string[]> = {
   submitted: ['approved', 'rejected'],
 };
 
+async function logActivity(
+  client: any,
+  taskId: string,
+  actorId: string,
+  oldStatus: string | null,
+  newStatus: string | null,
+  note?: string | null
+) {
+  await client.from('task_activity_logs').insert({
+    task_id: taskId,
+    actor_id: actorId,
+    old_status: oldStatus,
+    new_status: newStatus,
+    note: note || null,
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
