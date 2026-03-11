@@ -57,6 +57,8 @@ export default function TasksPage() {
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [sheetAction, setSheetAction] = useState<'accept' | 'decline' | 'submit' | 'approve' | 'reject' | null>(null);
 
   const { data: tasks = [], isLoading, error, refetch } = useTasks(tab);
   const { data: directoryUsers } = useDirectoryData();
