@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { useDirectoryData } from '@/hooks/useDirectoryData';
+import { useAssignableUsers } from '@/hooks/useTasks';
 
 interface AddTaskDialogProps {
   open: boolean;
@@ -20,39 +20,54 @@ interface AddTaskDialogProps {
     priority: string;
     due_date?: string | null;
     assigned_to?: string | null;
+    estimated_duration?: string | null;
   }) => void;
   isLoading?: boolean;
 }
 
 export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTaskDialogProps) {
-  const { data: users } = useDirectoryData();
+  const { data: assignableUsers = [] } = useAssignableUsers();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('medium');
   const [dueDate, setDueDate] = useState('');
+  const [dueTime, setDueTime] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
+  const [estimatedDuration, setEstimatedDuration] = useState('');
 
   const reset = () => {
     setTitle('');
     setDescription('');
     setPriority('medium');
     setDueDate('');
+    setDueTime('');
     setAssignedTo('');
+    setEstimatedDuration('');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
+
+    let dueDateISO: string | null = null;
+    if (dueDate) {
+      const time = dueTime || '23:59';
+      dueDateISO = new Date(`${dueDate}T${time}`).toISOString();
+    }
+
     onSubmit({
       title: title.trim(),
       description: description.trim() || undefined,
       priority,
-      due_date: dueDate || null,
-      assigned_to: assignedTo || null,
+      due_date: dueDateISO,
+      assigned_to: assignedTo && assignedTo !== 'unassigned' ? assignedTo : null,
+      estimated_duration: estimatedDuration.trim() || null,
     });
     reset();
     onOpenChange(false);
   };
+
+  const canAssign = assignableUsers.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -89,27 +104,44 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTa
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="due">Due Date</Label>
-              <Input id="due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <Label>Estimated Duration</Label>
+              <Input
+                value={estimatedDuration}
+                onChange={(e) => setEstimatedDuration(e.target.value)}
+                placeholder="e.g. 2 hours"
+              />
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Assign To</Label>
-            <Select value={assignedTo} onValueChange={setAssignedTo}>
-              <SelectTrigger>
-                <SelectValue placeholder="Unassigned" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="unassigned">Unassigned</SelectItem>
-                {users?.map((user) => (
-                  <SelectItem key={user.userId} value={user.userId}>
-                    {user.displayName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="due">Due Date</Label>
+              <Input id="due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="due-time">Due Time</Label>
+              <Input id="due-time" type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
+            </div>
           </div>
+
+          {canAssign && (
+            <div className="space-y-2">
+              <Label>Assign To</Label>
+              <Select value={assignedTo} onValueChange={setAssignedTo}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Personal task (no assignment)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">Personal task</SelectItem>
+                  {assignableUsers.map((user) => (
+                    <SelectItem key={user.user_id} value={user.user_id}>
+                      {user.display_name || user.user_id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
