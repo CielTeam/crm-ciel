@@ -149,6 +149,8 @@ interface TaskDetailSheetProps {
 export function TaskDetailSheet({
   task, open, onOpenChange, assignee, creator, currentUserId, onStatusChange, onActionClick,
 }: TaskDetailSheetProps) {
+  const { data: activityLogs = [], isLoading: activityLoading } = useTaskActivity(open && task ? task.id : null);
+
   if (!task) return null;
 
   const priority = priorityConfig[task.priority] || priorityConfig.medium;
