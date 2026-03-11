@@ -222,6 +222,7 @@ export default function TasksPage() {
                     creator={task.created_by !== user?.id ? assigneeMap.get(task.created_by) || null : null}
                     onStatusChange={handleStatusChange}
                     onDelete={handleDelete}
+                    onCardClick={() => setSelectedTask(task)}
                   />
                 ))}
               </div>
