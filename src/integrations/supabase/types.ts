@@ -323,6 +323,44 @@ export type Database = {
           },
         ]
       }
+      task_activity_logs: {
+        Row: {
+          actor_id: string
+          created_at: string
+          id: string
+          new_status: string | null
+          note: string | null
+          old_status: string | null
+          task_id: string
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          id?: string
+          new_status?: string | null
+          note?: string | null
+          old_status?: string | null
+          task_id: string
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          id?: string
+          new_status?: string | null
+          note?: string | null
+          old_status?: string | null
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_activity_logs_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tasks: {
         Row: {
           actual_duration: string | null
