@@ -44,9 +44,10 @@ interface TaskCardProps {
   currentUserId: string;
   onStatusChange: (id: string, status: string, extra?: Record<string, unknown>) => void;
   onDelete: (id: string) => void;
+  onCardClick?: () => void;
 }
 
-export function TaskCard({ task, assignee, creator, currentUserId, onStatusChange, onDelete }: TaskCardProps) {
+export function TaskCard({ task, assignee, creator, currentUserId, onStatusChange, onDelete, onCardClick }: TaskCardProps) {
   const [acceptDeclineMode, setAcceptDeclineMode] = useState<'accept' | 'decline' | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [reviewMode, setReviewMode] = useState<'approve' | 'reject' | null>(null);
@@ -69,7 +70,15 @@ export function TaskCard({ task, assignee, creator, currentUserId, onStatusChang
 
   return (
     <>
-      <Card className={`border transition-colors ${task.status === 'done' || task.status === 'approved' ? 'opacity-60' : ''}`}>
+      <Card
+        className={`border transition-colors cursor-pointer hover:border-primary/40 ${task.status === 'done' || task.status === 'approved' ? 'opacity-60' : ''}`}
+        onClick={(e) => {
+          // Don't open sheet if clicking buttons/selects
+          const target = e.target as HTMLElement;
+          if (target.closest('button, [role="combobox"], [role="listbox"], [role="option"]')) return;
+          onCardClick?.();
+        }}
+      >
         <CardContent className="p-4 space-y-3">
           {/* Header row */}
           <div className="flex items-start justify-between gap-2">

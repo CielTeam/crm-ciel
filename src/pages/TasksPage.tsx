@@ -4,9 +4,13 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { TaskCard, type TaskAssignee } from '@/components/tasks/TaskCard';
+import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { AddTaskDialog } from '@/components/tasks/AddTaskDialog';
+import { AcceptDeclineDialog } from '@/components/tasks/AcceptDeclineDialog';
+import { SubmitTaskDialog } from '@/components/tasks/SubmitTaskDialog';
+import { ReviewTaskDialog } from '@/components/tasks/ReviewTaskDialog';
 import { PageError } from '@/components/PageError';
-import { useTasks, useCreateTask, useUpdateTask, useDeleteTask, type TaskTab } from '@/hooks/useTasks';
+import { useTasks, useCreateTask, useUpdateTask, useDeleteTask, type TaskTab, type Task } from '@/hooks/useTasks';
 import { useDirectoryData } from '@/hooks/useDirectoryData';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -50,6 +54,8 @@ export default function TasksPage() {
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [sheetAction, setSheetAction] = useState<'accept' | 'decline' | 'submit' | 'approve' | 'reject' | null>(null);
 
   const { data: tasks = [], isLoading, error, refetch } = useTasks(tab);
   const { data: directoryUsers } = useDirectoryData();
@@ -213,6 +219,7 @@ export default function TasksPage() {
                     creator={task.created_by !== user?.id ? assigneeMap.get(task.created_by) || null : null}
                     onStatusChange={handleStatusChange}
                     onDelete={handleDelete}
+                    onCardClick={() => setSelectedTask(task)}
                   />
                 ))}
               </div>
@@ -231,6 +238,62 @@ export default function TasksPage() {
         }}
         isLoading={createTask.isPending}
       />
+
+      <TaskDetailSheet
+        task={selectedTask}
+        open={!!selectedTask}
+        onOpenChange={(open) => { if (!open) setSelectedTask(null); }}
+        assignee={selectedTask?.assigned_to ? assigneeMap.get(selectedTask.assigned_to) || null : null}
+        creator={selectedTask ? assigneeMap.get(selectedTask.created_by) || null : null}
+        currentUserId={user?.id || ''}
+        onStatusChange={(id, status, extra) => {
+          handleStatusChange(id, status, extra);
+          setSelectedTask(null);
+        }}
+        onActionClick={(action) => setSheetAction(action)}
+      />
+
+      {/* Sheet-triggered dialogs */}
+      {selectedTask && sheetAction && (sheetAction === 'accept' || sheetAction === 'decline') && (
+        <AcceptDeclineDialog
+          open
+          onOpenChange={() => setSheetAction(null)}
+          mode={sheetAction}
+          taskTitle={selectedTask.title}
+          onConfirm={(reason) => {
+            handleStatusChange(selectedTask.id, sheetAction === 'accept' ? 'accepted' : 'declined', sheetAction === 'decline' ? { decline_reason: reason } : undefined);
+            setSheetAction(null);
+            setSelectedTask(null);
+          }}
+        />
+      )}
+
+      {selectedTask && sheetAction === 'submit' && (
+        <SubmitTaskDialog
+          open
+          onOpenChange={() => setSheetAction(null)}
+          taskTitle={selectedTask.title}
+          onConfirm={(data) => {
+            handleStatusChange(selectedTask.id, 'submitted', data);
+            setSheetAction(null);
+            setSelectedTask(null);
+          }}
+        />
+      )}
+
+      {selectedTask && sheetAction && (sheetAction === 'approve' || sheetAction === 'reject') && (
+        <ReviewTaskDialog
+          open
+          onOpenChange={() => setSheetAction(null)}
+          mode={sheetAction}
+          taskTitle={selectedTask.title}
+          onConfirm={(feedback) => {
+            handleStatusChange(selectedTask.id, sheetAction === 'approve' ? 'approved' : 'rejected', { feedback });
+            setSheetAction(null);
+            setSelectedTask(null);
+          }}
+        />
+      )}
     </div>
   );
 }
