@@ -230,3 +230,23 @@ export function useAddTaskComment() {
     },
   });
 }
+
+export function useReassignTask() {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async (payload: { task_id: string; new_assigned_to: string }) => {
+      const { data, error } = await supabase.functions.invoke('tasks', {
+        body: { action: 'reassign', actor_id: user!.id, ...payload },
+      });
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+      return data.task as Task;
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['task-activity', variables.task_id] });
+    },
+  });
+}
