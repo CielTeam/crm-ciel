@@ -3,7 +3,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import {
   Calendar, Clock, User, AlertTriangle, MessageSquare, CheckCircle2,
   XCircle, Send, ThumbsUp, ThumbsDown, ArrowRight, Circle, History, Loader2,
-  ChevronsUpDown, Check, UserRoundPlus,
+  ChevronsUpDown, Check, UserRoundPlus, Paperclip,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,9 @@ import {
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { useTaskActivity, useTaskComments, useAddTaskComment, useAssignableUsers, useReassignTask, type Task, type TaskActivityLog } from '@/hooks/useTasks';
+import { useAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/useAttachments';
+import { FileAttachmentList } from '@/components/shared/FileAttachmentList';
+import { FileUploadButton } from '@/components/shared/FileUploadButton';
 import type { TaskAssignee } from './TaskCard';
 import { toast } from 'sonner';
 
