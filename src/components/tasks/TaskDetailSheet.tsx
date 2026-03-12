@@ -165,9 +165,12 @@ export function TaskDetailSheet({
   const [reassignOpen, setReassignOpen] = useState(false);
   const { data: activityLogs = [], isLoading: activityLoading } = useTaskActivity(open && task ? task.id : null);
   const { data: comments = [], isLoading: commentsLoading } = useTaskComments(open && task ? task.id : null);
+  const { data: taskAttachments = [] } = useAttachments('task', open && task ? task.id : null);
   const addComment = useAddTaskComment();
   const { data: assignableUsers = [] } = useAssignableUsers();
   const reassignTask = useReassignTask();
+  const uploadAttachment = useUploadAttachment();
+  const deleteAttachment = useDeleteAttachment();
 
   if (!task) return null;
 
