@@ -103,6 +103,8 @@ export function useAssignableUsers() {
         user_id: string;
         display_name: string;
         avatar_url: string | null;
+        email: string | null;
+        role: string | null;
       }>;
     },
     enabled: !!user?.id,

@@ -9,6 +9,14 @@ import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from '@/components/ui/command';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { Check, ChevronsUpDown, User } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useAssignableUsers } from '@/hooks/useTasks';
 
 interface AddTaskDialogProps {
@@ -25,6 +33,16 @@ interface AddTaskDialogProps {
   isLoading?: boolean;
 }
 
+function formatRole(role: string | null): string {
+  if (!role) return '';
+  return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function getInitials(name: string | null): string {
+  if (!name) return '?';
+  return name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
 export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTaskDialogProps) {
   const { data: assignableUsers = [] } = useAssignableUsers();
   const [title, setTitle] = useState('');
@@ -34,6 +52,7 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTa
   const [dueTime, setDueTime] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
   const [estimatedDuration, setEstimatedDuration] = useState('');
+  const [assignPopoverOpen, setAssignPopoverOpen] = useState(false);
 
   const reset = () => {
     setTitle('');
@@ -68,6 +87,7 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTa
   };
 
   const canAssign = assignableUsers.length > 0;
+  const selectedUser = assignableUsers.find((u) => u.user_id === assignedTo);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -127,19 +147,82 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTa
           {canAssign && (
             <div className="space-y-2">
               <Label>Assign To</Label>
-              <Select value={assignedTo} onValueChange={setAssignedTo}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Personal task (no assignment)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unassigned">Personal task</SelectItem>
-                  {assignableUsers.map((user) => (
-                    <SelectItem key={user.user_id} value={user.user_id}>
-                      {user.display_name || user.user_id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={assignPopoverOpen} onOpenChange={setAssignPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={assignPopoverOpen}
+                    className="w-full justify-between font-normal"
+                  >
+                    {selectedUser ? (
+                      <span className="flex items-center gap-2 truncate">
+                        <Avatar className="h-5 w-5">
+                          <AvatarImage src={selectedUser.avatar_url || undefined} />
+                          <AvatarFallback className="text-[10px]">
+                            {getInitials(selectedUser.display_name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="truncate">{selectedUser.display_name}</span>
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2 text-muted-foreground">
+                        <User className="h-4 w-4" />
+                        Select user...
+                      </span>
+                    )}
+                    <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search by name or email..." />
+                    <CommandList>
+                      <CommandEmpty>No users found.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          value="__personal__"
+                          onSelect={() => {
+                            setAssignedTo('');
+                            setAssignPopoverOpen(false);
+                          }}
+                        >
+                          <User className="mr-2 h-4 w-4 text-muted-foreground" />
+                          <span>Personal task (no assignment)</span>
+                          <Check className={cn('ml-auto h-4 w-4', !assignedTo ? 'opacity-100' : 'opacity-0')} />
+                        </CommandItem>
+                        {assignableUsers.map((user) => (
+                          <CommandItem
+                            key={user.user_id}
+                            value={`${user.display_name || ''} ${user.email || ''}`}
+                            onSelect={() => {
+                              setAssignedTo(user.user_id);
+                              setAssignPopoverOpen(false);
+                            }}
+                          >
+                            <Avatar className="mr-2 h-6 w-6">
+                              <AvatarImage src={user.avatar_url || undefined} />
+                              <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                                {getInitials(user.display_name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span className="truncate text-sm font-medium">{user.display_name || user.user_id}</span>
+                              <span className="truncate text-xs text-muted-foreground">{user.email}</span>
+                            </div>
+                            {user.role && (
+                              <Badge variant="secondary" className="ml-2 text-[10px] shrink-0">
+                                {formatRole(user.role)}
+                              </Badge>
+                            )}
+                            <Check className={cn('ml-2 h-4 w-4 shrink-0', assignedTo === user.user_id ? 'opacity-100' : 'opacity-0')} />
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
           )}
 
