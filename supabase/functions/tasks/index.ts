@@ -136,14 +136,26 @@ Deno.serve(async (req) => {
     if (action === 'assignable_users') {
       const roles = await getActorRoles(adminClient, actor_id);
 
+      // Helper to enrich profiles with roles
+      async function enrichWithRoles(profiles: any[]) {
+        if (!profiles || profiles.length === 0) return [];
+        const userIds = profiles.map((p: any) => p.user_id);
+        const { data: roleRows } = await adminClient.from('user_roles')
+          .select('user_id, role')
+          .in('user_id', userIds);
+        const roleMap: Record<string, string> = {};
+        (roleRows || []).forEach((r: any) => { roleMap[r.user_id] = r.role; });
+        return profiles.map((p: any) => ({ ...p, role: roleMap[p.user_id] || null }));
+      }
+
       if (isGlobalAssigner(roles)) {
-        // Can assign to anyone
         const { data } = await adminClient.from('profiles')
-          .select('user_id, display_name, avatar_url')
+          .select('user_id, display_name, avatar_url, email')
           .is('deleted_at', null)
           .neq('user_id', actor_id)
           .order('display_name');
-        return new Response(JSON.stringify({ users: data || [] }), {
+        const enriched = await enrichWithRoles(data || []);
+        return new Response(JSON.stringify({ users: enriched }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
@@ -156,11 +168,12 @@ Deno.serve(async (req) => {
           });
         }
         const { data } = await adminClient.from('profiles')
-          .select('user_id, display_name, avatar_url')
+          .select('user_id, display_name, avatar_url, email')
           .in('user_id', memberIds)
           .is('deleted_at', null)
           .order('display_name');
-        return new Response(JSON.stringify({ users: data || [] }), {
+        const enriched = await enrichWithRoles(data || []);
+        return new Response(JSON.stringify({ users: enriched }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
