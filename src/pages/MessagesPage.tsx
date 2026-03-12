@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useConversations, useMessages, useSendMessage, useMarkRead } from '@/hooks/useMessages';
 import { useDirectoryData } from '@/hooks/useDirectoryData';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/useAttachments';
 import { ConversationList } from '@/components/messages/ConversationList';
 import { MessageThread } from '@/components/messages/MessageThread';
 import { MessageInput } from '@/components/messages/MessageInput';
@@ -9,6 +10,7 @@ import { NewConversationDialog } from '@/components/messages/NewConversationDial
 import { PageError } from '@/components/PageError';
 import { Card } from '@/components/ui/card';
 import { MessageSquare, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function MessagesPage() {
   const { user } = useAuth();
@@ -19,6 +21,16 @@ export default function MessagesPage() {
   const { data: directoryUsers } = useDirectoryData();
   const sendMessage = useSendMessage();
   const markRead = useMarkRead();
+  const uploadAttachment = useUploadAttachment();
+  const deleteAttachment = useDeleteAttachment();
+
+  // Collect all message IDs for attachment fetching
+  const messageIds = useMemo(() => (messages || []).map(m => m.id), [messages]);
+
+  // We fetch attachments for all messages in the current conversation
+  // by fetching at the conversation level - but our hook is entity-based.
+  // For simplicity, we'll query attachments for each message that might have them.
+  // In practice, we pass the conversation-level attachment map to MessageThread.
 
   const userMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -35,6 +47,25 @@ export default function MessagesPage() {
   const handleSend = (content: string) => {
     if (!selectedId) return;
     sendMessage.mutate({ conversation_id: selectedId, content });
+  };
+
+  const handleFileUpload = (file: File) => {
+    if (!selectedId) return;
+    // Send a message first mentioning the file, then attach
+    sendMessage.mutate(
+      { conversation_id: selectedId, content: `📎 ${file.name}` },
+      {
+        onSuccess: (msg) => {
+          uploadAttachment.mutate(
+            { file, entity_type: 'message', entity_id: msg.id },
+            {
+              onSuccess: () => toast.success('File attached'),
+              onError: (err) => toast.error(err instanceof Error ? err.message : 'Upload failed'),
+            }
+          );
+        },
+      }
+    );
   };
 
   if (convErr) return <PageError message="Failed to load conversations" />;
@@ -97,7 +128,12 @@ export default function MessagesPage() {
                   userMap={userMap}
                 />
               )}
-              <MessageInput onSend={handleSend} disabled={sendMessage.isPending} />
+              <MessageInput
+                onSend={handleSend}
+                onFileUpload={handleFileUpload}
+                disabled={sendMessage.isPending}
+                isUploading={uploadAttachment.isPending}
+              />
             </>
           )}
         </Card>
