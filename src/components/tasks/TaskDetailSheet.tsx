@@ -210,6 +210,69 @@ export function TaskDetailSheet({
             {!isPersonal && <PersonBadge person={assignee} label="Assigned to" />}
           </div>
 
+          {/* Reassign */}
+          {canReassign && (
+            <div>
+              <Popover open={reassignOpen} onOpenChange={setReassignOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="w-full justify-start gap-2">
+                    <UserRoundPlus className="h-3.5 w-3.5" />
+                    Reassign Task
+                    <ChevronsUpDown className="ml-auto h-3.5 w-3.5 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search by name or email..." />
+                    <CommandList>
+                      <CommandEmpty>No users found.</CommandEmpty>
+                      <CommandGroup>
+                        {assignableUsers
+                          .filter((u) => u.user_id !== task.assigned_to)
+                          .map((user) => {
+                            const initials = user.display_name
+                              ?.split(' ')
+                              .map((n) => n[0])
+                              .join('')
+                              .slice(0, 2)
+                              .toUpperCase() || '?';
+                            return (
+                              <CommandItem
+                                key={user.user_id}
+                                value={`${user.display_name || ''} ${user.email || ''}`}
+                                onSelect={() => {
+                                  reassignTask.mutate(
+                                    { task_id: task.id, new_assigned_to: user.user_id },
+                                    {
+                                      onSuccess: () => {
+                                        toast.success(`Task reassigned to ${user.display_name}`);
+                                        setReassignOpen(false);
+                                        onOpenChange(false);
+                                      },
+                                      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to reassign'),
+                                    }
+                                  );
+                                }}
+                              >
+                                <Avatar className="mr-2 h-6 w-6">
+                                  <AvatarImage src={user.avatar_url || undefined} />
+                                  <AvatarFallback className="text-[10px] bg-primary/10 text-primary">{initials}</AvatarFallback>
+                                </Avatar>
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span className="truncate text-sm font-medium">{user.display_name || user.user_id}</span>
+                                  <span className="truncate text-xs text-muted-foreground">{user.email}</span>
+                                </div>
+                              </CommandItem>
+                            );
+                          })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+          )}
+
           <Separator />
 
           {/* Metadata Grid */}
