@@ -159,9 +159,12 @@ export function TaskDetailSheet({
   task, open, onOpenChange, assignee, creator, currentUserId, onStatusChange, onActionClick,
 }: TaskDetailSheetProps) {
   const [commentText, setCommentText] = useState('');
+  const [reassignOpen, setReassignOpen] = useState(false);
   const { data: activityLogs = [], isLoading: activityLoading } = useTaskActivity(open && task ? task.id : null);
   const { data: comments = [], isLoading: commentsLoading } = useTaskComments(open && task ? task.id : null);
   const addComment = useAddTaskComment();
+  const { data: assignableUsers = [] } = useAssignableUsers();
+  const reassignTask = useReassignTask();
 
   if (!task) return null;
 
@@ -172,6 +175,7 @@ export function TaskDetailSheet({
   const isCreator = task.created_by === currentUserId;
   const isAssignee = task.assigned_to === currentUserId;
   const isPersonal = task.task_type === 'personal';
+  const canReassign = isCreator && !isPersonal && assignableUsers.length > 0;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
