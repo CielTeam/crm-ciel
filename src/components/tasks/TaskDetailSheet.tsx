@@ -3,7 +3,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import {
   Calendar, Clock, User, AlertTriangle, MessageSquare, CheckCircle2,
   XCircle, Send, ThumbsUp, ThumbsDown, ArrowRight, Circle, History, Loader2,
-  ChevronsUpDown, Check, UserRoundPlus,
+  ChevronsUpDown, Check, UserRoundPlus, Paperclip,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,9 @@ import {
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { useTaskActivity, useTaskComments, useAddTaskComment, useAssignableUsers, useReassignTask, type Task, type TaskActivityLog } from '@/hooks/useTasks';
+import { useAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/useAttachments';
+import { FileAttachmentList } from '@/components/shared/FileAttachmentList';
+import { FileUploadButton } from '@/components/shared/FileUploadButton';
 import type { TaskAssignee } from './TaskCard';
 import { toast } from 'sonner';
 
@@ -162,9 +165,12 @@ export function TaskDetailSheet({
   const [reassignOpen, setReassignOpen] = useState(false);
   const { data: activityLogs = [], isLoading: activityLoading } = useTaskActivity(open && task ? task.id : null);
   const { data: comments = [], isLoading: commentsLoading } = useTaskComments(open && task ? task.id : null);
+  const { data: taskAttachments = [] } = useAttachments('task', open && task ? task.id : null);
   const addComment = useAddTaskComment();
   const { data: assignableUsers = [] } = useAssignableUsers();
   const reassignTask = useReassignTask();
+  const uploadAttachment = useUploadAttachment();
+  const deleteAttachment = useDeleteAttachment();
 
   if (!task) return null;
 
@@ -290,6 +296,44 @@ export function TaskDetailSheet({
             {task.completed_at && (
               <MetaItem icon={CheckCircle2} label="Completed" value={format(new Date(task.completed_at), 'MMM d, yyyy h:mm a')} />
             )}
+          </div>
+
+          {/* Attachments */}
+          <Separator />
+          <div>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
+              <Paperclip className="h-3 w-3" /> Attachments
+            </h4>
+            {taskAttachments.length > 0 ? (
+              <FileAttachmentList
+                attachments={taskAttachments}
+                currentUserId={currentUserId}
+                onDelete={(att) => {
+                  deleteAttachment.mutate(
+                    { attachment_id: att.id, entity_type: 'task', entity_id: task.id },
+                    {
+                      onSuccess: () => toast.success('Attachment removed'),
+                      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to remove'),
+                    }
+                  );
+                }}
+                isDeleting={deleteAttachment.isPending}
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground italic mb-2">No attachments yet.</p>
+            )}
+            <FileUploadButton
+              onFileSelected={(file) => {
+                uploadAttachment.mutate(
+                  { file, entity_type: 'task', entity_id: task.id },
+                  {
+                    onSuccess: () => toast.success('File attached'),
+                    onError: (err) => toast.error(err instanceof Error ? err.message : 'Upload failed'),
+                  }
+                );
+              }}
+              isUploading={uploadAttachment.isPending}
+            />
           </div>
 
           <Separator />

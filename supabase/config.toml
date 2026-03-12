@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.dashboard-stats]
 verify_jwt = false
+
+[functions.attachments]
+verify_jwt = false
