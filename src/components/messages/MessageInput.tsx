@@ -2,13 +2,16 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Send } from 'lucide-react';
+import { FileUploadButton } from '@/components/shared/FileUploadButton';
 
 interface Props {
   onSend: (content: string) => void;
+  onFileUpload?: (file: File) => void;
   disabled?: boolean;
+  isUploading?: boolean;
 }
 
-export function MessageInput({ onSend, disabled }: Props) {
+export function MessageInput({ onSend, onFileUpload, disabled, isUploading }: Props) {
   const [value, setValue] = useState('');
 
   const handleSubmit = () => {
@@ -36,6 +39,14 @@ export function MessageInput({ onSend, disabled }: Props) {
         className="resize-none min-h-[40px] max-h-[120px]"
         disabled={disabled}
       />
+      {onFileUpload && (
+        <FileUploadButton
+          onFileSelected={onFileUpload}
+          isUploading={isUploading}
+          variant="ghost"
+          size="icon"
+        />
+      )}
       <Button size="icon" onClick={handleSubmit} disabled={disabled || !value.trim()}>
         <Send className="h-4 w-4" />
       </Button>

@@ -298,6 +298,44 @@ export function TaskDetailSheet({
             )}
           </div>
 
+          {/* Attachments */}
+          <Separator />
+          <div>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
+              <Paperclip className="h-3 w-3" /> Attachments
+            </h4>
+            {taskAttachments.length > 0 ? (
+              <FileAttachmentList
+                attachments={taskAttachments}
+                currentUserId={currentUserId}
+                onDelete={(att) => {
+                  deleteAttachment.mutate(
+                    { attachment_id: att.id, entity_type: 'task', entity_id: task.id },
+                    {
+                      onSuccess: () => toast.success('Attachment removed'),
+                      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to remove'),
+                    }
+                  );
+                }}
+                isDeleting={deleteAttachment.isPending}
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground italic mb-2">No attachments yet.</p>
+            )}
+            <FileUploadButton
+              onFileSelected={(file) => {
+                uploadAttachment.mutate(
+                  { file, entity_type: 'task', entity_id: task.id },
+                  {
+                    onSuccess: () => toast.success('File attached'),
+                    onError: (err) => toast.error(err instanceof Error ? err.message : 'Upload failed'),
+                  }
+                );
+              }}
+              isUploading={uploadAttachment.isPending}
+            />
+          </div>
+
           <Separator />
 
           {/* Status Timeline */}
