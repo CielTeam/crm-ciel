@@ -587,6 +587,127 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ─── REASSIGN ────────────────────────────────────────────
+    if (action === 'reassign') {
+      const { task_id, new_assigned_to } = payload;
+      if (!task_id || !new_assigned_to) {
+        return new Response(JSON.stringify({ error: 'task_id and new_assigned_to are required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Fetch existing task
+      const { data: existing } = await adminClient.from('tasks')
+        .select('*')
+        .eq('id', task_id)
+        .single();
+
+      if (!existing) {
+        return new Response(JSON.stringify({ error: 'Task not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Only the creator can reassign
+      if (existing.created_by !== actor_id) {
+        return new Response(JSON.stringify({ error: 'Only the task creator can reassign' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Cannot reassign to same person
+      if (existing.assigned_to === new_assigned_to) {
+        return new Response(JSON.stringify({ error: 'Task is already assigned to this user' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Validate assignment permissions
+      const roles = await getActorRoles(adminClient, actor_id);
+      if (!isGlobalAssigner(roles)) {
+        if (isLead(roles)) {
+          const memberIds = await getActorTeamMemberIds(adminClient, actor_id);
+          if (!memberIds.includes(new_assigned_to)) {
+            return new Response(JSON.stringify({ error: 'You can only assign tasks to your team members' }), {
+              status: 403,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        } else {
+          return new Response(JSON.stringify({ error: 'You do not have permission to reassign tasks' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
+      const oldAssignedTo = existing.assigned_to;
+
+      // Update task: new assignee, reset status to pending_accept
+      const { data: updated, error } = await adminClient.from('tasks')
+        .update({
+          assigned_to: new_assigned_to,
+          status: 'pending_accept',
+          completed_at: null,
+          feedback: null,
+          decline_reason: null,
+          challenges: null,
+          actual_duration: null,
+        })
+        .eq('id', task_id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Resolve names
+      const userIds = [actor_id, new_assigned_to, oldAssignedTo].filter(Boolean);
+      const { data: profiles } = await adminClient.from('profiles')
+        .select('user_id, display_name')
+        .in('user_id', userIds);
+      const nameMap: Record<string, string> = {};
+      (profiles || []).forEach((p: any) => { nameMap[p.user_id] = p.display_name || 'Unknown'; });
+
+      const actorName = nameMap[actor_id] || 'Someone';
+      const newAssigneeName = nameMap[new_assigned_to] || 'Unknown';
+
+      // Log activity
+      await logActivity(
+        adminClient, task_id, actor_id, existing.status, 'pending_accept',
+        `Reassigned from ${oldAssignedTo ? (nameMap[oldAssignedTo] || 'Unknown') : 'unassigned'} to ${newAssigneeName}`
+      );
+
+      // Notify new assignee
+      await adminClient.from('notifications').insert({
+        user_id: new_assigned_to,
+        type: 'task_assigned',
+        title: `${actorName} assigned you a task: ${existing.title}`,
+        body: existing.description || null,
+        reference_id: task_id,
+        reference_type: 'task',
+      });
+
+      // Notify old assignee (if different)
+      if (oldAssignedTo && oldAssignedTo !== new_assigned_to) {
+        await adminClient.from('notifications').insert({
+          user_id: oldAssignedTo,
+          type: 'task_update',
+          title: `${actorName} reassigned task "${existing.title}" to ${newAssigneeName}`,
+          body: null,
+          reference_id: task_id,
+          reference_type: 'task',
+        });
+      }
+
+      return new Response(JSON.stringify({ task: updated }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({ error: 'Unknown action' }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

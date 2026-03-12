@@ -3,6 +3,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import {
   Calendar, Clock, User, AlertTriangle, MessageSquare, CheckCircle2,
   XCircle, Send, ThumbsUp, ThumbsDown, ArrowRight, Circle, History, Loader2,
+  ChevronsUpDown, Check, UserRoundPlus,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,12 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
-import { useTaskActivity, useTaskComments, useAddTaskComment, type Task, type TaskActivityLog } from '@/hooks/useTasks';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from '@/components/ui/command';
+import { cn } from '@/lib/utils';
+import { useTaskActivity, useTaskComments, useAddTaskComment, useAssignableUsers, useReassignTask, type Task, type TaskActivityLog } from '@/hooks/useTasks';
 import type { TaskAssignee } from './TaskCard';
 import { toast } from 'sonner';
 
@@ -153,9 +159,12 @@ export function TaskDetailSheet({
   task, open, onOpenChange, assignee, creator, currentUserId, onStatusChange, onActionClick,
 }: TaskDetailSheetProps) {
   const [commentText, setCommentText] = useState('');
+  const [reassignOpen, setReassignOpen] = useState(false);
   const { data: activityLogs = [], isLoading: activityLoading } = useTaskActivity(open && task ? task.id : null);
   const { data: comments = [], isLoading: commentsLoading } = useTaskComments(open && task ? task.id : null);
   const addComment = useAddTaskComment();
+  const { data: assignableUsers = [] } = useAssignableUsers();
+  const reassignTask = useReassignTask();
 
   if (!task) return null;
 
@@ -166,6 +175,7 @@ export function TaskDetailSheet({
   const isCreator = task.created_by === currentUserId;
   const isAssignee = task.assigned_to === currentUserId;
   const isPersonal = task.task_type === 'personal';
+  const canReassign = isCreator && !isPersonal && assignableUsers.length > 0;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -199,6 +209,69 @@ export function TaskDetailSheet({
             <PersonBadge person={creator} label="Created by" />
             {!isPersonal && <PersonBadge person={assignee} label="Assigned to" />}
           </div>
+
+          {/* Reassign */}
+          {canReassign && (
+            <div>
+              <Popover open={reassignOpen} onOpenChange={setReassignOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="w-full justify-start gap-2">
+                    <UserRoundPlus className="h-3.5 w-3.5" />
+                    Reassign Task
+                    <ChevronsUpDown className="ml-auto h-3.5 w-3.5 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search by name or email..." />
+                    <CommandList>
+                      <CommandEmpty>No users found.</CommandEmpty>
+                      <CommandGroup>
+                        {assignableUsers
+                          .filter((u) => u.user_id !== task.assigned_to)
+                          .map((user) => {
+                            const initials = user.display_name
+                              ?.split(' ')
+                              .map((n) => n[0])
+                              .join('')
+                              .slice(0, 2)
+                              .toUpperCase() || '?';
+                            return (
+                              <CommandItem
+                                key={user.user_id}
+                                value={`${user.display_name || ''} ${user.email || ''}`}
+                                onSelect={() => {
+                                  reassignTask.mutate(
+                                    { task_id: task.id, new_assigned_to: user.user_id },
+                                    {
+                                      onSuccess: () => {
+                                        toast.success(`Task reassigned to ${user.display_name}`);
+                                        setReassignOpen(false);
+                                        onOpenChange(false);
+                                      },
+                                      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to reassign'),
+                                    }
+                                  );
+                                }}
+                              >
+                                <Avatar className="mr-2 h-6 w-6">
+                                  <AvatarImage src={user.avatar_url || undefined} />
+                                  <AvatarFallback className="text-[10px] bg-primary/10 text-primary">{initials}</AvatarFallback>
+                                </Avatar>
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span className="truncate text-sm font-medium">{user.display_name || user.user_id}</span>
+                                  <span className="truncate text-xs text-muted-foreground">{user.email}</span>
+                                </div>
+                              </CommandItem>
+                            );
+                          })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+          )}
 
           <Separator />
 
