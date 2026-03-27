@@ -52,7 +52,7 @@ export function useTasksRealtime() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'tasks' },
         (payload) => {
-          const row = (payload.new || payload.old) as any;
+          const row = (payload.new || payload.old) as unknown;
           // Only invalidate if this user is involved
           if (
             row &&

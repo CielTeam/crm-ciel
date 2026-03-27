@@ -42,10 +42,10 @@ export function useAdminUsers() {
       if (data?.error) throw new Error(data.error);
 
       const { profiles, roles, teams } = data;
-      const roleMap = new Map((roles || []).map((r: any) => [r.user_id, r.role as AppRole]));
-      const teamMap = new Map((teams || []).map((t: any) => [t.id, t.name as string]));
+      const roleMap = new Map((roles || []).map((r: unknown) => [r.user_id, r.role as AppRole]));
+      const teamMap = new Map((teams || []).map((t: unknown) => [t.id, t.name as string]));
 
-      return (profiles || []).map((p: any) => {
+      return (profiles || []).map((p: unknown) => {
         const role = (roleMap.get(p.user_id) || null) as AppRole | null;
         return {
           id: p.id,
@@ -79,11 +79,11 @@ export function useAdminTeams() {
       if (data?.error) throw new Error(data.error);
 
       const { teams, members, profiles } = data;
-      const profileMap = new Map(profiles?.map((p: any) => [p.user_id, p.display_name]));
+      const profileMap = new Map(profiles?.map((p: unknown) => [p.user_id, p.display_name]));
       const memberCounts = new Map<string, number>();
-      members?.forEach((m: any) => memberCounts.set(m.team_id, (memberCounts.get(m.team_id) || 0) + 1));
+      members?.forEach((m: unknown) => memberCounts.set(m.team_id, (memberCounts.get(m.team_id) || 0) + 1));
 
-      return (teams || []).map((t: any) => ({
+      return (teams || []).map((t: unknown) => ({
         id: t.id,
         name: t.name,
         department: t.department,
