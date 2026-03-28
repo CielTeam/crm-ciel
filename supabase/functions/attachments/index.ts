@@ -2,7 +2,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
 const ALLOWED_EXTENSIONS = ['.zip', '.rar'];
@@ -12,12 +13,82 @@ const ALLOWED_MIME_TYPES = [
   'application/x-zip-compressed',
   'application/x-rar-compressed',
   'application/vnd.rar',
-  'application/octet-stream', // fallback for .rar
-];
+  'application/octet-stream',
+] as const;
+
+type AttachmentAction = 'upload' | 'list' | 'delete';
+type EntityType = 'task' | 'comment' | 'message';
+
+interface AttachmentRequest {
+  action?: AttachmentAction;
+  actor_id?: string;
+  file_name?: string;
+  file_base64?: string;
+  entity_type?: EntityType;
+  entity_id?: string;
+  attachment_id?: string;
+}
+
+interface TaskPermissionRow {
+  created_by: string;
+  assigned_to: string | null;
+}
+
+interface CommentRow {
+  task_id: string;
+}
+
+interface MessageRow {
+  conversation_id: string;
+}
+
+interface ConversationMemberRow {
+  id: string;
+}
+
+interface AttachmentRow {
+  id: string;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+  storage_path: string;
+  uploaded_by: string;
+  entity_type: EntityType;
+  entity_id: string;
+  created_at?: string;
+  deleted_at?: string | null;
+}
+
+function jsonResponse(body: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return 'Internal server error';
+}
 
 function getExtension(fileName: string): string {
   const idx = fileName.lastIndexOf('.');
   return idx >= 0 ? fileName.substring(idx).toLowerCase() : '';
+}
+
+function decodeBase64ToBytes(base64: string): Uint8Array {
+  const binaryStr = atob(base64);
+  const bytes = new Uint8Array(binaryStr.length);
+
+  for (let i = 0; i < binaryStr.length; i += 1) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+
+  return bytes;
+}
+
+function getContentTypeFromExtension(ext: string): string {
+  return ext === '.zip' ? 'application/zip' : 'application/x-rar-compressed';
 }
 
 Deno.serve(async (req) => {
@@ -26,124 +97,131 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const admin = createClient(supabaseUrl, serviceRoleKey);
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-    const body = await req.json();
-    const { action, actor_id, ...payload } = body;
-
-    if (!actor_id) {
-      return new Response(JSON.stringify({ error: 'Missing actor_id' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (!supabaseUrl || !serviceRoleKey) {
+      return jsonResponse({ error: 'Missing required environment variables' }, 500);
     }
 
-    // ─── UPLOAD ──────────────────────────────────────────────
+    const admin = createClient(supabaseUrl, serviceRoleKey);
+    const body = (await req.json()) as AttachmentRequest;
+    const { action, actor_id } = body;
+
+    if (!actor_id) {
+      return jsonResponse({ error: 'Missing actor_id' }, 400);
+    }
+
+    if (!action) {
+      return jsonResponse({ error: 'Missing action' }, 400);
+    }
+
     if (action === 'upload') {
-      const { file_name, file_base64, entity_type, entity_id } = payload;
+      const { file_name, file_base64, entity_type, entity_id } = body;
 
       if (!file_name || !file_base64 || !entity_type || !entity_id) {
-        return new Response(JSON.stringify({ error: 'file_name, file_base64, entity_type, and entity_id are required' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return jsonResponse(
+          { error: 'file_name, file_base64, entity_type, and entity_id are required' },
+          400,
+        );
       }
 
-      // Validate entity_type
       if (!['task', 'comment', 'message'].includes(entity_type)) {
-        return new Response(JSON.stringify({ error: 'entity_type must be task, comment, or message' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return jsonResponse(
+          { error: 'entity_type must be task, comment, or message' },
+          400,
+        );
       }
 
-      // Validate file extension
       const ext = getExtension(file_name);
       if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        return new Response(JSON.stringify({ error: 'Only .zip and .rar files are allowed' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return jsonResponse({ error: 'Only .zip and .rar files are allowed' }, 400);
       }
 
-      // Decode base64
-      const binaryStr = atob(file_base64);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
+      const bytes = decodeBase64ToBytes(file_base64);
 
-      // Validate file size
       if (bytes.length > MAX_FILE_SIZE) {
-        return new Response(JSON.stringify({ error: 'File size exceeds 10MB limit' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return jsonResponse({ error: 'File size exceeds 10MB limit' }, 400);
       }
 
-      // Validate access based on entity type
+      const contentType = getContentTypeFromExtension(ext);
+      if (!ALLOWED_MIME_TYPES.includes(contentType as (typeof ALLOWED_MIME_TYPES)[number])) {
+        return jsonResponse({ error: 'Unsupported content type' }, 400);
+      }
+
       if (entity_type === 'task') {
-        const { data: task } = await admin.from('tasks')
+        const { data: task, error: taskError } = await admin
+          .from('tasks')
           .select('created_by, assigned_to')
           .eq('id', entity_id)
-          .single();
+          .single<TaskPermissionRow>();
+
+        if (taskError) {
+          throw taskError;
+        }
+
         if (!task || (task.created_by !== actor_id && task.assigned_to !== actor_id)) {
-          return new Response(JSON.stringify({ error: 'Forbidden' }), {
-            status: 403,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return jsonResponse({ error: 'Forbidden' }, 403);
         }
       } else if (entity_type === 'comment') {
-        // Comments belong to tasks; verify via task_comments
-        const { data: comment } = await admin.from('task_comments')
+        const { data: comment, error: commentError } = await admin
+          .from('task_comments')
           .select('task_id')
           .eq('id', entity_id)
-          .single();
-        if (!comment) {
-          return new Response(JSON.stringify({ error: 'Comment not found' }), {
-            status: 404,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          .single<CommentRow>();
+
+        if (commentError) {
+          if ('code' in commentError && commentError.code === 'PGRST116') {
+            return jsonResponse({ error: 'Comment not found' }, 404);
+          }
+          throw commentError;
         }
-        const { data: task } = await admin.from('tasks')
+
+        const { data: task, error: taskError } = await admin
+          .from('tasks')
           .select('created_by, assigned_to')
           .eq('id', comment.task_id)
-          .single();
+          .single<TaskPermissionRow>();
+
+        if (taskError) {
+          throw taskError;
+        }
+
         if (!task || (task.created_by !== actor_id && task.assigned_to !== actor_id)) {
-          return new Response(JSON.stringify({ error: 'Forbidden' }), {
-            status: 403,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return jsonResponse({ error: 'Forbidden' }, 403);
         }
       } else if (entity_type === 'message') {
-        // For messages, check conversation membership via the message's conversation
-        const { data: msg } = await admin.from('messages')
+        const { data: msg, error: messageError } = await admin
+          .from('messages')
           .select('conversation_id')
           .eq('id', entity_id)
-          .single();
+          .maybeSingle<MessageRow>();
+
+        if (messageError) {
+          throw messageError;
+        }
+
         if (msg) {
-          const { data: member } = await admin.from('conversation_members')
+          const { data: member, error: memberError } = await admin
+            .from('conversation_members')
             .select('id')
             .eq('conversation_id', msg.conversation_id)
             .eq('user_id', actor_id)
-            .maybeSingle();
+            .maybeSingle<ConversationMemberRow>();
+
+          if (memberError) {
+            throw memberError;
+          }
+
           if (!member) {
-            return new Response(JSON.stringify({ error: 'Forbidden' }), {
-              status: 403,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            return jsonResponse({ error: 'Forbidden' }, 403);
           }
         }
-        // If message doesn't exist yet (uploading before sending), allow it
       }
 
-      // Upload to storage
       const timestamp = Date.now();
       const sanitizedName = file_name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const storagePath = `${entity_type}/${entity_id}/${timestamp}_${sanitizedName}`;
-      const contentType = ext === '.zip' ? 'application/zip' : 'application/x-rar-compressed';
 
       const { error: uploadError } = await admin.storage
         .from('attachments')
@@ -152,134 +230,147 @@ Deno.serve(async (req) => {
           upsert: false,
         });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        throw uploadError;
+      }
 
-      // Record metadata
-      const { data: attachment, error: insertError } = await admin.from('attachments').insert({
-        file_name: file_name.trim(),
-        file_size: bytes.length,
-        content_type: contentType,
-        storage_path: storagePath,
-        uploaded_by: actor_id,
-        entity_type,
-        entity_id,
-      }).select().single();
+      const { data: attachment, error: insertError } = await admin
+        .from('attachments')
+        .insert({
+          file_name: file_name.trim(),
+          file_size: bytes.length,
+          content_type: contentType,
+          storage_path: storagePath,
+          uploaded_by: actor_id,
+          entity_type,
+          entity_id,
+        })
+        .select()
+        .single<AttachmentRow>();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        throw insertError;
+      }
 
-      // Log activity for task attachments
       if (entity_type === 'task') {
-        await admin.from('task_activity_logs').insert({
+        const { error: activityError } = await admin.from('task_activity_logs').insert({
           task_id: entity_id,
           actor_id,
           old_status: null,
           new_status: null,
           note: `Attached file: ${file_name}`,
         });
+
+        if (activityError) {
+          throw activityError;
+        }
       }
 
-      return new Response(JSON.stringify({ attachment }), {
-        status: 201,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ attachment }, 201);
     }
 
-    // ─── LIST ────────────────────────────────────────────────
     if (action === 'list') {
-      const { entity_type, entity_id } = payload;
+      const { entity_type, entity_id } = body;
 
       if (!entity_type || !entity_id) {
-        return new Response(JSON.stringify({ error: 'entity_type and entity_id are required' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return jsonResponse({ error: 'entity_type and entity_id are required' }, 400);
       }
 
-      const { data, error } = await admin.from('attachments')
+      const { data, error } = await admin
+        .from('attachments')
         .select('*')
         .eq('entity_type', entity_type)
         .eq('entity_id', entity_id)
         .is('deleted_at', null)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
-
-      // Build public URLs
-      const enriched = (data || []).map((a: any) => {
-        const { data: urlData } = admin.storage.from('attachments').getPublicUrl(a.storage_path);
-        return { ...a, url: urlData.publicUrl };
-      });
-
-      return new Response(JSON.stringify({ attachments: enriched }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // ─── DELETE ──────────────────────────────────────────────
-    if (action === 'delete') {
-      const { attachment_id } = payload;
-
-      if (!attachment_id) {
-        return new Response(JSON.stringify({ error: 'attachment_id is required' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+      if (error) {
+        throw error;
       }
 
-      const { data: attachment } = await admin.from('attachments')
+      const attachments = ((data ?? []) as AttachmentRow[]).map((attachment) => {
+        const { data: urlData } = admin.storage
+          .from('attachments')
+          .getPublicUrl(attachment.storage_path);
+
+        return {
+          ...attachment,
+          url: urlData.publicUrl,
+        };
+      });
+
+      return jsonResponse({ attachments });
+    }
+
+    if (action === 'delete') {
+      const { attachment_id } = body;
+
+      if (!attachment_id) {
+        return jsonResponse({ error: 'attachment_id is required' }, 400);
+      }
+
+      const { data: attachment, error: attachmentError } = await admin
+        .from('attachments')
         .select('*')
         .eq('id', attachment_id)
         .is('deleted_at', null)
-        .single();
+        .single<AttachmentRow>();
+
+      if (attachmentError) {
+        if ('code' in attachmentError && attachmentError.code === 'PGRST116') {
+          return jsonResponse({ error: 'Attachment not found' }, 404);
+        }
+        throw attachmentError;
+      }
 
       if (!attachment) {
-        return new Response(JSON.stringify({ error: 'Attachment not found' }), {
-          status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return jsonResponse({ error: 'Attachment not found' }, 404);
       }
 
-      // Only uploader can delete
       if (attachment.uploaded_by !== actor_id) {
-        return new Response(JSON.stringify({ error: 'Only the uploader can delete this attachment' }), {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return jsonResponse(
+          { error: 'Only the uploader can delete this attachment' },
+          403,
+        );
       }
 
-      // Soft delete metadata
-      await admin.from('attachments')
+      const { error: softDeleteError } = await admin
+        .from('attachments')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', attachment_id);
 
-      // Delete from storage
-      await admin.storage.from('attachments').remove([attachment.storage_path]);
+      if (softDeleteError) {
+        throw softDeleteError;
+      }
 
-      // Log activity for task attachments
+      const { error: storageRemoveError } = await admin.storage
+        .from('attachments')
+        .remove([attachment.storage_path]);
+
+      if (storageRemoveError) {
+        throw storageRemoveError;
+      }
+
       if (attachment.entity_type === 'task') {
-        await admin.from('task_activity_logs').insert({
+        const { error: activityError } = await admin.from('task_activity_logs').insert({
           task_id: attachment.entity_id,
           actor_id,
           old_status: null,
           new_status: null,
           note: `Removed file: ${attachment.file_name}`,
         });
+
+        if (activityError) {
+          throw activityError;
+        }
       }
 
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ success: true });
     }
 
-    return new Response(JSON.stringify({ error: 'Unknown action' }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  } catch (err) {
+    return jsonResponse({ error: 'Unknown action' }, 400);
+  } catch (err: unknown) {
     console.error('attachments error:', err);
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ error: getErrorMessage(err) }, 500);
   }
 });

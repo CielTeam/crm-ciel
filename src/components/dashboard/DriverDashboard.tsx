@@ -1,10 +1,16 @@
-import { CheckSquare, Truck, Clock, CheckCircle, Bell } from 'lucide-react';
+import { CheckSquare, Truck, Clock, CheckCircle, Bell, Calendar, MessageSquare, Palmtree } from 'lucide-react';
 import { StatCard } from './StatCard';
 import { QuickAccess } from './QuickAccess';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, MessageSquare, Palmtree } from 'lucide-react';
 import type { DashboardStats } from '@/hooks/useDashboardStats';
+
+type DriverTask = {
+  id: string;
+  title: string;
+  status: string;
+  due_date?: string | null;
+};
 
 const driverLinks = [
   { title: 'Calendar', icon: Calendar, path: '/calendar', color: 'text-info' },
@@ -24,8 +30,10 @@ export function DriverDashboard({ stats }: { stats: DashboardStats }) {
     { label: 'Assigned Tasks', value: stats.assignedTasks ?? 0, icon: Truck, iconColor: 'text-primary' },
     { label: 'In Progress', value: stats.inProgress ?? 0, icon: Clock, iconColor: 'text-warning' },
     { label: 'Completed Today', value: stats.completedToday ?? 0, icon: CheckCircle, iconColor: 'text-success' },
-    { label: 'Unread Notifications', value: stats.unreadMessages, icon: Bell, iconColor: 'text-info' },
+    { label: 'Unread Notifications', value: stats.unreadMessages ?? 0, icon: Bell, iconColor: 'text-info' },
   ];
+
+  const tasks = (stats.driverTasks ?? []) as DriverTask[];
 
   return (
     <div className="space-y-6">
@@ -38,25 +46,49 @@ export function DriverDashboard({ stats }: { stats: DashboardStats }) {
       {/* Driver task board */}
       <Card className="border">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-foreground">Task Board</CardTitle>
+          <CardTitle className="text-sm font-semibold text-foreground">
+            Task Board
+          </CardTitle>
         </CardHeader>
+
         <CardContent className="space-y-3">
-          {(stats.driverTasks || []).length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">No tasks assigned</p>
+          {tasks.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              No tasks assigned
+            </p>
           ) : (
-            (stats.driverTasks || []).map((t: any) => {
+            tasks.map((t) => {
               const sf = statusFlow[t.status] || statusFlow.todo;
+
               return (
-                <div key={t.id} className="flex items-center justify-between p-3 rounded-md border bg-background hover:bg-muted/50 transition-colors">
+                <div
+                  key={t.id}
+                  className="flex items-center justify-between p-3 rounded-md border bg-background hover:bg-muted/50 transition-colors"
+                >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{t.title}</p>
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {t.title}
+                    </p>
+
                     {t.due_date && (
                       <p className="text-xs text-muted-foreground">
-                        Due {new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        Due{' '}
+                        {new Date(t.due_date).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
                       </p>
                     )}
                   </div>
-                  <Badge variant="outline" className={`text-[10px] shrink-0 ${sf.color}`}>{sf.label}</Badge>
+
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] shrink-0 ${sf.color}`}
+                  >
+                    {sf.label}
+                  </Badge>
                 </div>
               );
             })
