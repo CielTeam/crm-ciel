@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
 
     // Get user roles
     const { data: userRoles } = await sb.from('user_roles').select('role').eq('user_id', actor_id);
-    const roles = (userRoles || []).map((r: unknown) => r.role);
+    const roles = (userRoles || []).map((r: { role: string }) => r.role);
     const tier = getTier(roles);
 
     // Get user's team info
