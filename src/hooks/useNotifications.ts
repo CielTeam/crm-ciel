@@ -62,12 +62,12 @@ export function useNotificationsRealtime() {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          const row = payload.new as unknown;
+          const row = payload.new as Notification | null;
           qc.invalidateQueries({ queryKey: ['notifications'] });
           qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
 
           const isUrgent = row?.type === 'task_urgent' ||
-            (row?.title && (row.title as string).toLowerCase().includes('urgent'));
+            (row?.title && row.title.toLowerCase().includes('urgent'));
 
           // Play sound
           playNotificationSound(isUrgent);

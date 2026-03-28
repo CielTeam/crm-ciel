@@ -76,7 +76,7 @@ async function logActivity(
   newStatus: string | null,
   note?: string | null
 ) {
-  await client.from('task_activity_logs').insert({
+  await (client.from('task_activity_logs') as any).insert({
     task_id: taskId,
     actor_id: actorId,
     old_status: oldStatus,

@@ -29,6 +29,35 @@ export interface AdminTeam {
   createdAt: string;
 }
 
+interface ProfileRow {
+  id: string;
+  user_id: string;
+  display_name: string | null;
+  email: string | null;
+  status: string;
+  deleted_at: string | null;
+  created_at: string;
+  team_id: string | null;
+}
+
+interface RoleRow {
+  user_id: string;
+  role: AppRole;
+}
+
+interface TeamRow {
+  id: string;
+  name: string;
+  department: string;
+  lead_user_id: string | null;
+  created_at: string;
+}
+
+interface MemberRow {
+  user_id: string;
+  team_id: string;
+}
+
 export function useAdminUsers() {
   const { user } = useAuth();
 
@@ -42,10 +71,10 @@ export function useAdminUsers() {
       if (data?.error) throw new Error(data.error);
 
       const { profiles, roles, teams } = data;
-      const roleMap = new Map((roles || []).map((r: unknown) => [r.user_id, r.role as AppRole]));
-      const teamMap = new Map((teams || []).map((t: unknown) => [t.id, t.name as string]));
+      const roleMap = new Map((roles || []).map((r: RoleRow) => [r.user_id, r.role]));
+      const teamMap = new Map((teams || []).map((t: TeamRow) => [t.id, t.name]));
 
-      return (profiles || []).map((p: unknown) => {
+      return (profiles || []).map((p: ProfileRow) => {
         const role = (roleMap.get(p.user_id) || null) as AppRole | null;
         return {
           id: p.id,
@@ -79,11 +108,11 @@ export function useAdminTeams() {
       if (data?.error) throw new Error(data.error);
 
       const { teams, members, profiles } = data;
-      const profileMap = new Map(profiles?.map((p: unknown) => [p.user_id, p.display_name]));
+      const profileMap = new Map((profiles as { user_id: string; display_name: string }[])?.map(p => [p.user_id, p.display_name]));
       const memberCounts = new Map<string, number>();
-      members?.forEach((m: unknown) => memberCounts.set(m.team_id, (memberCounts.get(m.team_id) || 0) + 1));
+      (members as MemberRow[])?.forEach(m => memberCounts.set(m.team_id, (memberCounts.get(m.team_id) || 0) + 1));
 
-      return (teams || []).map((t: unknown) => ({
+      return (teams || []).map((t: TeamRow) => ({
         id: t.id,
         name: t.name,
         department: t.department,
