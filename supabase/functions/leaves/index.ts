@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
         const { data: bal } = await admin.from('leave_balances').select('*').eq('user_id', leave.user_id).single();
         if (bal) {
           await admin.from('leave_balances').update({
-            [(cols.used)]: (bal as unknown)[cols.used] + days,
+            [(cols.used)]: (bal as Record<string, number>)[cols.used] + days,
           }).eq('user_id', leave.user_id);
         }
       }
