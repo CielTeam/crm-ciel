@@ -5,7 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { Loader2, Shield, ArrowRight, Mail, AlertCircle, Clock } from 'lucide-react';
+import {
+  Loader2,
+  Shield,
+  ArrowRight,
+  Mail,
+  AlertCircle,
+  Clock,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -22,16 +29,26 @@ function getRateLimit(): RateLimitState {
   try {
     const raw = localStorage.getItem(RATE_LIMIT_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch (err) {
+    console.warn('Rate limit parse failed:', err);
+  }
   return { count: 0, lockedUntil: null };
 }
 
 function setRateLimit(state: RateLimitState) {
-  localStorage.setItem(RATE_LIMIT_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(RATE_LIMIT_KEY, JSON.stringify(state));
+  } catch (err) {
+    console.warn('Rate limit save failed:', err);
+  }
 }
 
 function clearRateLimit() {
-  localStorage.removeItem(RATE_LIMIT_KEY);
+  try {
+    localStorage.removeItem(RATE_LIMIT_KEY);
+  } catch (err) {
+    console.warn('Rate limit clear failed:', err);
+  }
 }
 
 export default function LoginPage() {
@@ -42,17 +59,24 @@ export default function LoginPage() {
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
 
-  const [rateLimit, setRateLimitState] = useState<RateLimitState>(() => getRateLimit());
+  const [rateLimit, setRateLimitState] = useState<RateLimitState>(() =>
+    getRateLimit()
+  );
   const [remainingSeconds, setRemainingSeconds] = useState(0);
 
-  const isLocked = rateLimit.lockedUntil !== null && rateLimit.lockedUntil > Date.now();
+  const isLocked =
+    rateLimit.lockedUntil !== null &&
+    rateLimit.lockedUntil > Date.now();
 
-  // ✅ countdown (stable)
   useEffect(() => {
     if (!rateLimit.lockedUntil) return;
 
     const interval = setInterval(() => {
-      const diff = Math.max(0, Math.ceil((rateLimit.lockedUntil! - Date.now()) / 1000));
+      const diff = Math.max(
+        0,
+        Math.ceil((rateLimit.lockedUntil! - Date.now()) / 1000)
+      );
+
       setRemainingSeconds(diff);
 
       if (diff <= 0) {
@@ -72,7 +96,9 @@ export default function LoginPage() {
     return `${m}:${sec.toString().padStart(2, '0')}`;
   }, []);
 
-  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   if (isLoading && !authError) {
     return (
@@ -83,13 +109,15 @@ export default function LoginPage() {
   }
 
   const recordFailure = () => {
-    setRateLimitState(prev => {
+    setRateLimitState((prev) => {
       const newCount = prev.count + 1;
 
       const newState: RateLimitState = {
         count: newCount,
         lockedUntil:
-          newCount >= MAX_ATTEMPTS ? Date.now() + COOLDOWN_MS : prev.lockedUntil,
+          newCount >= MAX_ATTEMPTS
+            ? Date.now() + COOLDOWN_MS
+            : prev.lockedUntil,
       };
 
       setRateLimit(newState);
@@ -106,6 +134,7 @@ export default function LoginPage() {
 
   const handleVerifyEmail = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (isLocked) return;
 
     const trimmed = email.trim().toLowerCase();
@@ -115,9 +144,10 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('verify-email', {
-        body: { email: trimmed },
-      });
+      const { data, error: fnError } =
+        await supabase.functions.invoke('verify-email', {
+          body: { email: trimmed },
+        });
 
       if (fnError || !data) {
         recordFailure();
@@ -129,10 +159,13 @@ export default function LoginPage() {
         clearRateLimit();
         setRateLimitState({ count: 0, lockedUntil: null });
       } else {
-        setError('No account found for this email. Contact your administrator.');
+        setError(
+          'No account found for this email. Contact your administrator.'
+        );
         recordFailure();
       }
-    } catch {
+    } catch (err) {
+      console.error('Verify email error:', err);
       setError('Unexpected error. Please try again.');
       recordFailure();
     } finally {
@@ -154,7 +187,6 @@ export default function LoginPage() {
         >
           <Card className="border-0 shadow-lg">
             <CardContent className="p-8 space-y-4">
-
               <h2 className="text-xl font-bold text-center">Login</h2>
 
               {!emailVerified ? (
@@ -176,16 +208,29 @@ export default function LoginPage() {
                     </p>
                   )}
 
-                  {error && <p className="text-sm text-destructive">{error}</p>}
+                  {error && (
+                    <p className="text-sm text-destructive">{error}</p>
+                  )}
 
-                  <Button disabled={verifying || isLocked}>
-                    {verifying ? <Loader2 className="animate-spin" /> : 'Verify Email'}
+                  <Button
+                    disabled={verifying || isLocked}
+                    className="w-full"
+                  >
+                    {verifying ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      'Verify Email'
+                    )}
                   </Button>
                 </form>
               ) : (
-                <Button onClick={handleLogin}>Login with Passkey</Button>
+                <Button
+                  onClick={handleLogin}
+                  className="w-full"
+                >
+                  Login with Passkey
+                </Button>
               )}
-
             </CardContent>
           </Card>
         </motion.div>
