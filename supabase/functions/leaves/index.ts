@@ -107,7 +107,7 @@ Deno.serve(async (req) => {
         }
 
         const days = diffDays(start_date, end_date);
-        const remaining = (bal as unknown)[cols.total] - (bal as unknown)[cols.used];
+        const remaining = (bal as Record<string, number>)[cols.total] - (bal as Record<string, number>)[cols.used];
         if (days > remaining) {
           return new Response(JSON.stringify({ error: `Insufficient ${leave_type} balance. ${remaining} days remaining.` }), {
             status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -151,7 +151,7 @@ Deno.serve(async (req) => {
 
       // Check reviewer role
       const { data: roles } = await admin.from('user_roles').select('role').eq('user_id', actor_id);
-      const hasReviewerRole = roles?.some((r: unknown) => REVIEWER_ROLES.includes(r.role));
+      const hasReviewerRole = roles?.some((r: { role: string }) => REVIEWER_ROLES.includes(r.role));
       if (!hasReviewerRole) {
         return new Response(JSON.stringify({ error: 'Forbidden: insufficient role' }), {
           status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
         const { data: bal } = await admin.from('leave_balances').select('*').eq('user_id', leave.user_id).single();
         if (bal) {
           await admin.from('leave_balances').update({
-            [(cols.used)]: (bal as unknown)[cols.used] + days,
+            [(cols.used)]: (bal as Record<string, number>)[cols.used] + days,
           }).eq('user_id', leave.user_id);
         }
       }
@@ -250,7 +250,7 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error('leaves error:', err);
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: (err as Error).message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

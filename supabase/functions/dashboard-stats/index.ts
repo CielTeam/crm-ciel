@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
 
     // Get user roles
     const { data: userRoles } = await sb.from('user_roles').select('role').eq('user_id', actor_id);
-    const roles = (userRoles || []).map((r: unknown) => r.role);
+    const roles = (userRoles || []).map((r: { role: string }) => r.role);
     const tier = getTier(roles);
 
     // Get user's team info
@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
     const unreadCount = (unreadNotifs || []).length;
 
     const recentTasks = (myTasks || [])
-      .sort((a: unknown, b: unknown) => (b.due_date || '').localeCompare(a.due_date || ''))
+      .sort((a: { due_date: string | null }, b: { due_date: string | null }) => (b.due_date || '').localeCompare(a.due_date || ''))
       .slice(0, 5);
 
     const base = { openTasks, pendingLeaves, unreadMessages: unreadCount, recentTasks, tier };
@@ -187,6 +187,6 @@ Deno.serve(async (req) => {
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: (err as Error).message }), { status: 500, headers: corsHeaders });
   }
 });

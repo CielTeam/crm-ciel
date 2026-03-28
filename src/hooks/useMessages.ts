@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,7 +36,6 @@ function getUserId(userId?: string): string {
   if (!userId) {
     throw new Error('User is not authenticated');
   }
-
   return userId;
 }
 
@@ -58,8 +58,73 @@ async function invokeMessages(
   return data ?? {};
 }
 
+// ─── Real-time hooks ───
+
+export function useMessagesRealtime(conversationId: string | null) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!user?.id || !conversationId) return;
+
+    const channel = supabase
+      .channel(`messages-rt-${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        () => {
+          qc.invalidateQueries({ queryKey: ['messages', user.id, conversationId] });
+          qc.invalidateQueries({ queryKey: ['conversations', user.id] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, conversationId, qc]);
+}
+
+export function useConversationsRealtime() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel('conversations-rt')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+        },
+        () => {
+          qc.invalidateQueries({ queryKey: ['conversations', user.id] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, qc]);
+}
+
+// ─── Query hooks ───
+
 export function useConversations() {
   const { user } = useAuth();
+
+  // Subscribe to realtime
+  useConversationsRealtime();
 
   return useQuery({
     queryKey: ['conversations', user?.id],
@@ -74,12 +139,14 @@ export function useConversations() {
       return data.conversations ?? [];
     },
     enabled: !!user?.id,
-    refetchInterval: 15000,
   });
 }
 
 export function useMessages(conversationId: string | null) {
   const { user } = useAuth();
+
+  // Subscribe to realtime for current conversation
+  useMessagesRealtime(conversationId);
 
   return useQuery({
     queryKey: ['messages', user?.id, conversationId],
@@ -99,7 +166,6 @@ export function useMessages(conversationId: string | null) {
       return data.messages ?? [];
     },
     enabled: !!user?.id && !!conversationId,
-    refetchInterval: 5000,
   });
 }
 
