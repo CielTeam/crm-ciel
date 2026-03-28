@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
     const unreadCount = (unreadNotifs || []).length;
 
     const recentTasks = (myTasks || [])
-      .sort((a: unknown, b: unknown) => (b.due_date || '').localeCompare(a.due_date || ''))
+      .sort((a: { due_date: string | null }, b: { due_date: string | null }) => (b.due_date || '').localeCompare(a.due_date || ''))
       .slice(0, 5);
 
     const base = { openTasks, pendingLeaves, unreadMessages: unreadCount, recentTasks, tier };
