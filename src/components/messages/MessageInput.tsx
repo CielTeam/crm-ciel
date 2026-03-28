@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Send } from 'lucide-react';
@@ -11,17 +11,24 @@ interface Props {
   isUploading?: boolean;
 }
 
-export function MessageInput({ onSend, onFileUpload, disabled, isUploading }: Props) {
+export function MessageInput({
+  onSend,
+  onFileUpload,
+  disabled,
+  isUploading,
+}: Props) {
   const [value, setValue] = useState('');
 
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     const trimmed = value.trim();
-    if (!trimmed) return;
+
+    if (!trimmed || disabled) return;
+
     onSend(trimmed);
     setValue('');
-  };
+  }, [value, disabled, onSend]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -32,13 +39,14 @@ export function MessageInput({ onSend, onFileUpload, disabled, isUploading }: Pr
     <div className="flex items-end gap-2 p-3 border-t bg-background">
       <Textarea
         value={value}
-        onChange={e => setValue(e.target.value)}
+        onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Type a message..."
         rows={1}
         className="resize-none min-h-[40px] max-h-[120px]"
         disabled={disabled}
       />
+
       {onFileUpload && (
         <FileUploadButton
           onFileSelected={onFileUpload}
@@ -47,7 +55,12 @@ export function MessageInput({ onSend, onFileUpload, disabled, isUploading }: Pr
           size="icon"
         />
       )}
-      <Button size="icon" onClick={handleSubmit} disabled={disabled || !value.trim()}>
+
+      <Button
+        size="icon"
+        onClick={handleSubmit}
+        disabled={disabled || !value.trim()}
+      >
         <Send className="h-4 w-4" />
       </Button>
     </div>

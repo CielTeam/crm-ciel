@@ -8,18 +8,30 @@ interface Props {
   isLoading: boolean;
 }
 
-const items = [
+type BalanceKey = 'annual' | 'sick' | 'personal';
+type UsedKey = 'used_annual' | 'used_sick' | 'used_personal';
+
+interface Item {
+  key: BalanceKey;
+  usedKey: UsedKey;
+  label: string;
+  icon: React.ElementType;
+  color: string;
+}
+
+const items: Item[] = [
   { key: 'annual', usedKey: 'used_annual', label: 'Annual Leave', icon: Palmtree, color: 'text-success' },
   { key: 'sick', usedKey: 'used_sick', label: 'Sick Leave', icon: Thermometer, color: 'text-warning' },
   { key: 'personal', usedKey: 'used_personal', label: 'Personal Leave', icon: User, color: 'text-info' },
-] as const;
+];
 
 export function LeaveBalanceCards({ balances, isLoading }: Props) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
       {items.map((item) => {
-        const total = balances ? (balances as any)[item.key] as number : 0;
-        const used = balances ? (balances as any)[item.usedKey] as number : 0;
+        const total = balances?.[item.key] ?? 0;
+        const used = balances?.[item.usedKey] ?? 0;
+
         const remaining = total - used;
         const pct = total > 0 ? (used / total) * 100 : 0;
 

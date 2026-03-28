@@ -22,17 +22,56 @@ export interface Message {
   created_at: string;
 }
 
+interface MessagesFunctionResponse {
+  conversations?: Conversation[];
+  messages?: Message[];
+  message?: Message;
+  conversation?: Conversation;
+  success?: boolean;
+  error?: string;
+}
+
+function getUserId(userId?: string): string {
+  if (!userId) {
+    throw new Error('User is not authenticated');
+  }
+
+  return userId;
+}
+
+async function invokeMessages(
+  body: Record<string, unknown>
+): Promise<MessagesFunctionResponse> {
+  const { data, error } = await supabase.functions.invoke<MessagesFunctionResponse>(
+    'messages',
+    { body }
+  );
+
+  if (error) {
+    throw error;
+  }
+
+  if (data?.error) {
+    throw new Error(data.error);
+  }
+
+  return data ?? {};
+}
+
 export function useConversations() {
   const { user } = useAuth();
 
   return useQuery({
     queryKey: ['conversations', user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke('messages', {
-        body: { action: 'list_conversations', actor_id: user!.id },
+      const actorId = getUserId(user?.id);
+
+      const data = await invokeMessages({
+        action: 'list_conversations',
+        actor_id: actorId,
       });
-      if (error) throw error;
-      return (data.conversations || []) as Conversation[];
+
+      return data.conversations ?? [];
     },
     enabled: !!user?.id,
     refetchInterval: 15000,
@@ -43,13 +82,21 @@ export function useMessages(conversationId: string | null) {
   const { user } = useAuth();
 
   return useQuery({
-    queryKey: ['messages', conversationId],
+    queryKey: ['messages', user?.id, conversationId],
     queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke('messages', {
-        body: { action: 'get_messages', actor_id: user!.id, conversation_id: conversationId },
+      const actorId = getUserId(user?.id);
+
+      if (!conversationId) {
+        throw new Error('Missing conversation ID');
+      }
+
+      const data = await invokeMessages({
+        action: 'get_messages',
+        actor_id: actorId,
+        conversation_id: conversationId,
       });
-      if (error) throw error;
-      return (data.messages || []) as Message[];
+
+      return data.messages ?? [];
     },
     enabled: !!user?.id && !!conversationId,
     refetchInterval: 5000,
@@ -62,15 +109,23 @@ export function useSendMessage() {
 
   return useMutation({
     mutationFn: async (payload: { conversation_id: string; content: string }) => {
-      const { data, error } = await supabase.functions.invoke('messages', {
-        body: { action: 'send_message', actor_id: user!.id, ...payload },
+      const actorId = getUserId(user?.id);
+
+      const data = await invokeMessages({
+        action: 'send_message',
+        actor_id: actorId,
+        ...payload,
       });
-      if (error) throw error;
-      return data.message as Message;
+
+      if (!data.message) {
+        throw new Error('Message was not returned by the server');
+      }
+
+      return data.message;
     },
-    onSuccess: (msg) => {
-      qc.invalidateQueries({ queryKey: ['messages', msg.conversation_id] });
-      qc.invalidateQueries({ queryKey: ['conversations'] });
+    onSuccess: (message) => {
+      qc.invalidateQueries({ queryKey: ['messages', user?.id, message.conversation_id] });
+      qc.invalidateQueries({ queryKey: ['conversations', user?.id] });
     },
   });
 }
@@ -80,14 +135,28 @@ export function useCreateConversation() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async (payload: { type?: string; name?: string; member_ids: string[] }) => {
-      const { data, error } = await supabase.functions.invoke('messages', {
-        body: { action: 'create_conversation', actor_id: user!.id, ...payload },
+    mutationFn: async (payload: {
+      type?: string;
+      name?: string;
+      member_ids: string[];
+    }) => {
+      const actorId = getUserId(user?.id);
+
+      const data = await invokeMessages({
+        action: 'create_conversation',
+        actor_id: actorId,
+        ...payload,
       });
-      if (error) throw error;
-      return data.conversation as Conversation;
+
+      if (!data.conversation) {
+        throw new Error('Conversation was not returned by the server');
+      }
+
+      return data.conversation;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['conversations'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['conversations', user?.id] });
+    },
   });
 }
 
@@ -97,11 +166,19 @@ export function useMarkRead() {
 
   return useMutation({
     mutationFn: async (conversationId: string) => {
-      const { data, error } = await supabase.functions.invoke('messages', {
-        body: { action: 'mark_read', actor_id: user!.id, conversation_id: conversationId },
+      const actorId = getUserId(user?.id);
+
+      await invokeMessages({
+        action: 'mark_read',
+        actor_id: actorId,
+        conversation_id: conversationId,
       });
-      if (error) throw error;
+
+      return conversationId;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['conversations'] }),
+    onSuccess: (conversationId) => {
+      qc.invalidateQueries({ queryKey: ['conversations', user?.id] });
+      qc.invalidateQueries({ queryKey: ['messages', user?.id, conversationId] });
+    },
   });
 }

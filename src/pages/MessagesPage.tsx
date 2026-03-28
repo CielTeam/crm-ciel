@@ -1,8 +1,18 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useConversations, useMessages, useSendMessage, useMarkRead } from '@/hooks/useMessages';
+import {
+  useConversations,
+  useMessages,
+  useSendMessage,
+  useMarkRead
+} from '@/hooks/useMessages';
+
 import { useDirectoryData } from '@/hooks/useDirectoryData';
 import { useAuth } from '@/contexts/AuthContext';
-import { useAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/useAttachments';
+
+import {
+  useUploadAttachment
+} from '@/hooks/useAttachments';
+
 import { ConversationList } from '@/components/messages/ConversationList';
 import { MessageThread } from '@/components/messages/MessageThread';
 import { MessageInput } from '@/components/messages/MessageInput';
@@ -18,52 +28,63 @@ export default function MessagesPage() {
 
   const { data: conversations, isLoading: convLoading, error: convErr } = useConversations();
   const { data: messages, isLoading: msgLoading } = useMessages(selectedId);
+
   const { data: directoryUsers } = useDirectoryData();
+
   const sendMessage = useSendMessage();
   const markRead = useMarkRead();
   const uploadAttachment = useUploadAttachment();
-  const deleteAttachment = useDeleteAttachment();
-
-  // Collect all message IDs for attachment fetching
-  const messageIds = useMemo(() => (messages || []).map(m => m.id), [messages]);
-
-  // We fetch attachments for all messages in the current conversation
-  // by fetching at the conversation level - but our hook is entity-based.
-  // For simplicity, we'll query attachments for each message that might have them.
-  // In practice, we pass the conversation-level attachment map to MessageThread.
 
   const userMap = useMemo(() => {
-    const m = new Map<string, string>();
-    directoryUsers?.forEach(u => m.set(u.userId, u.displayName));
-    return m;
+    const map = new Map<string, string>();
+    directoryUsers?.forEach(u => map.set(u.userId, u.displayName));
+    return map;
   }, [directoryUsers]);
 
   useEffect(() => {
     if (selectedId) {
       markRead.mutate(selectedId);
     }
-  }, [selectedId]);
+  }, [selectedId, markRead]);
 
   const handleSend = (content: string) => {
     if (!selectedId) return;
-    sendMessage.mutate({ conversation_id: selectedId, content });
+    if (!content.trim()) return;
+
+    sendMessage.mutate({
+      conversation_id: selectedId,
+      content: content.trim(),
+    });
   };
 
   const handleFileUpload = (file: File) => {
     if (!selectedId) return;
-    // Send a message first mentioning the file, then attach
+
     sendMessage.mutate(
-      { conversation_id: selectedId, content: `📎 ${file.name}` },
+      {
+        conversation_id: selectedId,
+        content: `📎 ${file.name}`,
+      },
       {
         onSuccess: (msg) => {
+          if (!msg?.id) {
+            toast.error('Failed to attach file');
+            return;
+          }
+
           uploadAttachment.mutate(
-            { file, entity_type: 'message', entity_id: msg.id },
+            {
+              file,
+              entity_type: 'message',
+              entity_id: msg.id,
+            },
             {
               onSuccess: () => toast.success('File attached'),
-              onError: (err) => toast.error(err instanceof Error ? err.message : 'Upload failed'),
+              onError: () => toast.error('Upload failed'),
             }
           );
         },
+        onError: () => toast.error('Message send failed'),
       }
     );
   };
@@ -71,28 +92,33 @@ export default function MessagesPage() {
   if (convErr) return <PageError message="Failed to load conversations" />;
 
   const selectedConv = conversations?.find(c => c.id === selectedId);
-  const otherName = selectedConv
-    ? selectedConv.name || userMap.get(selectedConv.memberIds.find(id => id !== user?.id) || '') || 'Chat'
-    : '';
+
+  const otherName =
+    selectedConv?.name ||
+    userMap.get(
+      selectedConv?.memberIds?.find(id => id !== user?.id) || ''
+    ) ||
+    'Chat';
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Messages</h1>
+        <h1 className="text-2xl font-bold">Messages</h1>
         <NewConversationDialog onCreated={setSelectedId} />
       </div>
 
       <div className="flex gap-4 h-[calc(100vh-12rem)]">
-        {/* Conversation list */}
-        <Card className="w-80 shrink-0 border flex flex-col overflow-hidden">
+
+        {/* Conversations */}
+        <Card className="w-80 flex flex-col overflow-hidden">
           {convLoading ? (
             <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <Loader2 className="animate-spin" />
             </div>
           ) : !conversations?.length ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground text-sm p-4">
-              <MessageSquare className="h-8 w-8 mb-2 opacity-30" />
-              <p>No conversations yet</p>
+            <div className="flex-1 flex flex-col items-center justify-center text-sm">
+              <MessageSquare className="mb-2 opacity-30" />
+              No conversations
             </div>
           ) : (
             <ConversationList
@@ -105,21 +131,22 @@ export default function MessagesPage() {
           )}
         </Card>
 
-        {/* Message thread */}
-        <Card className="flex-1 border flex flex-col overflow-hidden">
+        {/* Messages */}
+        <Card className="flex-1 flex flex-col overflow-hidden">
+
           {!selectedId ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-              <MessageSquare className="h-10 w-10 mb-3 opacity-30" />
-              <p className="text-sm">Select a conversation to start messaging</p>
+            <div className="flex-1 flex items-center justify-center text-sm">
+              Select a conversation
             </div>
           ) : (
             <>
-              <div className="px-4 py-3 border-b bg-background">
-                <p className="text-sm font-semibold text-foreground">{otherName}</p>
+              <div className="p-3 border-b font-semibold">
+                {otherName}
               </div>
+
               {msgLoading ? (
                 <div className="flex-1 flex items-center justify-center">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <Loader2 className="animate-spin" />
                 </div>
               ) : (
                 <MessageThread
@@ -128,6 +155,7 @@ export default function MessagesPage() {
                   userMap={userMap}
                 />
               )}
+
               <MessageInput
                 onSend={handleSend}
                 onFileUpload={handleFileUpload}

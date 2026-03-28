@@ -40,7 +40,7 @@ export interface DashboardStats {
   approvedThisMonth?: number;
   onLeaveToday?: number;
   leaveByType?: Record<string, number>;
-  pendingLeaveList?: Array<any>;
+  pendingLeaveList?: Array<unknown>;
   // Executive
   totalDepartments?: number;
   orgOpenTasks?: number;
@@ -65,7 +65,7 @@ export interface DashboardStats {
   assignedTasks?: number;
   inProgress?: number;
   completedToday?: number;
-  driverTasks?: Array<any>;
+  driverTasks?: Array<unknown>;
 }
 
 export function useDashboardStats() {

@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import type { AppRole } from '@/types/roles';
 import { supabase } from '@/integrations/supabase/client';
@@ -23,9 +30,38 @@ interface AuthState {
   logout: () => void;
 }
 
+interface SyncProfileResponse {
+  profile?: {
+    user_id: string;
+    email?: string | null;
+    display_name?: string | null;
+    avatar_url?: string | null;
+    team_id?: string | null;
+  };
+  roles?: AppRole[];
+}
+
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
 const SYNC_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(`Request timed out after ${ms}ms`));
+    }, ms);
+
+    promise
+      .then((value) => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const {
@@ -41,96 +77,141 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [syncLoading, setSyncLoading] = useState(false);
 
-  const syncProfile = useCallback(async (userId: string, email: string, name: string, avatar?: string) => {
-    setSyncLoading(true);
+  const syncProfile = useCallback(
+    async (userId: string, email: string, name: string, avatar?: string) => {
+      setSyncLoading(true);
 
-    const fallbackProfile: UserProfile = { id: userId, email, displayName: name, avatarUrl: avatar };
+      const fallbackProfile: UserProfile = {
+        id: userId,
+        email,
+        displayName: name,
+        avatarUrl: avatar,
+      };
 
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), SYNC_TIMEOUT_MS);
+      try {
+        const { data, error } = await withTimeout(
+          supabase.functions.invoke<SyncProfileResponse>('sync-profile', {
+            body: {
+              user_id: userId,
+              email,
+              display_name: name,
+              avatar_url: avatar,
+            },
+          }),
+          SYNC_TIMEOUT_MS
+        );
 
-      const { data, error } = await supabase.functions.invoke('sync-profile', {
-        body: {
-          user_id: userId,
-          email,
-          display_name: name,
-          avatar_url: avatar,
-        },
-      });
+        if (error) {
+          console.error('Sync profile error:', error);
+          setProfile(fallbackProfile);
+          setRoles([]);
+          return;
+        }
 
-      clearTimeout(timeout);
+        const syncedProfile = data?.profile;
 
-      if (error) {
-        console.error('Sync profile error:', error);
+        if (!syncedProfile) {
+          setProfile(fallbackProfile);
+          setRoles(data?.roles ?? []);
+          return;
+        }
+
+        setProfile({
+          id: syncedProfile.user_id,
+          email: syncedProfile.email ?? email,
+          displayName: syncedProfile.display_name ?? name,
+          avatarUrl: syncedProfile.avatar_url ?? avatar,
+          teamId: syncedProfile.team_id ?? undefined,
+        });
+
+        setRoles(data?.roles ?? []);
+      } catch (err: unknown) {
+        console.error('Failed to sync profile:', err);
         setProfile(fallbackProfile);
         setRoles([]);
+      } finally {
+        setSyncLoading(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (auth0Loading) return;
+
+    if (auth0IsAuth && auth0User) {
+      const userId = auth0User.sub ?? '';
+      const email = auth0User.email ?? '';
+      const name = auth0User.name ?? email ?? 'User';
+      const avatar = auth0User.picture;
+
+      if (!userId) {
+        setRoles([]);
+        setProfile(null);
         return;
       }
 
-      const p = data.profile;
-      setProfile({
-        id: p.user_id,
-        email: p.email || email,
-        displayName: p.display_name || name,
-        avatarUrl: p.avatar_url || avatar,
-        teamId: p.team_id,
+      void syncProfile(userId, email, name, avatar);
+      return;
+    }
+
+    setRoles([]);
+    setProfile(null);
+  }, [auth0IsAuth, auth0Loading, auth0User, syncProfile]);
+
+  const login = useCallback(
+    (loginHint?: string) => {
+      void loginWithRedirect({
+        authorizationParams: loginHint
+          ? { login_hint: loginHint }
+          : undefined,
       });
-      setRoles((data.roles || []) as AppRole[]);
-    } catch (err) {
-      console.error('Failed to sync profile (timeout or network):', err);
-      setProfile(fallbackProfile);
-      setRoles([]);
-    } finally {
-      setSyncLoading(false);
-    }
-  }, []);
+    },
+    [loginWithRedirect]
+  );
 
-  useEffect(() => {
-    console.log('[Auth] State:', { auth0Loading, auth0IsAuth, auth0User: auth0User?.email });
-    if (auth0IsAuth && auth0User) {
-      const userId = auth0User.sub || '';
-      console.log('[Auth] Authenticated, syncing profile for:', userId);
-      syncProfile(userId, auth0User.email || '', auth0User.name || '', auth0User.picture);
-    } else if (!auth0Loading) {
-      console.log('[Auth] Not authenticated, clearing state');
-      setRoles([]);
-      setProfile(null);
-    }
-  }, [auth0IsAuth, auth0User, auth0Loading, syncProfile]);
-
-  const login = (loginHint?: string) =>
-    loginWithRedirect({
-      authorizationParams: {
-        login_hint: loginHint,
-      },
+  const logout = useCallback(() => {
+    void auth0Logout({
+      logoutParams: { returnTo: window.location.origin },
     });
-
-  const logout = () => auth0Logout({ logoutParams: { returnTo: window.location.origin } });
+  }, [auth0Logout]);
 
   const primaryRole = roles.length > 0 ? roles[0] : null;
 
-  return (
-    <AuthContext.Provider
-      value={{
-        isAuthenticated: auth0IsAuth,
-        isLoading: auth0Loading || syncLoading,
-        isInitializing: auth0Loading,
-        authError: auth0Error || null,
-        user: profile,
-        roles,
-        primaryRole,
-        login,
-        logout,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo<AuthState>(
+    () => ({
+      isAuthenticated: auth0IsAuth,
+      isLoading: auth0Loading || syncLoading,
+      isInitializing: auth0Loading,
+      authError: auth0Error ?? null,
+      user: profile,
+      roles,
+      primaryRole,
+      login,
+      logout,
+    }),
+    [
+      auth0IsAuth,
+      auth0Loading,
+      syncLoading,
+      auth0Error,
+      profile,
+      roles,
+      primaryRole,
+      login,
+      logout,
+    ]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+
+  if (!ctx) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+
   return ctx;
 }

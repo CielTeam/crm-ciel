@@ -62,7 +62,7 @@ export function useNotificationsRealtime() {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          const row = payload.new as any;
+          const row = payload.new as unknown;
           qc.invalidateQueries({ queryKey: ['notifications'] });
           qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
 

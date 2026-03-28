@@ -10,27 +10,33 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PageError } from '@/components/PageError';
 import { Loader2 } from 'lucide-react';
+import type { Leave } from '@/hooks/useLeaves';
+
+type LeaveStatus = 'all' | 'pending' | 'approved' | 'rejected' | 'cancelled';
 
 export default function LeavesPage() {
   const { roles } = useAuth();
-  const isReviewer = roles.some(r => [...LEAD_ROLES, ...EXECUTIVE_ROLES, 'hr' as any].includes(r));
+
+  const isReviewer = roles.some((r) =>
+    [...LEAD_ROLES, ...EXECUTIVE_ROLES, 'hr'].includes(r)
+  );
 
   const { data: myLeaves, isLoading: myLoading, error: myErr } = useLeaves(false);
   const { data: teamLeaves, isLoading: teamLoading } = useLeaves(isReviewer);
   const { data: balances, isLoading: balLoading } = useLeaveBalances();
   const { data: directoryUsers } = useDirectoryData();
 
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<LeaveStatus>('all');
 
   const userMap = useMemo(() => {
     const m = new Map<string, string>();
-    directoryUsers?.forEach(u => m.set(u.userId, u.displayName));
+    directoryUsers?.forEach((u) => m.set(u.userId, u.displayName));
     return m;
   }, [directoryUsers]);
 
-  const filterByStatus = (leaves: any[]) => {
+  const filterByStatus = (leaves: Leave[]): Leave[] => {
     if (statusFilter === 'all') return leaves;
-    return leaves.filter(l => l.status === statusFilter);
+    return leaves.filter((l) => l.status === statusFilter);
   };
 
   if (myErr) return <PageError message="Failed to load leaves" />;
@@ -45,7 +51,7 @@ export default function LeavesPage() {
       <LeaveBalanceCards balances={balances} isLoading={balLoading} />
 
       <div className="flex items-center gap-3">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter} onValueChange={(v: LeaveStatus) => setStatusFilter(v)}>
           <SelectTrigger className="w-36">
             <SelectValue placeholder="Filter status" />
           </SelectTrigger>
@@ -67,11 +73,15 @@ export default function LeavesPage() {
 
         <TabsContent value="my_leaves" className="space-y-3 mt-4">
           {myLoading ? (
-            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
           ) : filterByStatus(myLeaves || []).length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-12">No leave requests found</p>
+            <p className="text-sm text-muted-foreground text-center py-12">
+              No leave requests found
+            </p>
           ) : (
-            filterByStatus(myLeaves || []).map(leave => (
+            filterByStatus(myLeaves || []).map((leave) => (
               <LeaveCard key={leave.id} leave={leave} />
             ))
           )}
@@ -80,12 +90,21 @@ export default function LeavesPage() {
         {isReviewer && (
           <TabsContent value="team" className="space-y-3 mt-4">
             {teamLoading ? (
-              <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
             ) : filterByStatus(teamLeaves || []).length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-12">No team leave requests</p>
+              <p className="text-sm text-muted-foreground text-center py-12">
+                No team leave requests
+              </p>
             ) : (
-              filterByStatus(teamLeaves || []).map(leave => (
-                <LeaveCard key={leave.id} leave={leave} showReviewActions userName={userMap.get(leave.user_id) || 'Unknown'} />
+              filterByStatus(teamLeaves || []).map((leave) => (
+                <LeaveCard
+                  key={leave.id}
+                  leave={leave}
+                  showReviewActions
+                  userName={userMap.get(leave.user_id) || 'Unknown'}
+                />
               ))
             )}
           </TabsContent>
