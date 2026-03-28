@@ -107,7 +107,7 @@ Deno.serve(async (req) => {
         }
 
         const days = diffDays(start_date, end_date);
-        const remaining = (bal as unknown)[cols.total] - (bal as unknown)[cols.used];
+        const remaining = (bal as Record<string, number>)[cols.total] - (bal as Record<string, number>)[cols.used];
         if (days > remaining) {
           return new Response(JSON.stringify({ error: `Insufficient ${leave_type} balance. ${remaining} days remaining.` }), {
             status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
