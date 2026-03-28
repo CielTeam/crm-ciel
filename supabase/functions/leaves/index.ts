@@ -151,7 +151,7 @@ Deno.serve(async (req) => {
 
       // Check reviewer role
       const { data: roles } = await admin.from('user_roles').select('role').eq('user_id', actor_id);
-      const hasReviewerRole = roles?.some((r: unknown) => REVIEWER_ROLES.includes(r.role));
+      const hasReviewerRole = roles?.some((r: { role: string }) => REVIEWER_ROLES.includes(r.role));
       if (!hasReviewerRole) {
         return new Response(JSON.stringify({ error: 'Forbidden: insufficient role' }), {
           status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
