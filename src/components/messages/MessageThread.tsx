@@ -15,14 +15,21 @@ interface Props {
   isDeletingAttachment?: boolean;
 }
 
-export function MessageThread({ messages, currentUserId, userMap, messageAttachments, onDeleteAttachment, isDeletingAttachment }: Props) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+export function MessageThread({
+  messages,
+  currentUserId,
+  userMap,
+  messageAttachments,
+  onDeleteAttachment,
+  isDeletingAttachment,
+}: Props) {
+  const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+  }, [messages]);
 
-  if (messages.length === 0) {
+  if (!messages.length) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
         No messages yet. Start the conversation!
@@ -33,21 +40,34 @@ export function MessageThread({ messages, currentUserId, userMap, messageAttachm
   return (
     <ScrollArea className="flex-1 px-4">
       <div className="space-y-3 py-4">
-        {messages.map(msg => {
+        {messages.map((msg) => {
           const isMine = msg.sender_id === currentUserId;
-          const senderName = userMap.get(msg.sender_id) || 'Unknown';
-          const attachments = messageAttachments?.get(msg.id) || [];
+          const senderName = userMap.get(msg.sender_id) ?? 'Unknown';
+          const attachments = messageAttachments?.get(msg.id) ?? [];
 
           return (
-            <div key={msg.id} className={cn('flex', isMine ? 'justify-end' : 'justify-start')}>
-              <div className={cn(
-                'max-w-[75%] rounded-xl px-3 py-2',
-                isMine ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'
-              )}>
-                {!isMine && (
-                  <p className="text-[10px] font-medium opacity-70 mb-0.5">{senderName}</p>
+            <div
+              key={msg.id}
+              className={cn('flex', isMine ? 'justify-end' : 'justify-start')}
+            >
+              <div
+                className={cn(
+                  'max-w-[75%] rounded-xl px-3 py-2',
+                  isMine
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-foreground'
                 )}
-                <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+              >
+                {!isMine && (
+                  <p className="text-[10px] font-medium opacity-70 mb-0.5">
+                    {senderName}
+                  </p>
+                )}
+
+                <p className="text-sm whitespace-pre-wrap break-words">
+                  {msg.content}
+                </p>
+
                 {attachments.length > 0 && (
                   <div className="mt-2">
                     <FileAttachmentList
@@ -59,16 +79,22 @@ export function MessageThread({ messages, currentUserId, userMap, messageAttachm
                     />
                   </div>
                 )}
-                <p className={cn(
-                  'text-[10px] mt-1',
-                  isMine ? 'text-primary-foreground/60' : 'text-muted-foreground/60'
-                )}>
+
+                <p
+                  className={cn(
+                    'text-[10px] mt-1',
+                    isMine
+                      ? 'text-primary-foreground/60'
+                      : 'text-muted-foreground/60'
+                  )}
+                >
                   {format(new Date(msg.created_at), 'HH:mm')}
                 </p>
               </div>
             </div>
           );
         })}
+
         <div ref={bottomRef} />
       </div>
     </ScrollArea>
