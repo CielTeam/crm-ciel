@@ -58,7 +58,34 @@ async function invokeMessages(
   return data ?? {};
 }
 
-// ─── Real-time hooks ───
+// ─── Helper: update conversations cache with a new message ───
+
+function updateConversationsCache(
+  qc: ReturnType<typeof useQueryClient>,
+  userId: string,
+  message: Message,
+  incrementUnread: boolean
+) {
+  qc.setQueryData<Conversation[]>(
+    ['conversations', userId],
+    (old) => {
+      if (!old) return old;
+      return old
+        .map((conv) => {
+          if (conv.id !== message.conversation_id) return conv;
+          return {
+            ...conv,
+            lastMessage: message,
+            updated_at: message.created_at,
+            unreadCount: incrementUnread ? conv.unreadCount + 1 : conv.unreadCount,
+          };
+        })
+        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+    }
+  );
+}
+
+// ─── Real-time hook ───
 
 export function useMessagesRealtime(conversationId: string | null) {
   const { user } = useAuth();
@@ -66,6 +93,8 @@ export function useMessagesRealtime(conversationId: string | null) {
 
   useEffect(() => {
     if (!user?.id || !conversationId) return;
+
+    const userId = user.id;
 
     const channel = supabase
       .channel(`messages-rt-${conversationId}`)
@@ -77,9 +106,23 @@ export function useMessagesRealtime(conversationId: string | null) {
           table: 'messages',
           filter: `conversation_id=eq.${conversationId}`,
         },
-        () => {
-          qc.invalidateQueries({ queryKey: ['messages', user.id, conversationId] });
-          qc.invalidateQueries({ queryKey: ['conversations', user.id] });
+        (payload) => {
+          const newMsg = payload.new as Message;
+
+          // Skip messages sent by current user (already in cache via mutation)
+          if (newMsg.sender_id === userId) return;
+
+          // Append to messages cache with duplicate check
+          qc.setQueryData<Message[]>(
+            ['messages', userId, conversationId],
+            (old = []) => {
+              if (old.some((m) => m.id === newMsg.id)) return old;
+              return [...old, newMsg];
+            }
+          );
+
+          // Update conversation list
+          updateConversationsCache(qc, userId, newMsg, true);
         }
       )
       .subscribe();
@@ -90,41 +133,10 @@ export function useMessagesRealtime(conversationId: string | null) {
   }, [user?.id, conversationId, qc]);
 }
 
-export function useConversationsRealtime() {
-  const { user } = useAuth();
-  const qc = useQueryClient();
-
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const channel = supabase
-      .channel('conversations-rt')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'conversations',
-        },
-        () => {
-          qc.invalidateQueries({ queryKey: ['conversations', user.id] });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id, qc]);
-}
-
 // ─── Query hooks ───
 
 export function useConversations() {
   const { user } = useAuth();
-
-  // Subscribe to realtime
-  useConversationsRealtime();
 
   return useQuery({
     queryKey: ['conversations', user?.id],
@@ -190,8 +202,20 @@ export function useSendMessage() {
       return data.message;
     },
     onSuccess: (message) => {
-      qc.invalidateQueries({ queryKey: ['messages', user?.id, message.conversation_id] });
-      qc.invalidateQueries({ queryKey: ['conversations', user?.id] });
+      const userId = user?.id;
+      if (!userId) return;
+
+      // Direct cache update — append message
+      qc.setQueryData<Message[]>(
+        ['messages', userId, message.conversation_id],
+        (old = []) => {
+          if (old.some((m) => m.id === message.id)) return old;
+          return [...old, message];
+        }
+      );
+
+      // Update conversation preview
+      updateConversationsCache(qc, userId, message, false);
     },
   });
 }
@@ -243,8 +267,21 @@ export function useMarkRead() {
       return conversationId;
     },
     onSuccess: (conversationId) => {
-      qc.invalidateQueries({ queryKey: ['conversations', user?.id] });
-      qc.invalidateQueries({ queryKey: ['messages', user?.id, conversationId] });
+      const userId = user?.id;
+      if (!userId) return;
+
+      // Direct cache update — set unread to 0
+      qc.setQueryData<Conversation[]>(
+        ['conversations', userId],
+        (old) => {
+          if (!old) return old;
+          return old.map((conv) =>
+            conv.id === conversationId
+              ? { ...conv, unreadCount: 0 }
+              : conv
+          );
+        }
+      );
     },
   });
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   useConversations,
   useMessages,
@@ -33,6 +33,9 @@ export default function MessagesPage() {
 
   const sendMessage = useSendMessage();
   const markRead = useMarkRead();
+  const markReadRef = useRef(markRead);
+  markReadRef.current = markRead;
+
   const uploadAttachment = useUploadAttachment();
 
   const userMap = useMemo(() => {
@@ -41,13 +44,14 @@ export default function MessagesPage() {
     return map;
   }, [directoryUsers]);
 
+  // Mark conversation as read when selected — use ref to avoid infinite loop
   useEffect(() => {
     if (selectedId) {
-      markRead.mutate(selectedId);
+      markReadRef.current.mutate(selectedId);
     }
-  }, [selectedId, markRead]);
+  }, [selectedId]);
 
-  const handleSend = (content: string) => {
+  const handleSend = useCallback((content: string) => {
     if (!selectedId) return;
     if (!content.trim()) return;
 
@@ -55,9 +59,9 @@ export default function MessagesPage() {
       conversation_id: selectedId,
       content: content.trim(),
     });
-  };
+  }, [selectedId, sendMessage]);
 
-  const handleFileUpload = (file: File) => {
+  const handleFileUpload = useCallback((file: File) => {
     if (!selectedId) return;
 
     sendMessage.mutate(
@@ -87,7 +91,7 @@ export default function MessagesPage() {
         onError: () => toast.error('Message send failed'),
       }
     );
-  };
+  }, [selectedId, sendMessage, uploadAttachment]);
 
   if (convErr) return <PageError message="Failed to load conversations" />;
 
