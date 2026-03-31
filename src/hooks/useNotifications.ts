@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,13 +23,15 @@ interface Notification {
 }
 
 export function useNotifications(filter: 'all' | 'unread' | 'read' = 'all') {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useQuery({
     queryKey: ['notifications', user?.id, filter],
     queryFn: async () => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('notifications', {
-        body: { action: 'list', actor_id: user!.id, filter },
+        body: { action: 'list', filter },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       return (data.notifications || []) as Notification[];
@@ -99,7 +101,7 @@ export function useNotificationsRealtime() {
 }
 
 export function useUnreadCount() {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   // Subscribe to realtime notification inserts
   useNotificationsRealtime();
@@ -107,8 +109,10 @@ export function useUnreadCount() {
   return useQuery({
     queryKey: ['notifications-unread-count', user?.id],
     queryFn: async () => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('notifications', {
-        body: { action: 'unread_count', actor_id: user!.id },
+        body: { action: 'unread_count' },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       return (data.count || 0) as number;
@@ -120,16 +124,17 @@ export function useUnreadCount() {
 
 export function useMarkRead() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (notificationId?: string) => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('notifications', {
         body: {
           action: 'mark_read',
-          actor_id: user!.id,
           notification_id: notificationId,
         },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       return data;

@@ -30,13 +30,15 @@ export interface LeaveBalance {
 }
 
 export function useLeaves(includeTeam = false) {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useQuery({
     queryKey: ['leaves', user?.id, includeTeam],
     queryFn: async () => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('leaves', {
-        body: { action: 'list', actor_id: user!.id, include_team: includeTeam },
+        body: { action: 'list', include_team: includeTeam },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       return (data.leaves || []) as Leave[];
@@ -46,13 +48,15 @@ export function useLeaves(includeTeam = false) {
 }
 
 export function useLeaveBalances() {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useQuery({
     queryKey: ['leave-balances', user?.id],
     queryFn: async () => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('leaves', {
-        body: { action: 'balances', actor_id: user!.id },
+        body: { action: 'balances' },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       return data.balances as LeaveBalance;
@@ -63,7 +67,7 @@ export function useLeaveBalances() {
 
 export function useCreateLeave() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (payload: {
@@ -72,8 +76,10 @@ export function useCreateLeave() {
       end_date: string;
       reason?: string;
     }) => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('leaves', {
-        body: { action: 'create', actor_id: user!.id, ...payload },
+        body: { action: 'create', ...payload },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);
@@ -88,7 +94,7 @@ export function useCreateLeave() {
 
 export function useReviewLeave() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (payload: {
@@ -96,8 +102,10 @@ export function useReviewLeave() {
       decision: 'approved' | 'rejected';
       reviewer_note?: string;
     }) => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('leaves', {
-        body: { action: 'review', actor_id: user!.id, ...payload },
+        body: { action: 'review', ...payload },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);
@@ -112,12 +120,14 @@ export function useReviewLeave() {
 
 export function useCancelLeave() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (leaveId: string) => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('leaves', {
-        body: { action: 'cancel', actor_id: user!.id, leave_id: leaveId },
+        body: { action: 'cancel', leave_id: leaveId },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);

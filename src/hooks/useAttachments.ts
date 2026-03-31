@@ -24,20 +24,14 @@ interface AttachmentsFunctionResponse {
   error?: string;
 }
 
-function getUserId(userId?: string): string {
-  if (!userId) {
-    throw new Error('User is not authenticated');
-  }
-
-  return userId;
-}
-
 async function invokeAttachments(
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  token: string
 ): Promise<AttachmentsFunctionResponse> {
   const { data, error } =
     await supabase.functions.invoke<AttachmentsFunctionResponse>('attachments', {
       body,
+      headers: { Authorization: `Bearer ${token}` },
     });
 
   if (error) {
@@ -84,23 +78,22 @@ export function useAttachments(
   entityType: AttachmentEntityType | null,
   entityId: string | null
 ) {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useQuery({
     queryKey: ['attachments', user?.id, entityType, entityId],
     queryFn: async () => {
-      const actorId = getUserId(user?.id);
-
       if (!entityType || !entityId) {
         throw new Error('Missing attachment entity information');
       }
 
+      const token = await getToken();
+
       const data = await invokeAttachments({
         action: 'list',
-        actor_id: actorId,
         entity_type: entityType,
         entity_id: entityId,
-      });
+      }, token);
 
       return data.attachments ?? [];
     },
@@ -110,7 +103,7 @@ export function useAttachments(
 
 export function useUploadAttachment() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (payload: {
@@ -118,7 +111,6 @@ export function useUploadAttachment() {
       entity_type: AttachmentEntityType;
       entity_id: string;
     }) => {
-      const actorId = getUserId(user?.id);
       const { file, entity_type, entity_id } = payload;
 
       const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
@@ -131,16 +123,16 @@ export function useUploadAttachment() {
         throw new Error('File size exceeds 10MB limit');
       }
 
+      const token = await getToken();
       const file_base64 = await fileToBase64(file);
 
       const data = await invokeAttachments({
         action: 'upload',
-        actor_id: actorId,
         file_name: file.name,
         file_base64,
         entity_type,
         entity_id,
-      });
+      }, token);
 
       if (!data.attachment) {
         throw new Error('Attachment was not returned by the server');
@@ -162,7 +154,7 @@ export function useUploadAttachment() {
 
 export function useDeleteAttachment() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (payload: {
@@ -170,13 +162,12 @@ export function useDeleteAttachment() {
       entity_type: AttachmentEntityType;
       entity_id: string;
     }) => {
-      const actorId = getUserId(user?.id);
+      const token = await getToken();
 
       await invokeAttachments({
         action: 'delete',
-        actor_id: actorId,
         attachment_id: payload.attachment_id,
-      });
+      }, token);
 
       return payload;
     },
