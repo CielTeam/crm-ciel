@@ -43,7 +43,7 @@ const App = () => (
     clientId={AUTH0_CLIENT_ID}
     authorizationParams={{
       redirect_uri: window.location.origin + '/login',
-      audience: 'CIEL Internal CRM API',
+      audience: 'https://crm-ciel.lovable.app/api',
     }}
   >
     <QueryClientProvider client={queryClient}>
