@@ -6,22 +6,80 @@ const corsHeaders = {
     'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+// ─── Auth0 JWT Verification ───
+
+interface JwtHeader { alg: string; typ: string; kid: string }
+interface JwtPayload { iss: string; sub: string; aud: string | string[]; exp: number; iat: number }
+interface JwksKey { kty: string; kid: string; use: string; n: string; e: string; alg: string }
+interface JwksResponse { keys: JwksKey[] }
+
+const jwksCache = new Map<string, { keys: JwksKey[]; fetchedAt: number }>();
+const JWKS_CACHE_TTL = 600_000;
+
+function base64UrlDecode(str: string): Uint8Array {
+  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = base64.length % 4;
+  const padded = pad ? base64 + '='.repeat(4 - pad) : base64;
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function decodeJwtPart<T>(part: string): T {
+  return JSON.parse(new TextDecoder().decode(base64UrlDecode(part))) as T;
+}
+
+async function fetchJwks(domain: string): Promise<JwksKey[]> {
+  const cached = jwksCache.get(domain);
+  if (cached && Date.now() - cached.fetchedAt < JWKS_CACHE_TTL) return cached.keys;
+  const res = await fetch(`https://${domain}/.well-known/jwks.json`);
+  if (!res.ok) throw new Error('Failed to fetch JWKS');
+  const data = (await res.json()) as JwksResponse;
+  jwksCache.set(domain, { keys: data.keys, fetchedAt: Date.now() });
+  return data.keys;
+}
+
+async function importRsaKey(jwk: JwksKey): Promise<CryptoKey> {
+  return crypto.subtle.importKey('jwk', { kty: jwk.kty, n: jwk.n, e: jwk.e, alg: 'RS256', ext: true }, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+}
+
+async function verifyAuth0Jwt(req: Request): Promise<string> {
+  const auth0Domain = Deno.env.get('AUTH0_DOMAIN');
+  const auth0Audience = Deno.env.get('AUTH0_AUDIENCE');
+  if (!auth0Domain || !auth0Audience) throw new Error('Auth0 configuration missing');
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) throw new Error('Missing token');
+  const token = authHeader.slice(7);
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('Invalid token format');
+  const header = decodeJwtPart<JwtHeader>(parts[0]);
+  if (header.alg !== 'RS256') throw new Error('Unsupported algorithm');
+  const keys = await fetchJwks(auth0Domain);
+  const jwk = keys.find(k => k.kid === header.kid);
+  if (!jwk) throw new Error('Key not found');
+  const key = await importRsaKey(jwk);
+  const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, base64UrlDecode(parts[2]), new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
+  if (!valid) throw new Error('Invalid signature');
+  const payload = decodeJwtPart<JwtPayload>(parts[1]);
+  if (payload.iss !== `https://${auth0Domain}/`) throw new Error('Invalid issuer');
+  const audArray = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  if (!audArray.includes(auth0Audience)) throw new Error('Invalid audience');
+  if (payload.exp < Math.floor(Date.now() / 1000)) throw new Error('Token expired');
+  return payload.sub;
+}
+
+// ─── Types ───
+
 const ALLOWED_EXTENSIONS = ['.zip', '.rar'];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_MIME_TYPES = [
-  'application/zip',
-  'application/x-zip-compressed',
-  'application/x-rar-compressed',
-  'application/vnd.rar',
-  'application/octet-stream',
-] as const;
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_MIME_TYPES = ['application/zip', 'application/x-zip-compressed', 'application/x-rar-compressed', 'application/vnd.rar', 'application/octet-stream'] as const;
 
 type AttachmentAction = 'upload' | 'list' | 'delete';
 type EntityType = 'task' | 'comment' | 'message';
 
 interface AttachmentRequest {
   action?: AttachmentAction;
-  actor_id?: string;
   file_name?: string;
   file_base64?: string;
   entity_type?: EntityType;
@@ -29,22 +87,10 @@ interface AttachmentRequest {
   attachment_id?: string;
 }
 
-interface TaskPermissionRow {
-  created_by: string;
-  assigned_to: string | null;
-}
-
-interface CommentRow {
-  task_id: string;
-}
-
-interface MessageRow {
-  conversation_id: string;
-}
-
-interface ConversationMemberRow {
-  id: string;
-}
+interface TaskPermissionRow { created_by: string; assigned_to: string | null }
+interface CommentRow { task_id: string }
+interface MessageRow { conversation_id: string }
+interface ConversationMemberRow { id: string }
 
 interface AttachmentRow {
   id: string;
@@ -60,15 +106,7 @@ interface AttachmentRow {
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return 'Internal server error';
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
 function getExtension(fileName: string): string {
@@ -79,11 +117,7 @@ function getExtension(fileName: string): string {
 function decodeBase64ToBytes(base64: string): Uint8Array {
   const binaryStr = atob(base64);
   const bytes = new Uint8Array(binaryStr.length);
-
-  for (let i = 0; i < binaryStr.length; i += 1) {
-    bytes[i] = binaryStr.charCodeAt(i);
-  }
-
+  for (let i = 0; i < binaryStr.length; i += 1) bytes[i] = binaryStr.charCodeAt(i);
   return bytes;
 }
 
@@ -91,179 +125,94 @@ function getContentTypeFromExtension(ext: string): string {
   return ext === '.zip' ? 'application/zip' : 'application/x-rar-compressed';
 }
 
+// ─── Access validation helpers ───
+
+async function validateTaskAccess(admin: ReturnType<typeof createClient>, entityId: string, actorId: string): Promise<boolean> {
+  const { data: task } = await admin.from('tasks').select('created_by, assigned_to').eq('id', entityId).single<TaskPermissionRow>();
+  return !!task && (task.created_by === actorId || task.assigned_to === actorId);
+}
+
+async function validateCommentAccess(admin: ReturnType<typeof createClient>, entityId: string, actorId: string): Promise<boolean> {
+  const { data: comment } = await admin.from('task_comments').select('task_id').eq('id', entityId).maybeSingle<CommentRow>();
+  if (!comment) return false;
+  return validateTaskAccess(admin, comment.task_id, actorId);
+}
+
+async function validateMessageAccess(admin: ReturnType<typeof createClient>, entityId: string, actorId: string): Promise<boolean> {
+  const { data: msg } = await admin.from('messages').select('conversation_id').eq('id', entityId).maybeSingle<MessageRow>();
+  if (!msg) return false;
+  const { data: member } = await admin.from('conversation_members').select('id').eq('conversation_id', msg.conversation_id).eq('user_id', actorId).maybeSingle<ConversationMemberRow>();
+  return !!member;
+}
+
+// ─── Edge Function ───
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let actorId: string;
+  try {
+    actorId = await verifyAuth0Jwt(req);
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401);
+  }
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      return jsonResponse({ error: 'Missing required environment variables' }, 500);
-    }
+    if (!supabaseUrl || !serviceRoleKey) return jsonResponse({ error: 'Server configuration error' }, 500);
 
     const admin = createClient(supabaseUrl, serviceRoleKey);
     const body = (await req.json()) as AttachmentRequest;
-    const { action, actor_id } = body;
+    const { action } = body;
 
-    if (!actor_id) {
-      return jsonResponse({ error: 'Missing actor_id' }, 400);
-    }
-
-    if (!action) {
-      return jsonResponse({ error: 'Missing action' }, 400);
-    }
+    if (!action) return jsonResponse({ error: 'Missing action' }, 400);
 
     if (action === 'upload') {
       const { file_name, file_base64, entity_type, entity_id } = body;
-
-      if (!file_name || !file_base64 || !entity_type || !entity_id) {
-        return jsonResponse(
-          { error: 'file_name, file_base64, entity_type, and entity_id are required' },
-          400,
-        );
-      }
-
-      if (!['task', 'comment', 'message'].includes(entity_type)) {
-        return jsonResponse(
-          { error: 'entity_type must be task, comment, or message' },
-          400,
-        );
-      }
+      if (!file_name || !file_base64 || !entity_type || !entity_id) return jsonResponse({ error: 'file_name, file_base64, entity_type, and entity_id are required' }, 400);
+      if (!['task', 'comment', 'message'].includes(entity_type)) return jsonResponse({ error: 'entity_type must be task, comment, or message' }, 400);
 
       const ext = getExtension(file_name);
-      if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        return jsonResponse({ error: 'Only .zip and .rar files are allowed' }, 400);
-      }
+      if (!ALLOWED_EXTENSIONS.includes(ext)) return jsonResponse({ error: 'Only .zip and .rar files are allowed' }, 400);
 
       const bytes = decodeBase64ToBytes(file_base64);
-
-      if (bytes.length > MAX_FILE_SIZE) {
-        return jsonResponse({ error: 'File size exceeds 10MB limit' }, 400);
-      }
+      if (bytes.length > MAX_FILE_SIZE) return jsonResponse({ error: 'File size exceeds 10MB limit' }, 400);
 
       const contentType = getContentTypeFromExtension(ext);
-      if (!ALLOWED_MIME_TYPES.includes(contentType as (typeof ALLOWED_MIME_TYPES)[number])) {
-        return jsonResponse({ error: 'Unsupported content type' }, 400);
-      }
+      if (!ALLOWED_MIME_TYPES.includes(contentType as (typeof ALLOWED_MIME_TYPES)[number])) return jsonResponse({ error: 'Unsupported content type' }, 400);
 
+      // Validate access
       if (entity_type === 'task') {
-        const { data: task, error: taskError } = await admin
-          .from('tasks')
-          .select('created_by, assigned_to')
-          .eq('id', entity_id)
-          .single<TaskPermissionRow>();
-
-        if (taskError) {
-          throw taskError;
-        }
-
-        if (!task || (task.created_by !== actor_id && task.assigned_to !== actor_id)) {
-          return jsonResponse({ error: 'Forbidden' }, 403);
-        }
+        if (!(await validateTaskAccess(admin, entity_id, actorId))) return jsonResponse({ error: 'Forbidden' }, 403);
       } else if (entity_type === 'comment') {
-        const { data: comment, error: commentError } = await admin
-          .from('task_comments')
-          .select('task_id')
-          .eq('id', entity_id)
-          .single<CommentRow>();
-
-        if (commentError) {
-          if ('code' in commentError && commentError.code === 'PGRST116') {
-            return jsonResponse({ error: 'Comment not found' }, 404);
-          }
-          throw commentError;
-        }
-
-        const { data: task, error: taskError } = await admin
-          .from('tasks')
-          .select('created_by, assigned_to')
-          .eq('id', comment.task_id)
-          .single<TaskPermissionRow>();
-
-        if (taskError) {
-          throw taskError;
-        }
-
-        if (!task || (task.created_by !== actor_id && task.assigned_to !== actor_id)) {
-          return jsonResponse({ error: 'Forbidden' }, 403);
-        }
+        if (!(await validateCommentAccess(admin, entity_id, actorId))) return jsonResponse({ error: 'Forbidden' }, 403);
       } else if (entity_type === 'message') {
-        const { data: msg, error: messageError } = await admin
-          .from('messages')
-          .select('conversation_id')
-          .eq('id', entity_id)
-          .maybeSingle<MessageRow>();
-
-        if (messageError) {
-          throw messageError;
-        }
-
-        if (msg) {
-          const { data: member, error: memberError } = await admin
-            .from('conversation_members')
-            .select('id')
-            .eq('conversation_id', msg.conversation_id)
-            .eq('user_id', actor_id)
-            .maybeSingle<ConversationMemberRow>();
-
-          if (memberError) {
-            throw memberError;
-          }
-
-          if (!member) {
-            return jsonResponse({ error: 'Forbidden' }, 403);
-          }
-        }
+        if (!(await validateMessageAccess(admin, entity_id, actorId))) return jsonResponse({ error: 'Forbidden' }, 403);
       }
 
       const timestamp = Date.now();
       const sanitizedName = file_name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const storagePath = `${entity_type}/${entity_id}/${timestamp}_${sanitizedName}`;
 
-      const { error: uploadError } = await admin.storage
-        .from('attachments')
-        .upload(storagePath, bytes, {
-          contentType,
-          upsert: false,
-        });
+      const { error: uploadError } = await admin.storage.from('attachments').upload(storagePath, bytes, { contentType, upsert: false });
+      if (uploadError) throw uploadError;
 
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      const { data: attachment, error: insertError } = await admin
-        .from('attachments')
-        .insert({
-          file_name: file_name.trim(),
-          file_size: bytes.length,
-          content_type: contentType,
-          storage_path: storagePath,
-          uploaded_by: actor_id,
-          entity_type,
-          entity_id,
-        })
-        .select()
-        .single<AttachmentRow>();
-
-      if (insertError) {
-        throw insertError;
-      }
+      const { data: attachment, error: insertError } = await admin.from('attachments').insert({
+        file_name: file_name.trim(),
+        file_size: bytes.length,
+        content_type: contentType,
+        storage_path: storagePath,
+        uploaded_by: actorId,
+        entity_type,
+        entity_id,
+      }).select().single<AttachmentRow>();
+      if (insertError) throw insertError;
 
       if (entity_type === 'task') {
-        const { error: activityError } = await admin.from('task_activity_logs').insert({
-          task_id: entity_id,
-          actor_id,
-          old_status: null,
-          new_status: null,
-          note: `Attached file: ${file_name}`,
-        });
-
-        if (activityError) {
-          throw activityError;
-        }
+        await admin.from('task_activity_logs').insert({ task_id: entity_id, actor_id: actorId, old_status: null, new_status: null, note: `Attached file: ${file_name}` });
       }
 
       return jsonResponse({ attachment }, 201);
@@ -271,98 +220,50 @@ Deno.serve(async (req) => {
 
     if (action === 'list') {
       const { entity_type, entity_id } = body;
+      if (!entity_type || !entity_id) return jsonResponse({ error: 'entity_type and entity_id are required' }, 400);
 
-      if (!entity_type || !entity_id) {
-        return jsonResponse({ error: 'entity_type and entity_id are required' }, 400);
+      // Validate access before listing
+      if (entity_type === 'task') {
+        if (!(await validateTaskAccess(admin, entity_id, actorId))) return jsonResponse({ error: 'Forbidden' }, 403);
+      } else if (entity_type === 'comment') {
+        if (!(await validateCommentAccess(admin, entity_id, actorId))) return jsonResponse({ error: 'Forbidden' }, 403);
+      } else if (entity_type === 'message') {
+        if (!(await validateMessageAccess(admin, entity_id, actorId))) return jsonResponse({ error: 'Forbidden' }, 403);
       }
 
-      const { data, error } = await admin
-        .from('attachments')
-        .select('*')
-        .eq('entity_type', entity_type)
-        .eq('entity_id', entity_id)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: true });
+      const { data, error } = await admin.from('attachments').select('*').eq('entity_type', entity_type).eq('entity_id', entity_id).is('deleted_at', null).order('created_at', { ascending: true });
+      if (error) throw error;
 
-      if (error) {
-        throw error;
+      const attachments = [];
+      for (const attachment of (data ?? []) as AttachmentRow[]) {
+        const { data: signedUrlData, error: signedUrlError } = await admin.storage.from('attachments').createSignedUrl(attachment.storage_path, 3600);
+        if (signedUrlError) {
+          console.error('Signed URL error:', signedUrlError);
+          continue;
+        }
+        attachments.push({ ...attachment, url: signedUrlData.signedUrl });
       }
-
-      const attachments = ((data ?? []) as AttachmentRow[]).map((attachment) => {
-        const { data: urlData } = admin.storage
-          .from('attachments')
-          .getPublicUrl(attachment.storage_path);
-
-        return {
-          ...attachment,
-          url: urlData.publicUrl,
-        };
-      });
 
       return jsonResponse({ attachments });
     }
 
     if (action === 'delete') {
       const { attachment_id } = body;
+      if (!attachment_id) return jsonResponse({ error: 'attachment_id is required' }, 400);
 
-      if (!attachment_id) {
-        return jsonResponse({ error: 'attachment_id is required' }, 400);
-      }
-
-      const { data: attachment, error: attachmentError } = await admin
-        .from('attachments')
-        .select('*')
-        .eq('id', attachment_id)
-        .is('deleted_at', null)
-        .single<AttachmentRow>();
-
+      const { data: attachment, error: attachmentError } = await admin.from('attachments').select('*').eq('id', attachment_id).is('deleted_at', null).single<AttachmentRow>();
       if (attachmentError) {
-        if ('code' in attachmentError && attachmentError.code === 'PGRST116') {
-          return jsonResponse({ error: 'Attachment not found' }, 404);
-        }
+        if ('code' in attachmentError && attachmentError.code === 'PGRST116') return jsonResponse({ error: 'Attachment not found' }, 404);
         throw attachmentError;
       }
+      if (!attachment) return jsonResponse({ error: 'Attachment not found' }, 404);
+      if (attachment.uploaded_by !== actorId) return jsonResponse({ error: 'Only the uploader can delete this attachment' }, 403);
 
-      if (!attachment) {
-        return jsonResponse({ error: 'Attachment not found' }, 404);
-      }
-
-      if (attachment.uploaded_by !== actor_id) {
-        return jsonResponse(
-          { error: 'Only the uploader can delete this attachment' },
-          403,
-        );
-      }
-
-      const { error: softDeleteError } = await admin
-        .from('attachments')
-        .update({ deleted_at: new Date().toISOString() })
-        .eq('id', attachment_id);
-
-      if (softDeleteError) {
-        throw softDeleteError;
-      }
-
-      const { error: storageRemoveError } = await admin.storage
-        .from('attachments')
-        .remove([attachment.storage_path]);
-
-      if (storageRemoveError) {
-        throw storageRemoveError;
-      }
+      await admin.from('attachments').update({ deleted_at: new Date().toISOString() }).eq('id', attachment_id);
+      await admin.storage.from('attachments').remove([attachment.storage_path]);
 
       if (attachment.entity_type === 'task') {
-        const { error: activityError } = await admin.from('task_activity_logs').insert({
-          task_id: attachment.entity_id,
-          actor_id,
-          old_status: null,
-          new_status: null,
-          note: `Removed file: ${attachment.file_name}`,
-        });
-
-        if (activityError) {
-          throw activityError;
-        }
+        await admin.from('task_activity_logs').insert({ task_id: attachment.entity_id, actor_id: actorId, old_status: null, new_status: null, note: `Removed file: ${attachment.file_name}` });
       }
 
       return jsonResponse({ success: true });
@@ -371,6 +272,6 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Unknown action' }, 400);
   } catch (err: unknown) {
     console.error('attachments error:', err);
-    return jsonResponse({ error: getErrorMessage(err) }, 500);
+    return jsonResponse({ error: 'Internal server error' }, 500);
   }
 });
