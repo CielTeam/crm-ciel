@@ -71,7 +71,7 @@ export function useTasksRealtime() {
 }
 
 export function useTasks(tab: TaskTab = 'my_tasks') {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   // Subscribe to realtime updates
   useTasksRealtime();
@@ -79,8 +79,10 @@ export function useTasks(tab: TaskTab = 'my_tasks') {
   return useQuery({
     queryKey: ['tasks', tab, user?.id],
     queryFn: async () => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'list', actor_id: user!.id, tab },
+        body: { action: 'list', tab },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       return (data.tasks || []) as Task[];
@@ -90,13 +92,15 @@ export function useTasks(tab: TaskTab = 'my_tasks') {
 }
 
 export function useAssignableUsers() {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useQuery({
     queryKey: ['assignable-users', user?.id],
     queryFn: async () => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'assignable_users', actor_id: user!.id },
+        body: { action: 'assignable_users' },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       return (data.users || []) as Array<{
@@ -113,7 +117,7 @@ export function useAssignableUsers() {
 
 export function useCreateTask() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (payload: {
@@ -124,8 +128,10 @@ export function useCreateTask() {
       assigned_to?: string | null;
       estimated_duration?: string | null;
     }) => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'create', actor_id: user!.id, ...payload },
+        body: { action: 'create', ...payload },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);
@@ -137,12 +143,14 @@ export function useCreateTask() {
 
 export function useUpdateTask() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (payload: { id: string; [key: string]: unknown }) => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'update', actor_id: user!.id, ...payload },
+        body: { action: 'update', ...payload },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);
@@ -154,12 +162,14 @@ export function useUpdateTask() {
 
 export function useDeleteTask() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (id: string) => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'delete', actor_id: user!.id, id },
+        body: { action: 'delete', id },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);
@@ -170,13 +180,15 @@ export function useDeleteTask() {
 }
 
 export function useTaskActivity(taskId: string | null) {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useQuery({
     queryKey: ['task-activity', taskId],
     queryFn: async () => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'list_activity', actor_id: user!.id, task_id: taskId },
+        body: { action: 'list_activity', task_id: taskId },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       return (data.activity || []) as TaskActivityLog[];
@@ -196,13 +208,15 @@ export interface TaskComment {
 }
 
 export function useTaskComments(taskId: string | null) {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useQuery({
     queryKey: ['task-comments', taskId],
     queryFn: async () => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'list_comments', actor_id: user!.id, task_id: taskId },
+        body: { action: 'list_comments', task_id: taskId },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       return (data.comments || []) as TaskComment[];
@@ -213,12 +227,14 @@ export function useTaskComments(taskId: string | null) {
 
 export function useAddTaskComment() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (payload: { task_id: string; content: string }) => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'add_comment', actor_id: user!.id, ...payload },
+        body: { action: 'add_comment', ...payload },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);
@@ -233,12 +249,14 @@ export function useAddTaskComment() {
 
 export function useReassignTask() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (payload: { task_id: string; new_assigned_to: string }) => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'reassign', actor_id: user!.id, ...payload },
+        body: { action: 'reassign', ...payload },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);

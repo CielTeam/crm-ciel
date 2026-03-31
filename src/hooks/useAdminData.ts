@@ -59,13 +59,15 @@ interface MemberRow {
 }
 
 export function useAdminUsers() {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useQuery({
     queryKey: ['admin-users'],
     queryFn: async (): Promise<AdminUser[]> => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('admin-list-data', {
-        body: { actor_id: user?.id, type: 'users' },
+        body: { type: 'users' },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
@@ -96,13 +98,15 @@ export function useAdminUsers() {
 }
 
 export function useAdminTeams() {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useQuery({
     queryKey: ['admin-teams'],
     queryFn: async (): Promise<AdminTeam[]> => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('admin-list-data', {
-        body: { actor_id: user?.id, type: 'teams' },
+        body: { type: 'teams' },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
@@ -137,12 +141,14 @@ type AdminAction =
 
 export function useAdminAction() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (payload: AdminAction) => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('admin-manage-user', {
-        body: { ...payload, actor_id: user?.id },
+        body: { ...payload },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);

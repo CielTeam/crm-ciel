@@ -5,9 +5,134 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+// ─── Auth0 JWT Verification ───
+
+interface JwtHeader {
+  alg: string;
+  typ: string;
+  kid: string;
+}
+
+interface JwtPayload {
+  iss: string;
+  sub: string;
+  aud: string | string[];
+  exp: number;
+  iat: number;
+}
+
+interface JwksKey {
+  kty: string;
+  kid: string;
+  use: string;
+  n: string;
+  e: string;
+  alg: string;
+}
+
+interface JwksResponse {
+  keys: JwksKey[];
+}
+
+const jwksCache = new Map<string, { keys: JwksKey[]; fetchedAt: number }>();
+const JWKS_CACHE_TTL = 600_000; // 10 minutes
+
+function base64UrlDecode(str: string): Uint8Array {
+  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = base64.length % 4;
+  const padded = pad ? base64 + '='.repeat(4 - pad) : base64;
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function decodeJwtPart<T>(part: string): T {
+  const decoded = new TextDecoder().decode(base64UrlDecode(part));
+  return JSON.parse(decoded) as T;
+}
+
+async function fetchJwks(domain: string): Promise<JwksKey[]> {
+  const cached = jwksCache.get(domain);
+  if (cached && Date.now() - cached.fetchedAt < JWKS_CACHE_TTL) {
+    return cached.keys;
+  }
+  const res = await fetch(`https://${domain}/.well-known/jwks.json`);
+  if (!res.ok) throw new Error('Failed to fetch JWKS');
+  const data = (await res.json()) as JwksResponse;
+  jwksCache.set(domain, { keys: data.keys, fetchedAt: Date.now() });
+  return data.keys;
+}
+
+async function importRsaKey(jwk: JwksKey): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    'jwk',
+    { kty: jwk.kty, n: jwk.n, e: jwk.e, alg: 'RS256', ext: true },
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['verify']
+  );
+}
+
+async function verifyAuth0Jwt(req: Request): Promise<string> {
+  const auth0Domain = Deno.env.get('AUTH0_DOMAIN');
+  const auth0Audience = Deno.env.get('AUTH0_AUDIENCE');
+  if (!auth0Domain || !auth0Audience) throw new Error('Auth0 configuration missing');
+
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) throw new Error('Missing token');
+
+  const token = authHeader.slice(7);
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('Invalid token format');
+
+  const header = decodeJwtPart<JwtHeader>(parts[0]);
+  if (header.alg !== 'RS256') throw new Error('Unsupported algorithm');
+
+  const keys = await fetchJwks(auth0Domain);
+  const jwk = keys.find(k => k.kid === header.kid);
+  if (!jwk) throw new Error('Key not found');
+
+  const key = await importRsaKey(jwk);
+  const signatureBytes = base64UrlDecode(parts[2]);
+  const dataBytes = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+
+  const valid = await crypto.subtle.verify(
+    'RSASSA-PKCS1-v1_5',
+    key,
+    signatureBytes,
+    dataBytes
+  );
+  if (!valid) throw new Error('Invalid signature');
+
+  const payload = decodeJwtPart<JwtPayload>(parts[1]);
+
+  if (payload.iss !== `https://${auth0Domain}/`) throw new Error('Invalid issuer');
+
+  const audArray = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  if (!audArray.includes(auth0Audience)) throw new Error('Invalid audience');
+
+  if (payload.exp < Math.floor(Date.now() / 1000)) throw new Error('Token expired');
+
+  return payload.sub;
+}
+
+// ─── Edge Function ───
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  let actorId: string;
+  try {
+    actorId = await verifyAuth0Jwt(req);
+  } catch {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {
@@ -16,21 +141,14 @@ Deno.serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceRoleKey);
 
     const body = await req.json();
-    const { action, actor_id, ...payload } = body;
-
-    if (!actor_id) {
-      return new Response(JSON.stringify({ error: 'Missing actor_id' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const { action, ...payload } = body;
 
     // LIST CONVERSATIONS
     if (action === 'list_conversations') {
-      // Get user's conversation IDs
       const { data: memberships, error: mErr } = await admin
         .from('conversation_members')
         .select('conversation_id, last_read_at')
-        .eq('user_id', actor_id);
+        .eq('user_id', actorId);
 
       if (mErr) throw mErr;
       if (!memberships || memberships.length === 0) {
@@ -42,7 +160,6 @@ Deno.serve(async (req) => {
       const convIds = memberships.map(m => m.conversation_id);
       const readMap = new Map(memberships.map(m => [m.conversation_id, m.last_read_at]));
 
-      // Get conversations
       const { data: convs, error: cErr } = await admin
         .from('conversations')
         .select('*')
@@ -51,13 +168,11 @@ Deno.serve(async (req) => {
 
       if (cErr) throw cErr;
 
-      // Get all members for these conversations (for display names)
       const { data: allMembers } = await admin
         .from('conversation_members')
         .select('conversation_id, user_id')
         .in('conversation_id', convIds);
 
-      // Get last message per conversation
       const results = [];
       for (const conv of convs || []) {
         const { data: lastMsg } = await admin
@@ -68,7 +183,6 @@ Deno.serve(async (req) => {
           .order('created_at', { ascending: false })
           .limit(1);
 
-        // Count unread
         const lastRead = readMap.get(conv.id);
         let unreadCount = 0;
         if (lastRead) {
@@ -77,7 +191,7 @@ Deno.serve(async (req) => {
             .select('*', { count: 'exact', head: true })
             .eq('conversation_id', conv.id)
             .is('deleted_at', null)
-            .neq('sender_id', actor_id)
+            .neq('sender_id', actorId)
             .gt('created_at', lastRead);
           unreadCount = count || 0;
         }
@@ -108,7 +222,7 @@ Deno.serve(async (req) => {
         .from('conversation_members')
         .select('id')
         .eq('conversation_id', conversation_id)
-        .eq('user_id', actor_id)
+        .eq('user_id', actorId)
         .maybeSingle();
 
       if (!member) {
@@ -152,7 +266,7 @@ Deno.serve(async (req) => {
         .from('conversation_members')
         .select('id')
         .eq('conversation_id', conversation_id)
-        .eq('user_id', actor_id)
+        .eq('user_id', actorId)
         .maybeSingle();
 
       if (!member) {
@@ -161,35 +275,36 @@ Deno.serve(async (req) => {
         });
       }
 
+      // Sanitize content
+      const sanitizedContent = content.trim().substring(0, 5000);
+
       const { data, error } = await admin.from('messages').insert({
         conversation_id,
-        sender_id: actor_id,
-        content: content.trim(),
+        sender_id: actorId,
+        content: sanitizedContent,
       }).select().single();
 
       if (error) throw error;
 
-      // Update conversation updated_at
       await admin.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversation_id);
 
-      // Update sender's last_read_at
       await admin.from('conversation_members').update({ last_read_at: new Date().toISOString() })
         .eq('conversation_id', conversation_id)
-        .eq('user_id', actor_id);
+        .eq('user_id', actorId);
 
       // Notify other members
       const { data: members } = await admin
         .from('conversation_members')
         .select('user_id')
         .eq('conversation_id', conversation_id)
-        .neq('user_id', actor_id);
+        .neq('user_id', actorId);
 
       if (members && members.length > 0) {
         const notifications = members.map((m) => ({
           user_id: m.user_id,
           type: 'new_message',
           title: 'New message received',
-          body: content.trim().substring(0, 100),
+          body: sanitizedContent.substring(0, 100),
           reference_id: conversation_id,
           reference_type: 'conversation',
         }));
@@ -217,7 +332,7 @@ Deno.serve(async (req) => {
         const { data: existing } = await admin
           .from('conversation_members')
           .select('conversation_id')
-          .eq('user_id', actor_id);
+          .eq('user_id', actorId);
 
         if (existing) {
           for (const m of existing) {
@@ -249,13 +364,13 @@ Deno.serve(async (req) => {
       const { data: conv, error } = await admin.from('conversations').insert({
         type,
         name: name || null,
-        created_by: actor_id,
+        created_by: actorId,
       }).select().single();
 
       if (error) throw error;
 
       // Add members including creator
-      const allMembers = [...new Set([actor_id, ...member_ids])];
+      const allMembers = [...new Set([actorId, ...member_ids])];
       const { error: mErr } = await admin.from('conversation_members').insert(
         allMembers.map(uid => ({ conversation_id: conv.id, user_id: uid }))
       );
@@ -271,9 +386,23 @@ Deno.serve(async (req) => {
     if (action === 'mark_read') {
       const { conversation_id } = payload;
 
+      // Verify membership
+      const { data: member } = await admin
+        .from('conversation_members')
+        .select('id')
+        .eq('conversation_id', conversation_id)
+        .eq('user_id', actorId)
+        .maybeSingle();
+
+      if (!member) {
+        return new Response(JSON.stringify({ error: 'Not a member' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       const { error } = await admin.from('conversation_members').update({
         last_read_at: new Date().toISOString(),
-      }).eq('conversation_id', conversation_id).eq('user_id', actor_id);
+      }).eq('conversation_id', conversation_id).eq('user_id', actorId);
 
       if (error) throw error;
 
@@ -287,7 +416,7 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error('messages error:', err);
-    return new Response(JSON.stringify({ error: (err as Error).message }), {
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

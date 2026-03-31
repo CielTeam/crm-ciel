@@ -32,19 +32,16 @@ interface MessagesFunctionResponse {
   error?: string;
 }
 
-function getUserId(userId?: string): string {
-  if (!userId) {
-    throw new Error('User is not authenticated');
-  }
-  return userId;
-}
-
 async function invokeMessages(
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  token: string
 ): Promise<MessagesFunctionResponse> {
   const { data, error } = await supabase.functions.invoke<MessagesFunctionResponse>(
     'messages',
-    { body }
+    {
+      body,
+      headers: { Authorization: `Bearer ${token}` },
+    }
   );
 
   if (error) {
@@ -136,17 +133,16 @@ export function useMessagesRealtime(conversationId: string | null) {
 // ─── Query hooks ───
 
 export function useConversations() {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useQuery({
     queryKey: ['conversations', user?.id],
     queryFn: async () => {
-      const actorId = getUserId(user?.id);
+      const token = await getToken();
 
       const data = await invokeMessages({
         action: 'list_conversations',
-        actor_id: actorId,
-      });
+      }, token);
 
       return data.conversations ?? [];
     },
@@ -155,7 +151,7 @@ export function useConversations() {
 }
 
 export function useMessages(conversationId: string | null) {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   // Subscribe to realtime for current conversation
   useMessagesRealtime(conversationId);
@@ -163,17 +159,16 @@ export function useMessages(conversationId: string | null) {
   return useQuery({
     queryKey: ['messages', user?.id, conversationId],
     queryFn: async () => {
-      const actorId = getUserId(user?.id);
-
       if (!conversationId) {
         throw new Error('Missing conversation ID');
       }
 
+      const token = await getToken();
+
       const data = await invokeMessages({
         action: 'get_messages',
-        actor_id: actorId,
         conversation_id: conversationId,
-      });
+      }, token);
 
       return data.messages ?? [];
     },
@@ -183,17 +178,16 @@ export function useMessages(conversationId: string | null) {
 
 export function useSendMessage() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (payload: { conversation_id: string; content: string }) => {
-      const actorId = getUserId(user?.id);
+      const token = await getToken();
 
       const data = await invokeMessages({
         action: 'send_message',
-        actor_id: actorId,
         ...payload,
-      });
+      }, token);
 
       if (!data.message) {
         throw new Error('Message was not returned by the server');
@@ -222,7 +216,7 @@ export function useSendMessage() {
 
 export function useCreateConversation() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (payload: {
@@ -230,13 +224,12 @@ export function useCreateConversation() {
       name?: string;
       member_ids: string[];
     }) => {
-      const actorId = getUserId(user?.id);
+      const token = await getToken();
 
       const data = await invokeMessages({
         action: 'create_conversation',
-        actor_id: actorId,
         ...payload,
-      });
+      }, token);
 
       if (!data.conversation) {
         throw new Error('Conversation was not returned by the server');
@@ -252,17 +245,16 @@ export function useCreateConversation() {
 
 export function useMarkRead() {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (conversationId: string) => {
-      const actorId = getUserId(user?.id);
+      const token = await getToken();
 
       await invokeMessages({
         action: 'mark_read',
-        actor_id: actorId,
         conversation_id: conversationId,
-      });
+      }, token);
 
       return conversationId;
     },

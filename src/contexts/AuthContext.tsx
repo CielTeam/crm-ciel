@@ -28,6 +28,7 @@ interface AuthState {
   primaryRole: AppRole | null;
   login: (loginHint?: string) => void;
   logout: () => void;
+  getToken: () => Promise<string>;
 }
 
 interface SyncProfileResponse {
@@ -71,11 +72,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loginWithRedirect,
     logout: auth0Logout,
     error: auth0Error,
+    getAccessTokenSilently,
   } = useAuth0();
 
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [syncLoading, setSyncLoading] = useState(false);
+
+  const getToken = useCallback(async (): Promise<string> => {
+    return getAccessTokenSilently();
+  }, [getAccessTokenSilently]);
 
   const syncProfile = useCallback(
     async (userId: string, email: string, name: string, avatar?: string) => {
@@ -189,6 +195,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       primaryRole,
       login,
       logout,
+      getToken,
     }),
     [
       auth0IsAuth,
@@ -200,6 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       primaryRole,
       login,
       logout,
+      getToken,
     ]
   );
 

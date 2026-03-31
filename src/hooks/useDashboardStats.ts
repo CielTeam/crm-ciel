@@ -69,13 +69,15 @@ export interface DashboardStats {
 }
 
 export function useDashboardStats() {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   return useQuery<DashboardStats>({
     queryKey: ['dashboard-stats', user?.id],
     queryFn: async () => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('dashboard-stats', {
-        body: { actor_id: user!.id },
+        body: {},
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       return data as DashboardStats;
