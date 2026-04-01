@@ -63,10 +63,32 @@ async function verifyAuth0Jwt(req: Request): Promise<string> {
   return payload.sub;
 }
 
+// ─── Rate Limiting ───
+
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || now - entry.windowStart > windowMs) {
+    rateLimitMap.set(key, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= maxRequests) return false;
+  entry.count++;
+  return true;
+}
+
+// ─── Helpers ───
+
+function sanitizeString(val: unknown, maxLen: number): string {
+  if (typeof val !== 'string') return '';
+  return val.replace(/<[^>]*>/g, '').trim().substring(0, maxLen);
+}
+
 // ─── Types ───
 
 type JsonResponseBody = Record<string, unknown>;
-
 type AdminManageUserAction = 'create_user' | 'update_role' | 'deactivate_user' | 'reactivate_user' | 'create_team' | 'assign_team' | 'remove_team_member';
 
 interface AdminManageUserRequest {
@@ -101,8 +123,17 @@ Deno.serve(async (req) => {
   let actorId: string;
   try {
     actorId = await verifyAuth0Jwt(req);
-  } catch {
+  } catch (err) {
+    try {
+      const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      await sb.from('audit_logs').insert({ actor_id: 'anonymous', action: 'auth.failure', target_type: 'admin-manage-user', metadata: { reason: err instanceof Error ? err.message : 'Unknown' } });
+    } catch { /* best effort */ }
     return jsonResponse({ error: 'Unauthorized' }, 401);
+  }
+
+  // Rate limit: 30 requests per 60 seconds
+  if (!checkRateLimit(`admin-manage:${actorId}`, 30, 60_000)) {
+    return jsonResponse({ error: 'Too many requests' }, 429);
   }
 
   try {
@@ -125,7 +156,9 @@ Deno.serve(async (req) => {
 
     switch (action) {
       case 'create_user': {
-        const { email, display_name, role } = body;
+        const email = sanitizeString(body.email, 255);
+        const display_name = sanitizeString(body.display_name, 100);
+        const role = sanitizeString(body.role, 50);
         if (!email || !display_name || !role) return jsonResponse({ error: 'Missing required fields' }, 400);
 
         const { data: existing, error: existingError } = await adminClient.from('profiles').select('id').eq('email', email).maybeSingle();
@@ -145,7 +178,8 @@ Deno.serve(async (req) => {
       }
 
       case 'update_role': {
-        const { target_user_id, new_role } = body;
+        const { target_user_id } = body;
+        const new_role = sanitizeString(body.new_role, 50);
         if (!target_user_id || !new_role) return jsonResponse({ error: 'Missing required fields' }, 400);
         await adminClient.from('user_roles').delete().eq('user_id', target_user_id);
         const { error: insertRoleError } = await adminClient.from('user_roles').insert({ user_id: target_user_id, role: new_role });
@@ -176,7 +210,8 @@ Deno.serve(async (req) => {
       }
 
       case 'create_team': {
-        const { name, department } = body;
+        const name = sanitizeString(body.name, 100);
+        const department = sanitizeString(body.department, 100);
         if (!name || !department) return jsonResponse({ error: 'Missing required fields' }, 400);
         const { data: team, error } = await adminClient.from('teams').insert({ name, department }).select().single<CreatedTeam>();
         if (error) throw error;

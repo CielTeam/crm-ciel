@@ -63,7 +63,28 @@ async function verifyAuth0Jwt(req: Request): Promise<string> {
   return payload.sub;
 }
 
-// ─── Types ───
+// ─── Rate Limiting ───
+
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || now - entry.windowStart > windowMs) {
+    rateLimitMap.set(key, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= maxRequests) return false;
+  entry.count++;
+  return true;
+}
+
+// ─── Helpers ───
+
+function sanitizeString(val: unknown, maxLen: number): string {
+  if (typeof val !== 'string') return '';
+  return val.replace(/<[^>]*>/g, '').trim().substring(0, maxLen);
+}
 
 type UserRoleRow = { role: string };
 type TeamRow = { id: string };
@@ -107,8 +128,17 @@ Deno.serve(async (req) => {
   let actorId: string;
   try {
     actorId = await verifyAuth0Jwt(req);
-  } catch {
+  } catch (err) {
+    try {
+      const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      await sb.from('audit_logs').insert({ actor_id: 'anonymous', action: 'auth.failure', target_type: 'tasks', metadata: { reason: err instanceof Error ? err.message : 'Unknown' } });
+    } catch { /* best effort */ }
     return jsonResponse({ error: 'Unauthorized' }, 401);
+  }
+
+  // Rate limit: 30 requests per 60 seconds
+  if (!checkRateLimit(`tasks:${actorId}`, 30, 60_000)) {
+    return jsonResponse({ error: 'Too many requests' }, 429);
   }
 
   try {
@@ -145,19 +175,23 @@ Deno.serve(async (req) => {
     // ─── CREATE ───
     if (action === 'create') {
       const { title, description, priority, due_date, assigned_to, estimated_duration } = payload;
-      if (!title?.trim()) return jsonResponse({ error: 'Title is required' }, 400);
+      const cleanTitle = sanitizeString(title, 255);
+      const cleanDescription = sanitizeString(description, 5000);
+      if (!cleanTitle) return jsonResponse({ error: 'Title is required' }, 400);
 
       const taskType = assigned_to && assigned_to !== actorId ? 'assigned' : 'personal';
       const { data, error } = await admin.from('tasks').insert({
-        title: title.trim(), description: description || null, priority: priority || 'medium',
+        title: cleanTitle, description: cleanDescription || null, priority: priority || 'medium',
         due_date: due_date || null, assigned_to: assigned_to || null, estimated_duration: estimated_duration || null,
         created_by: actorId, task_type: taskType,
       }).select().single();
       if (error) throw error;
 
       await logActivity(admin, data.id, actorId, null, 'todo', 'Task created');
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.create', target_type: 'task', target_id: data.id, metadata: { title: cleanTitle } });
+
       if (assigned_to && assigned_to !== actorId) {
-        await admin.from('notifications').insert({ user_id: assigned_to, type: 'task_assigned', title: 'New task assigned to you', body: title.trim(), reference_id: data.id, reference_type: 'task' });
+        await admin.from('notifications').insert({ user_id: assigned_to, type: 'task_assigned', title: 'New task assigned to you', body: cleanTitle, reference_id: data.id, reference_type: 'task' });
       }
       return jsonResponse({ task: data }, 201);
     }
@@ -179,12 +213,19 @@ Deno.serve(async (req) => {
       const updatePayload: Record<string, unknown> = {};
       const allowedFields = ['title', 'description', 'priority', 'due_date', 'status', 'challenges', 'estimated_duration', 'actual_duration', 'feedback', 'decline_reason', 'completed_at'];
       for (const field of allowedFields) {
-        if (updates[field] !== undefined) updatePayload[field] = updates[field];
+        if (updates[field] !== undefined) {
+          if (field === 'title') updatePayload[field] = sanitizeString(updates[field], 255);
+          else if (field === 'description' || field === 'feedback' || field === 'challenges') updatePayload[field] = sanitizeString(updates[field], 5000);
+          else if (field === 'decline_reason') updatePayload[field] = sanitizeString(updates[field], 1000);
+          else updatePayload[field] = updates[field];
+        }
       }
       if (updatePayload.status === 'done' && !updatePayload.completed_at) updatePayload.completed_at = new Date().toISOString();
 
       const { data, error } = await admin.from('tasks').update(updatePayload).eq('id', id).select().single();
       if (error) throw error;
+
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.update', target_type: 'task', target_id: id, metadata: { fields: Object.keys(updatePayload) } });
 
       if (updatePayload.status && updatePayload.status !== oldStatus) {
         await logActivity(admin, id, actorId, oldStatus, updatePayload.status as string);
@@ -200,10 +241,11 @@ Deno.serve(async (req) => {
     if (action === 'delete') {
       const { id } = payload;
       if (!id) return jsonResponse({ error: 'Task id is required' }, 400);
-      const { data: existing } = await admin.from('tasks').select('created_by').eq('id', id).single();
+      const { data: existing } = await admin.from('tasks').select('created_by, title').eq('id', id).single();
       if (!existing || existing.created_by !== actorId) return jsonResponse({ error: 'Forbidden' }, 403);
       const { error } = await admin.from('tasks').delete().eq('id', id);
       if (error) throw error;
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.delete', target_type: 'task', target_id: id, metadata: { title: existing.title } });
       return jsonResponse({ success: true });
     }
 
@@ -248,15 +290,16 @@ Deno.serve(async (req) => {
     // ─── ADD COMMENT ───
     if (action === 'add_comment') {
       const { task_id, content } = payload;
-      if (!task_id || !content?.trim()) return jsonResponse({ error: 'task_id and content are required' }, 400);
+      const cleanContent = sanitizeString(content, 2000);
+      if (!task_id || !cleanContent) return jsonResponse({ error: 'task_id and content are required' }, 400);
 
       const { data: task } = await admin.from('tasks').select('created_by, assigned_to').eq('id', task_id).single();
       if (!task || (task.created_by !== actorId && task.assigned_to !== actorId)) return jsonResponse({ error: 'Forbidden' }, 403);
 
-      const { data, error } = await admin.from('task_comments').insert({ task_id, author_id: actorId, content: content.trim() }).select().single();
+      const { data, error } = await admin.from('task_comments').insert({ task_id, author_id: actorId, content: cleanContent }).select().single();
       if (error) throw error;
 
-      await logActivity(admin, task_id, actorId, null, null, `Comment: ${content.trim().substring(0, 100)}`);
+      await logActivity(admin, task_id, actorId, null, null, `Comment: ${cleanContent.substring(0, 100)}`);
       const { data: profile } = await admin.from('profiles').select('display_name, avatar_url').eq('user_id', actorId).single();
       return jsonResponse({ comment: { ...data, author_name: (profile as ProfileRow | null)?.display_name || 'Unknown', author_avatar: (profile as ProfileRow | null)?.avatar_url || null } }, 201);
     }

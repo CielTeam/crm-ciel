@@ -69,11 +69,27 @@ async function verifyAuth0Jwt(req: Request): Promise<string> {
   return payload.sub;
 }
 
-// ─── Types ───
+// ─── Rate Limiting ───
 
-const ALLOWED_EXTENSIONS = ['.zip', '.rar'];
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const ALLOWED_MIME_TYPES = ['application/zip', 'application/x-zip-compressed', 'application/x-rar-compressed', 'application/vnd.rar', 'application/octet-stream'] as const;
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || now - entry.windowStart > windowMs) {
+    rateLimitMap.set(key, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= maxRequests) return false;
+  entry.count++;
+  return true;
+}
+
+// ─── Types & Constants ───
+
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'] as const;
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'];
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 type AttachmentAction = 'upload' | 'list' | 'delete';
 type EntityType = 'task' | 'comment' | 'message';
@@ -121,8 +137,12 @@ function decodeBase64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
-function getContentTypeFromExtension(ext: string): string {
-  return ext === '.zip' ? 'application/zip' : 'application/x-rar-compressed';
+function getMimeType(ext: string): string {
+  const map: Record<string, string> = {
+    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+    '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf',
+  };
+  return map[ext] || 'application/octet-stream';
 }
 
 // ─── Access validation helpers ───
@@ -155,7 +175,11 @@ Deno.serve(async (req) => {
   let actorId: string;
   try {
     actorId = await verifyAuth0Jwt(req);
-  } catch {
+  } catch (err) {
+    try {
+      const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      await sb.from('audit_logs').insert({ actor_id: 'anonymous', action: 'auth.failure', target_type: 'attachments', metadata: { reason: err instanceof Error ? err.message : 'Unknown' } });
+    } catch { /* best effort */ }
     return jsonResponse({ error: 'Unauthorized' }, 401);
   }
 
@@ -171,17 +195,22 @@ Deno.serve(async (req) => {
     if (!action) return jsonResponse({ error: 'Missing action' }, 400);
 
     if (action === 'upload') {
+      // Rate limit: 5 uploads per 60 seconds
+      if (!checkRateLimit(`upload:${actorId}`, 5, 60_000)) {
+        return jsonResponse({ error: 'Too many requests' }, 429);
+      }
+
       const { file_name, file_base64, entity_type, entity_id } = body;
       if (!file_name || !file_base64 || !entity_type || !entity_id) return jsonResponse({ error: 'file_name, file_base64, entity_type, and entity_id are required' }, 400);
       if (!['task', 'comment', 'message'].includes(entity_type)) return jsonResponse({ error: 'entity_type must be task, comment, or message' }, 400);
 
       const ext = getExtension(file_name);
-      if (!ALLOWED_EXTENSIONS.includes(ext)) return jsonResponse({ error: 'Only .zip and .rar files are allowed' }, 400);
+      if (!ALLOWED_EXTENSIONS.includes(ext)) return jsonResponse({ error: 'Only images (jpg, png, gif, webp) and PDF files are allowed' }, 400);
 
       const bytes = decodeBase64ToBytes(file_base64);
-      if (bytes.length > MAX_FILE_SIZE) return jsonResponse({ error: 'File size exceeds 10MB limit' }, 400);
+      if (bytes.length > MAX_FILE_SIZE) return jsonResponse({ error: 'File size exceeds 5MB limit' }, 400);
 
-      const contentType = getContentTypeFromExtension(ext);
+      const contentType = getMimeType(ext);
       if (!ALLOWED_MIME_TYPES.includes(contentType as (typeof ALLOWED_MIME_TYPES)[number])) return jsonResponse({ error: 'Unsupported content type' }, 400);
 
       // Validate access
@@ -201,7 +230,7 @@ Deno.serve(async (req) => {
       if (uploadError) throw uploadError;
 
       const { data: attachment, error: insertError } = await admin.from('attachments').insert({
-        file_name: file_name.trim(),
+        file_name: file_name.trim().substring(0, 255),
         file_size: bytes.length,
         content_type: contentType,
         storage_path: storagePath,
@@ -211,6 +240,9 @@ Deno.serve(async (req) => {
       }).select().single<AttachmentRow>();
       if (insertError) throw insertError;
 
+      // Audit log
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'attachment.upload', target_type: entity_type, target_id: entity_id, metadata: { attachment_id: attachment.id, file_name: sanitizedName, file_size: bytes.length } });
+
       if (entity_type === 'task') {
         await admin.from('task_activity_logs').insert({ task_id: entity_id, actor_id: actorId, old_status: null, new_status: null, note: `Attached file: ${file_name}` });
       }
@@ -219,10 +251,13 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'list') {
+      if (!checkRateLimit(`att:${actorId}`, 30, 60_000)) {
+        return jsonResponse({ error: 'Too many requests' }, 429);
+      }
+
       const { entity_type, entity_id } = body;
       if (!entity_type || !entity_id) return jsonResponse({ error: 'entity_type and entity_id are required' }, 400);
 
-      // Validate access before listing
       if (entity_type === 'task') {
         if (!(await validateTaskAccess(admin, entity_id, actorId))) return jsonResponse({ error: 'Forbidden' }, 403);
       } else if (entity_type === 'comment') {
@@ -248,6 +283,10 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'delete') {
+      if (!checkRateLimit(`att:${actorId}`, 30, 60_000)) {
+        return jsonResponse({ error: 'Too many requests' }, 429);
+      }
+
       const { attachment_id } = body;
       if (!attachment_id) return jsonResponse({ error: 'attachment_id is required' }, 400);
 
@@ -261,6 +300,9 @@ Deno.serve(async (req) => {
 
       await admin.from('attachments').update({ deleted_at: new Date().toISOString() }).eq('id', attachment_id);
       await admin.storage.from('attachments').remove([attachment.storage_path]);
+
+      // Audit log
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'attachment.delete', target_type: attachment.entity_type, target_id: attachment.entity_id, metadata: { attachment_id, file_name: attachment.file_name } });
 
       if (attachment.entity_type === 'task') {
         await admin.from('task_activity_logs').insert({ task_id: attachment.entity_id, actor_id: actorId, old_status: null, new_status: null, note: `Removed file: ${attachment.file_name}` });

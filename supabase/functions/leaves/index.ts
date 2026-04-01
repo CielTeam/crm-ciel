@@ -63,6 +63,29 @@ async function verifyAuth0Jwt(req: Request): Promise<string> {
   return payload.sub;
 }
 
+// ─── Rate Limiting ───
+
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || now - entry.windowStart > windowMs) {
+    rateLimitMap.set(key, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= maxRequests) return false;
+  entry.count++;
+  return true;
+}
+
+// ─── Helpers ───
+
+function sanitizeString(val: unknown, maxLen: number): string {
+  if (typeof val !== 'string') return '';
+  return val.replace(/<[^>]*>/g, '').trim().substring(0, maxLen);
+}
+
 // ─── Edge Function ───
 
 const corsHeaders = {
@@ -90,9 +113,20 @@ Deno.serve(async (req) => {
   let actorId: string;
   try {
     actorId = await verifyAuth0Jwt(req);
-  } catch {
+  } catch (err) {
+    try {
+      const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      await sb.from('audit_logs').insert({ actor_id: 'anonymous', action: 'auth.failure', target_type: 'leaves', metadata: { reason: err instanceof Error ? err.message : 'Unknown' } });
+    } catch { /* best effort */ }
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Rate limit: 30 requests per 60 seconds
+  if (!checkRateLimit(`leaves:${actorId}`, 30, 60_000)) {
+    return new Response(JSON.stringify({ error: 'Too many requests' }), {
+      status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
@@ -131,6 +165,8 @@ Deno.serve(async (req) => {
       if (!LEAVE_TYPES.includes(leave_type)) return new Response(JSON.stringify({ error: 'Invalid leave type' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       if (!start_date || !end_date || new Date(end_date) < new Date(start_date)) return new Response(JSON.stringify({ error: 'Invalid dates' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
+      const cleanReason = sanitizeString(reason, 1000) || null;
+
       if (leave_type !== 'unpaid') {
         const cols = BALANCE_COLS[leave_type];
         let { data: bal } = await admin.from('leave_balances').select('*').eq('user_id', actorId).maybeSingle();
@@ -140,7 +176,7 @@ Deno.serve(async (req) => {
         if (days > remaining) return new Response(JSON.stringify({ error: `Insufficient ${leave_type} balance. ${remaining} days remaining.` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      const { data, error } = await admin.from('leaves').insert({ user_id: actorId, leave_type, start_date, end_date, reason: reason || null }).select().single();
+      const { data, error } = await admin.from('leaves').insert({ user_id: actorId, leave_type, start_date, end_date, reason: cleanReason }).select().single();
       if (error) throw error;
       await admin.from('audit_logs').insert({ actor_id: actorId, action: 'leave.create', target_type: 'leave', target_id: data.id, metadata: { leave_type, start_date, end_date } });
       return new Response(JSON.stringify({ leave: data }), { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -151,7 +187,8 @@ Deno.serve(async (req) => {
       const { leave_id, decision, reviewer_note } = payload;
       if (!['approved', 'rejected'].includes(decision)) return new Response(JSON.stringify({ error: 'Invalid decision' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-      // Verify reviewer role from DB
+      const cleanNote = sanitizeString(reviewer_note, 1000) || null;
+
       const { data: roles } = await admin.from('user_roles').select('role').eq('user_id', actorId);
       const hasReviewerRole = roles?.some((r: { role: string }) => REVIEWER_ROLES.includes(r.role));
       if (!hasReviewerRole) return new Response(JSON.stringify({ error: 'Forbidden: insufficient role' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -159,7 +196,7 @@ Deno.serve(async (req) => {
       const { data: leave } = await admin.from('leaves').select('*').eq('id', leave_id).single();
       if (!leave || leave.status !== 'pending') return new Response(JSON.stringify({ error: 'Leave not found or not pending' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-      const { data: updated, error } = await admin.from('leaves').update({ status: decision, reviewer_id: actorId, reviewed_at: new Date().toISOString(), reviewer_note: reviewer_note || null }).eq('id', leave_id).select().single();
+      const { data: updated, error } = await admin.from('leaves').update({ status: decision, reviewer_id: actorId, reviewed_at: new Date().toISOString(), reviewer_note: cleanNote }).eq('id', leave_id).select().single();
       if (error) throw error;
 
       if (decision === 'approved' && leave.leave_type !== 'unpaid') {
@@ -169,10 +206,10 @@ Deno.serve(async (req) => {
         if (bal) await admin.from('leave_balances').update({ [(cols.used)]: (bal as Record<string, number>)[cols.used] + days }).eq('user_id', leave.user_id);
       }
 
-      await admin.from('audit_logs').insert({ actor_id: actorId, action: `leave.${decision}`, target_type: 'leave', target_id: leave_id, metadata: { decision, reviewer_note } });
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: `leave.${decision}`, target_type: 'leave', target_id: leave_id, metadata: { decision, reviewer_note: cleanNote } });
       const notifType = decision === 'approved' ? 'leave_approved' : 'leave_rejected';
       const notifTitle = decision === 'approved' ? 'Your leave request has been approved' : 'Your leave request has been rejected';
-      await admin.from('notifications').insert({ user_id: leave.user_id, type: notifType, title: notifTitle, body: reviewer_note || `${leave.leave_type} leave: ${leave.start_date} – ${leave.end_date}`, reference_id: leave_id, reference_type: 'leave' });
+      await admin.from('notifications').insert({ user_id: leave.user_id, type: notifType, title: notifTitle, body: cleanNote || `${leave.leave_type} leave: ${leave.start_date} – ${leave.end_date}`, reference_id: leave_id, reference_type: 'leave' });
 
       return new Response(JSON.stringify({ leave: updated }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
