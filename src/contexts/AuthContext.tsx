@@ -10,6 +10,8 @@ import { useAuth0 } from '@auth0/auth0-react';
 import type { AppRole } from '@/types/roles';
 import { supabase } from '@/integrations/supabase/client';
 
+const AUTH0_AUDIENCE = 'https://crm-ciel.lovable.app/api';
+
 interface UserProfile {
   id: string;
   email: string;
@@ -80,84 +82,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [syncLoading, setSyncLoading] = useState(false);
 
   const getToken = useCallback(async (): Promise<string> => {
-    return getAccessTokenSilently();
+    return getAccessTokenSilently({
+      authorizationParams: { audience: AUTH0_AUDIENCE },
+    });
   }, [getAccessTokenSilently]);
 
   const syncProfile = useCallback(
-    async (userId: string, email: string, name: string, avatar?: string) => {
+    async (email: string, name: string, avatar?: string) => {
       setSyncLoading(true);
 
-      const fallbackProfile: UserProfile = {
-        id: userId,
-        email,
-        displayName: name,
-        avatarUrl: avatar,
-      };
-
       try {
+        // Get a proper JWT token first
+        const token = await getAccessTokenSilently({
+          authorizationParams: { audience: AUTH0_AUDIENCE },
+        });
+
         const { data, error } = await withTimeout(
           supabase.functions.invoke<SyncProfileResponse>('sync-profile', {
             body: {
-              user_id: userId,
               email,
               display_name: name,
               avatar_url: avatar,
             },
+            headers: { Authorization: `Bearer ${token}` },
           }),
           SYNC_TIMEOUT_MS
         );
 
         if (error) {
           console.error('Sync profile error:', error);
-          setProfile(fallbackProfile);
-          setRoles([]);
           return;
         }
 
         const syncedProfile = data?.profile;
 
-        if (!syncedProfile) {
-          setProfile(fallbackProfile);
-          setRoles(data?.roles ?? []);
-          return;
+        if (syncedProfile) {
+          setProfile({
+            id: syncedProfile.user_id,
+            email: syncedProfile.email ?? email,
+            displayName: syncedProfile.display_name ?? name,
+            avatarUrl: syncedProfile.avatar_url ?? avatar,
+            teamId: syncedProfile.team_id ?? undefined,
+          });
         }
-
-        setProfile({
-          id: syncedProfile.user_id,
-          email: syncedProfile.email ?? email,
-          displayName: syncedProfile.display_name ?? name,
-          avatarUrl: syncedProfile.avatar_url ?? avatar,
-          teamId: syncedProfile.team_id ?? undefined,
-        });
 
         setRoles(data?.roles ?? []);
       } catch (err: unknown) {
         console.error('Failed to sync profile:', err);
-        setProfile(fallbackProfile);
-        setRoles([]);
       } finally {
         setSyncLoading(false);
       }
     },
-    []
+    [getAccessTokenSilently]
   );
 
   useEffect(() => {
     if (auth0Loading) return;
 
     if (auth0IsAuth && auth0User) {
-      const userId = auth0User.sub ?? '';
       const email = auth0User.email ?? '';
       const name = auth0User.name ?? email ?? 'User';
       const avatar = auth0User.picture;
 
-      if (!userId) {
-        setRoles([]);
-        setProfile(null);
-        return;
-      }
-
-      void syncProfile(userId, email, name, avatar);
+      void syncProfile(email, name, avatar);
       return;
     }
 

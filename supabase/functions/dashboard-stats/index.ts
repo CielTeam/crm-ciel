@@ -63,6 +63,22 @@ async function verifyAuth0Jwt(req: Request): Promise<string> {
   return payload.sub;
 }
 
+// ─── Rate Limiting ───
+
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || now - entry.windowStart > windowMs) {
+    rateLimitMap.set(key, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= maxRequests) return false;
+  entry.count++;
+  return true;
+}
+
 // ─── Edge Function ───
 
 const corsHeaders = {
@@ -89,8 +105,17 @@ Deno.serve(async (req) => {
   let actorId: string;
   try {
     actorId = await verifyAuth0Jwt(req);
-  } catch {
+  } catch (err) {
+    try {
+      const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      await sb.from('audit_logs').insert({ actor_id: 'anonymous', action: 'auth.failure', target_type: 'dashboard-stats', metadata: { reason: err instanceof Error ? err.message : 'Unknown' } });
+    } catch { /* best effort */ }
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
+  // Rate limit: 30 requests per 60 seconds
+  if (!checkRateLimit(`dash:${actorId}`, 30, 60_000)) {
+    return new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
   try {

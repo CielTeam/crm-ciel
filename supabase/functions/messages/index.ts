@@ -7,35 +7,13 @@ const corsHeaders = {
 
 // ─── Auth0 JWT Verification ───
 
-interface JwtHeader {
-  alg: string;
-  typ: string;
-  kid: string;
-}
-
-interface JwtPayload {
-  iss: string;
-  sub: string;
-  aud: string | string[];
-  exp: number;
-  iat: number;
-}
-
-interface JwksKey {
-  kty: string;
-  kid: string;
-  use: string;
-  n: string;
-  e: string;
-  alg: string;
-}
-
-interface JwksResponse {
-  keys: JwksKey[];
-}
+interface JwtHeader { alg: string; typ: string; kid: string }
+interface JwtPayload { iss: string; sub: string; aud: string | string[]; exp: number; iat: number }
+interface JwksKey { kty: string; kid: string; use: string; n: string; e: string; alg: string }
+interface JwksResponse { keys: JwksKey[] }
 
 const jwksCache = new Map<string, { keys: JwksKey[]; fetchedAt: number }>();
-const JWKS_CACHE_TTL = 600_000; // 10 minutes
+const JWKS_CACHE_TTL = 600_000;
 
 function base64UrlDecode(str: string): Uint8Array {
   const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
@@ -43,22 +21,17 @@ function base64UrlDecode(str: string): Uint8Array {
   const padded = pad ? base64 + '='.repeat(4 - pad) : base64;
   const binary = atob(padded);
   const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
 
 function decodeJwtPart<T>(part: string): T {
-  const decoded = new TextDecoder().decode(base64UrlDecode(part));
-  return JSON.parse(decoded) as T;
+  return JSON.parse(new TextDecoder().decode(base64UrlDecode(part))) as T;
 }
 
 async function fetchJwks(domain: string): Promise<JwksKey[]> {
   const cached = jwksCache.get(domain);
-  if (cached && Date.now() - cached.fetchedAt < JWKS_CACHE_TTL) {
-    return cached.keys;
-  }
+  if (cached && Date.now() - cached.fetchedAt < JWKS_CACHE_TTL) return cached.keys;
   const res = await fetch(`https://${domain}/.well-known/jwks.json`);
   if (!res.ok) throw new Error('Failed to fetch JWKS');
   const data = (await res.json()) as JwksResponse;
@@ -67,56 +40,55 @@ async function fetchJwks(domain: string): Promise<JwksKey[]> {
 }
 
 async function importRsaKey(jwk: JwksKey): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
-    'jwk',
-    { kty: jwk.kty, n: jwk.n, e: jwk.e, alg: 'RS256', ext: true },
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['verify']
-  );
+  return crypto.subtle.importKey('jwk', { kty: jwk.kty, n: jwk.n, e: jwk.e, alg: 'RS256', ext: true }, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
 }
 
 async function verifyAuth0Jwt(req: Request): Promise<string> {
   const auth0Domain = Deno.env.get('AUTH0_DOMAIN');
   const auth0Audience = Deno.env.get('AUTH0_AUDIENCE');
   if (!auth0Domain || !auth0Audience) throw new Error('Auth0 configuration missing');
-
   const authHeader = req.headers.get('Authorization');
   if (!authHeader?.startsWith('Bearer ')) throw new Error('Missing token');
-
   const token = authHeader.slice(7);
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Invalid token format');
-
   const header = decodeJwtPart<JwtHeader>(parts[0]);
   if (header.alg !== 'RS256') throw new Error('Unsupported algorithm');
-
   const keys = await fetchJwks(auth0Domain);
   const jwk = keys.find(k => k.kid === header.kid);
   if (!jwk) throw new Error('Key not found');
-
   const key = await importRsaKey(jwk);
-  const signatureBytes = base64UrlDecode(parts[2]);
-  const dataBytes = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
-
-  const valid = await crypto.subtle.verify(
-    'RSASSA-PKCS1-v1_5',
-    key,
-    signatureBytes,
-    dataBytes
-  );
+  const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, base64UrlDecode(parts[2]), new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
   if (!valid) throw new Error('Invalid signature');
-
   const payload = decodeJwtPart<JwtPayload>(parts[1]);
-
   if (payload.iss !== `https://${auth0Domain}/`) throw new Error('Invalid issuer');
-
   const audArray = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
   if (!audArray.includes(auth0Audience)) throw new Error('Invalid audience');
-
   if (payload.exp < Math.floor(Date.now() / 1000)) throw new Error('Token expired');
-
   return payload.sub;
+}
+
+// ─── Rate Limiting ───
+
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || now - entry.windowStart > windowMs) {
+    rateLimitMap.set(key, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= maxRequests) return false;
+  entry.count++;
+  return true;
+}
+
+// ─── Helpers ───
+
+function sanitizeString(val: unknown, maxLen: number): string {
+  if (typeof val !== 'string') return '';
+  return val.replace(/<[^>]*>/g, '').trim().substring(0, maxLen);
 }
 
 // ─── Edge Function ───
@@ -129,7 +101,12 @@ Deno.serve(async (req) => {
   let actorId: string;
   try {
     actorId = await verifyAuth0Jwt(req);
-  } catch {
+  } catch (err) {
+    // Log auth failure
+    try {
+      const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      await sb.from('audit_logs').insert({ actor_id: 'anonymous', action: 'auth.failure', target_type: 'messages', metadata: { reason: err instanceof Error ? err.message : 'Unknown' } });
+    } catch { /* best effort */ }
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -143,8 +120,12 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action, ...payload } = body;
 
-    // LIST CONVERSATIONS
+    // LIST CONVERSATIONS — rate limit: 30/60s
     if (action === 'list_conversations') {
+      if (!checkRateLimit(`msg:${actorId}`, 30, 60_000)) {
+        return new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       const { data: memberships, error: mErr } = await admin
         .from('conversation_members')
         .select('conversation_id, last_read_at')
@@ -215,9 +196,12 @@ Deno.serve(async (req) => {
 
     // GET MESSAGES
     if (action === 'get_messages') {
+      if (!checkRateLimit(`msg:${actorId}`, 30, 60_000)) {
+        return new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       const { conversation_id, limit = 50, before } = payload;
 
-      // Verify membership
       const { data: member } = await admin
         .from('conversation_members')
         .select('id')
@@ -251,11 +235,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    // SEND MESSAGE
+    // SEND MESSAGE — rate limit: 10 per 10 seconds
     if (action === 'send_message') {
+      if (!checkRateLimit(`send:${actorId}`, 10, 10_000)) {
+        return new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       const { conversation_id, content } = payload;
 
-      if (!content?.trim()) {
+      // Sanitize content
+      const sanitizedContent = sanitizeString(content, 5000);
+
+      if (!sanitizedContent) {
         return new Response(JSON.stringify({ error: 'Empty message' }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -275,9 +266,6 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Sanitize content
-      const sanitizedContent = content.trim().substring(0, 5000);
-
       const { data, error } = await admin.from('messages').insert({
         conversation_id,
         sender_id: actorId,
@@ -291,6 +279,9 @@ Deno.serve(async (req) => {
       await admin.from('conversation_members').update({ last_read_at: new Date().toISOString() })
         .eq('conversation_id', conversation_id)
         .eq('user_id', actorId);
+
+      // Audit log
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'message.send', target_type: 'conversation', target_id: conversation_id, metadata: { message_id: data.id } });
 
       // Notify other members
       const { data: members } = await admin
@@ -318,6 +309,10 @@ Deno.serve(async (req) => {
 
     // CREATE CONVERSATION
     if (action === 'create_conversation') {
+      if (!checkRateLimit(`msg:${actorId}`, 30, 60_000)) {
+        return new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       const { type = 'direct', name, member_ids } = payload;
 
       if (!member_ids || !Array.isArray(member_ids) || member_ids.length === 0) {
@@ -325,6 +320,9 @@ Deno.serve(async (req) => {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
+      // Sanitize conversation name
+      const cleanName = name ? sanitizeString(name, 100) : null;
 
       // For direct chats, check if conversation already exists
       if (type === 'direct' && member_ids.length === 1) {
@@ -363,7 +361,7 @@ Deno.serve(async (req) => {
 
       const { data: conv, error } = await admin.from('conversations').insert({
         type,
-        name: name || null,
+        name: cleanName,
         created_by: actorId,
       }).select().single();
 
@@ -384,9 +382,12 @@ Deno.serve(async (req) => {
 
     // MARK READ
     if (action === 'mark_read') {
+      if (!checkRateLimit(`msg:${actorId}`, 30, 60_000)) {
+        return new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       const { conversation_id } = payload;
 
-      // Verify membership
       const { data: member } = await admin
         .from('conversation_members')
         .select('id')

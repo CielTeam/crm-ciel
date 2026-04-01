@@ -7,6 +7,22 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// ─── Rate Limiting ───
+
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || now - entry.windowStart > windowMs) {
+    rateLimitMap.set(key, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= maxRequests) return false;
+  entry.count++;
+  return true;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -22,6 +38,16 @@ Deno.serve(async (req) => {
       );
     }
 
+    const cleanEmail = email.toLowerCase().trim().substring(0, 255);
+
+    // Rate limit: 3 attempts per 5 minutes per email
+    if (!checkRateLimit(`verify:${cleanEmail}`, 3, 300_000)) {
+      return new Response(
+        JSON.stringify({ error: "Too many requests" }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -30,7 +56,7 @@ Deno.serve(async (req) => {
     const { data, error } = await supabaseAdmin
       .from("profiles")
       .select("id")
-      .eq("email", email.toLowerCase().trim())
+      .eq("email", cleanEmail)
       .is("deleted_at", null)
       .limit(1);
 
