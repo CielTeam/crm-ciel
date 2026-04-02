@@ -7,6 +7,7 @@ import { FileUploadButton } from '@/components/shared/FileUploadButton';
 interface Props {
   onSend: (content: string) => void;
   onFileUpload?: (file: File) => void;
+  onTyping?: () => void;
   disabled?: boolean;
   isUploading?: boolean;
 }
