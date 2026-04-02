@@ -15,6 +15,7 @@ interface Props {
 export function MessageInput({
   onSend,
   onFileUpload,
+  onTyping,
   disabled,
   isUploading,
 }: Props) {
