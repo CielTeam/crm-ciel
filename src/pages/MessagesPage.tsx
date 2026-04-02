@@ -41,6 +41,10 @@ export default function MessagesPage() {
 
   const uploadAttachment = useUploadAttachment();
 
+  const presenceMap = usePresence(user?.id);
+  const { typingUserIds, sendTyping } = useTypingIndicator(selectedId, user?.id);
+  const readReceipts = useReadReceipts(selectedId, messages, user?.id);
+
   const userMap = useMemo(() => {
     const map = new Map<string, string>();
     directoryUsers?.forEach(u => map.set(u.userId, u.displayName));
