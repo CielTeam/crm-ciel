@@ -1,122 +1,90 @@
 
 
-# Fix Unauthorized Errors + System Hardening
+# Real-Time Presence, Typing Indicators, and Read Receipts
 
-## Part 0 — Fix Unauthorized Errors
+## Architecture
 
-**Root cause**: `getAccessTokenSilently()` in `AuthContext.tsx` is called without explicit `audience` parameter. While `audience` is set on `Auth0Provider`, Auth0 may return an opaque token if the API is not correctly configured or if the SDK doesn't propagate the audience. Fix: pass `audience` explicitly.
+All three features use Supabase Realtime channels (presence + broadcast) — no database changes, no polling, no edge function changes needed.
 
-Additionally, `sync-profile` is called during login without a Bearer token — it checks for an `Authorization` header but the frontend never sends one (it uses `supabase.functions.invoke` without a token). This causes a 401 on first login.
-
-### Changes
-
-**`src/contexts/AuthContext.tsx`**
-- Pass `audience` to `getAccessTokenSilently`:
-```typescript
-const getToken = useCallback(async (): Promise<string> => {
-  return getAccessTokenSilently({
-    authorizationParams: { audience: 'https://crm-ciel.lovable.app/api' },
-  });
-}, [getAccessTokenSilently]);
-```
-- In `syncProfile`, get a token first and pass it to `sync-profile`:
-```typescript
-const token = await getAccessTokenSilently({
-  authorizationParams: { audience: 'https://crm-ciel.lovable.app/api' },
-});
-// Pass headers: { Authorization: `Bearer ${token}` } to invoke
+```text
+┌─────────────────────────────────────────────┐
+│  Supabase Realtime                          │
+│                                             │
+│  Channel: "presence-global"                 │
+│    → presence track: { user_id, status }    │
+│    → gives online/offline + last_seen       │
+│                                             │
+│  Channel: "chat-{conversationId}"           │
+│    → broadcast "typing": { user_id }        │
+│    → broadcast "read":   { user_id, msgId } │
+│    → existing postgres_changes (messages)   │
+└─────────────────────────────────────────────┘
 ```
 
-**`supabase/functions/sync-profile/index.ts`**
-- Add Auth0 JWT verification (same helper as other functions) so it trusts the `sub` claim instead of the body's `user_id`
-- Fall back: extract `user_id` from JWT `sub`, ignore body `user_id`
+## New Files
 
----
+### 1. `src/hooks/usePresence.ts`
+- Joins a single global presence channel on mount
+- Tracks current user with `{ user_id, online_at }`
+- Returns `Map<string, { isOnline, lastSeen }>` from presence state
+- Cleans up channel on unmount
+- Memoized to prevent re-render storms
 
-## Part 1 — Rate Limiting (Edge Functions)
+### 2. `src/hooks/useTypingIndicator.ts`
+- Takes `conversationId` — joins broadcast channel `chat-{id}`
+- Exposes `sendTyping()` — debounced (400ms), broadcasts typing event
+- Listens for incoming typing events from other users
+- Auto-expires typing state after 2s of no events
+- Returns `typingUserIds: string[]` and `sendTyping: () => void`
+- Unsubscribes on unmount or conversation change
 
-Add an in-memory rate limiter to each edge function using a `Map<string, { count, windowStart }>` pattern. Limits:
+### 3. `src/hooks/useReadReceipts.ts`
+- Takes `conversationId` and `messages`
+- On the same `chat-{id}` channel, broadcasts `read` events when user views messages
+- Listens for `read` events from others
+- Tracks per-message status: `sent` → `delivered` → `seen`
+- "delivered" = message exists (default); "seen" = read event received
+- Returns `Map<string, 'sent' | 'delivered' | 'seen'>`
 
-| Function | Limit | Window |
-|----------|-------|--------|
-| messages (send_message) | 10 requests | 10 seconds |
-| attachments (upload) | 5 requests | 60 seconds |
-| verify-email | 3 requests per email | 5 minutes |
-| All others | 30 requests | 60 seconds |
+## Modified Files
 
-Returns `429 Too Many Requests` when exceeded.
+### 4. `src/components/messages/MessageInput.tsx`
+- Accept `onTyping` callback prop
+- Call `onTyping()` on every `onChange` event (the hook handles debounce)
 
-**Implementation**: A reusable `checkRateLimit(key, maxRequests, windowMs)` function inlined at the top of each edge function. Uses a `Map` with automatic cleanup of expired entries.
+### 5. `src/components/messages/ConversationList.tsx`
+- Accept `presenceMap` prop
+- Show green dot on avatar when user is online
+- Show "last seen X ago" below name when offline
 
----
+### 6. `src/components/messages/MessageThread.tsx`
+- Accept `typingUserIds` and `readReceipts` props
+- Show "User is typing..." indicator at bottom of thread (animated dots)
+- Show sent/delivered/seen status below each of current user's messages (checkmark icons)
 
-## Part 2 — Audit Logging
+### 7. `src/pages/MessagesPage.tsx`
+- Use `usePresence()` — pass presenceMap to ConversationList
+- Use `useTypingIndicator(selectedId)` — pass `sendTyping` to MessageInput, `typingUserIds` to MessageThread
+- Use `useReadReceipts(selectedId, messages)` — pass receipts to MessageThread
 
-Most functions already log to `audit_logs`. Add missing audit entries:
+## Channel Strategy (Performance)
 
-| Function | Action | Currently Logged? |
-|----------|--------|-------------------|
-| messages/send_message | `message.send` | No — add |
-| attachments/upload | `attachment.upload` | No — add |
-| attachments/delete | `attachment.delete` | No — add |
-| tasks/create | `task.create` | No (only activity log) — add audit_logs |
-| tasks/update | `task.update` | No — add |
-| tasks/delete | `task.delete` | No — add |
-| All JWT failures | `auth.failure` | No — add to all 9 functions |
+- **One** global presence channel shared across the app
+- **One** broadcast channel per active conversation (typing + read), cleaned up on conversation switch
+- Merge typing + read onto the same channel to avoid redundant subscriptions
+- All state updates use `useState` with functional updates to avoid stale closures
+- Debounce typing broadcasts; auto-expire typing indicators via `setTimeout`
 
-Each entry: `{ actor_id, action, target_type, target_id, metadata, ip_address }`.
-For auth failures, `actor_id` is `'anonymous'` and metadata includes the error reason.
+## UI Details
 
----
+**Online indicator**: Small green circle (absolute positioned) on avatar in conversation list.
 
-## Part 3 — Input Sanitization
+**Last seen**: Replace timestamp line with "last seen 5m ago" when user is offline.
 
-Add to all edge functions that accept user text input:
+**Typing indicator**: Below last message, animated "..." with user name. Disappears after 2s.
 
-- **Strip HTML tags**: `content.replace(/<[^>]*>/g, '')`
-- **Trim whitespace**: `.trim()`
-- **Max length enforcement**:
-  - Message content: 5000 chars (already done in messages)
-  - Task title: 255 chars
-  - Task description: 5000 chars
-  - Comment content: 2000 chars
-  - Leave reason: 1000 chars
-  - Conversation name: 100 chars
-  - Team name: 100 chars
-  - Display name: 100 chars
-- **Validate required fields**: Already done in most places, ensure consistency
-
----
-
-## Part 4 — File Validation
-
-The attachments function already validates:
-- Extensions: `.zip`, `.rar` only
-- Size: 10MB max
-- MIME types: limited set
-
-Per the user request, update to:
-- **Allowed MIME types**: images (`image/jpeg`, `image/png`, `image/gif`, `image/webp`) and PDF (`application/pdf`) — replacing zip/rar
-- **Max size**: 5MB (down from 10MB)
-- **File name sanitization**: Already done (`replace(/[^a-zA-Z0-9._-]/g, '_')`)
-- **Reject files that don't match**: Already returns 400
-
----
-
-## Files Modified
-
-| File | Changes |
-|------|---------|
-| `src/contexts/AuthContext.tsx` | Pass audience to getAccessTokenSilently, send token to sync-profile |
-| `supabase/functions/sync-profile/index.ts` | Add JWT verification, extract user_id from sub |
-| `supabase/functions/messages/index.ts` | Rate limiting, audit logging, input sanitization |
-| `supabase/functions/attachments/index.ts` | Rate limiting, audit logging, MIME type update to images+PDF, 5MB limit |
-| `supabase/functions/tasks/index.ts` | Rate limiting, audit logging, input sanitization |
-| `supabase/functions/leaves/index.ts` | Rate limiting, audit logging, input sanitization |
-| `supabase/functions/notifications/index.ts` | Rate limiting, auth failure logging |
-| `supabase/functions/dashboard-stats/index.ts` | Rate limiting, auth failure logging |
-| `supabase/functions/admin-list-data/index.ts` | Rate limiting, auth failure logging |
-| `supabase/functions/admin-manage-user/index.ts` | Rate limiting, audit logging, input sanitization |
-| `supabase/functions/audit-log/index.ts` | Rate limiting, input sanitization |
-| `supabase/functions/verify-email/index.ts` | Server-side rate limiting by email |
+**Read receipts** (own messages only):
+- Single gray check = sent
+- Double gray check = delivered  
+- Double blue check = seen
 
