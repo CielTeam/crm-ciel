@@ -1,10 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Message } from '@/hooks/useMessages';
+import type { ReadStatus } from '@/hooks/useReadReceipts';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { FileAttachmentList } from '@/components/shared/FileAttachmentList';
 import type { Attachment } from '@/hooks/useAttachments';
+import { Check, CheckCheck } from 'lucide-react';
 
 interface Props {
   messages: Message[];
@@ -13,6 +15,8 @@ interface Props {
   messageAttachments?: Map<string, Attachment[]>;
   onDeleteAttachment?: (attachment: Attachment) => void;
   isDeletingAttachment?: boolean;
+  typingUserIds?: string[];
+  readReceipts?: Map<string, ReadStatus>;
 }
 
 export function MessageThread({
