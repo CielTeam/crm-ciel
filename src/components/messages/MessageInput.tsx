@@ -41,7 +41,10 @@ export function MessageInput({
     <div className="flex items-end gap-2 p-3 border-t bg-background">
       <Textarea
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          onTyping?.();
+        }}
         onKeyDown={handleKeyDown}
         placeholder="Type a message..."
         rows={1}

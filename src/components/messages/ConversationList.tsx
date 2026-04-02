@@ -31,6 +31,10 @@ export function ConversationList({ conversations, selectedId, onSelect, userMap,
       <div className="space-y-0.5 p-2">
         {conversations.map(conv => {
           const name = getDisplayName(conv);
+          const otherId = conv.memberIds.find(id => id !== currentUserId);
+          const presence = otherId ? presenceMap?.get(otherId) : undefined;
+          const isOnline = presence?.isOnline ?? false;
+
           return (
             <button
               key={conv.id}
@@ -40,11 +44,16 @@ export function ConversationList({ conversations, selectedId, onSelect, userMap,
                 selectedId === conv.id ? 'bg-accent' : 'hover:bg-muted'
               )}
             >
-              <Avatar className="h-9 w-9 shrink-0">
-                <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                  {getInitials(name)}
-                </AvatarFallback>
-              </Avatar>
+              <div className="relative shrink-0">
+                <Avatar className="h-9 w-9">
+                  <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                    {getInitials(name)}
+                  </AvatarFallback>
+                </Avatar>
+                {isOnline && (
+                  <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />
+                )}
+              </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-foreground truncate">{name}</p>
@@ -59,11 +68,15 @@ export function ConversationList({ conversations, selectedId, onSelect, userMap,
                     {conv.lastMessage.content}
                   </p>
                 )}
-                {conv.lastMessage && (
+                {presence && !isOnline && presence.lastSeen ? (
+                  <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                    last seen {formatDistanceToNow(new Date(presence.lastSeen), { addSuffix: true })}
+                  </p>
+                ) : conv.lastMessage ? (
                   <p className="text-[10px] text-muted-foreground/60 mt-0.5">
                     {formatDistanceToNow(new Date(conv.lastMessage.created_at), { addSuffix: true })}
                   </p>
-                )}
+                ) : null}
               </div>
             </button>
           );
