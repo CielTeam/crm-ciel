@@ -15,7 +15,7 @@ interface Props {
   presenceMap?: Map<string, PresenceInfo>;
 }
 
-export function ConversationList({ conversations, selectedId, onSelect, userMap, currentUserId }: Props) {
+export function ConversationList({ conversations, selectedId, onSelect, userMap, currentUserId, presenceMap }: Props) {
   const getDisplayName = (conv: Conversation) => {
     if (conv.name) return conv.name;
     const other = conv.memberIds.find(id => id !== currentUserId);
