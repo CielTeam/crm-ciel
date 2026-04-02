@@ -8,6 +8,9 @@ import {
 
 import { useDirectoryData } from '@/hooks/useDirectoryData';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePresence } from '@/hooks/usePresence';
+import { useTypingIndicator } from '@/hooks/useTypingIndicator';
+import { useReadReceipts } from '@/hooks/useReadReceipts';
 
 import {
   useUploadAttachment
@@ -37,6 +40,10 @@ export default function MessagesPage() {
   markReadRef.current = markRead;
 
   const uploadAttachment = useUploadAttachment();
+
+  const presenceMap = usePresence(user?.id);
+  const { typingUserIds, sendTyping } = useTypingIndicator(selectedId, user?.id);
+  const readReceipts = useReadReceipts(selectedId, messages, user?.id);
 
   const userMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -131,6 +138,7 @@ export default function MessagesPage() {
               onSelect={setSelectedId}
               userMap={userMap}
               currentUserId={user?.id || ''}
+              presenceMap={presenceMap}
             />
           )}
         </Card>
@@ -157,12 +165,15 @@ export default function MessagesPage() {
                   messages={messages || []}
                   currentUserId={user?.id || ''}
                   userMap={userMap}
+                  typingUserIds={typingUserIds}
+                  readReceipts={readReceipts}
                 />
               )}
 
               <MessageInput
                 onSend={handleSend}
                 onFileUpload={handleFileUpload}
+                onTyping={sendTyping}
                 disabled={sendMessage.isPending}
                 isUploading={uploadAttachment.isPending}
               />

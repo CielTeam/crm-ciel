@@ -1,10 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Message } from '@/hooks/useMessages';
+import type { ReadStatus } from '@/hooks/useReadReceipts';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { FileAttachmentList } from '@/components/shared/FileAttachmentList';
 import type { Attachment } from '@/hooks/useAttachments';
+import { Check, CheckCheck } from 'lucide-react';
 
 interface Props {
   messages: Message[];
@@ -13,6 +15,8 @@ interface Props {
   messageAttachments?: Map<string, Attachment[]>;
   onDeleteAttachment?: (attachment: Attachment) => void;
   isDeletingAttachment?: boolean;
+  typingUserIds?: string[];
+  readReceipts?: Map<string, ReadStatus>;
 }
 
 export function MessageThread({
@@ -22,6 +26,8 @@ export function MessageThread({
   messageAttachments,
   onDeleteAttachment,
   isDeletingAttachment,
+  typingUserIds = [],
+  readReceipts,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -80,20 +86,53 @@ export function MessageThread({
                   </div>
                 )}
 
-                <p
-                  className={cn(
-                    'text-[10px] mt-1',
-                    isMine
-                      ? 'text-primary-foreground/60'
-                      : 'text-muted-foreground/60'
-                  )}
-                >
-                  {format(new Date(msg.created_at), 'HH:mm')}
-                </p>
+                <div className={cn(
+                  'flex items-center gap-1 mt-1',
+                  isMine ? 'justify-end' : ''
+                )}>
+                  <p
+                    className={cn(
+                      'text-[10px]',
+                      isMine
+                        ? 'text-primary-foreground/60'
+                        : 'text-muted-foreground/60'
+                    )}
+                  >
+                    {format(new Date(msg.created_at), 'HH:mm')}
+                  </p>
+                  {isMine && readReceipts && (() => {
+                    const status = readReceipts.get(msg.id) ?? 'sent';
+                    if (status === 'seen') {
+                      return <CheckCheck className="h-3 w-3 text-blue-400" />;
+                    }
+                    if (status === 'delivered') {
+                      return <CheckCheck className="h-3 w-3 text-primary-foreground/50" />;
+                    }
+                    return <Check className="h-3 w-3 text-primary-foreground/50" />;
+                  })()}
+                </div>
               </div>
             </div>
           );
         })}
+
+        {typingUserIds.length > 0 && (
+          <div className="flex justify-start">
+            <div className="bg-muted text-foreground rounded-xl px-3 py-2">
+              <p className="text-xs text-muted-foreground">
+                {typingUserIds
+                  .map((id) => userMap.get(id) ?? 'Someone')
+                  .join(', ')}{' '}
+                {typingUserIds.length === 1 ? 'is' : 'are'} typing
+                <span className="inline-flex ml-0.5">
+                  <span className="animate-bounce [animation-delay:0ms]">.</span>
+                  <span className="animate-bounce [animation-delay:150ms]">.</span>
+                  <span className="animate-bounce [animation-delay:300ms]">.</span>
+                </span>
+              </p>
+            </div>
+          </div>
+        )}
 
         <div ref={bottomRef} />
       </div>

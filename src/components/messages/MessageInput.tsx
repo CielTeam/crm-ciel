@@ -7,6 +7,7 @@ import { FileUploadButton } from '@/components/shared/FileUploadButton';
 interface Props {
   onSend: (content: string) => void;
   onFileUpload?: (file: File) => void;
+  onTyping?: () => void;
   disabled?: boolean;
   isUploading?: boolean;
 }
@@ -14,6 +15,7 @@ interface Props {
 export function MessageInput({
   onSend,
   onFileUpload,
+  onTyping,
   disabled,
   isUploading,
 }: Props) {
@@ -39,7 +41,10 @@ export function MessageInput({
     <div className="flex items-end gap-2 p-3 border-t bg-background">
       <Textarea
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          onTyping?.();
+        }}
         onKeyDown={handleKeyDown}
         placeholder="Type a message..."
         rows={1}
