@@ -138,6 +138,7 @@ export default function MessagesPage() {
               onSelect={setSelectedId}
               userMap={userMap}
               currentUserId={user?.id || ''}
+              presenceMap={presenceMap}
             />
           )}
         </Card>
