@@ -173,6 +173,7 @@ export default function MessagesPage() {
               <MessageInput
                 onSend={handleSend}
                 onFileUpload={handleFileUpload}
+                onTyping={sendTyping}
                 disabled={sendMessage.isPending}
                 isUploading={uploadAttachment.isPending}
               />
