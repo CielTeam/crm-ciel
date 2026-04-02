@@ -2,6 +2,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Conversation } from '@/hooks/useMessages';
+import type { PresenceInfo } from '@/hooks/usePresence';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -11,6 +12,7 @@ interface Props {
   onSelect: (id: string) => void;
   userMap: Map<string, string>;
   currentUserId: string;
+  presenceMap?: Map<string, PresenceInfo>;
 }
 
 export function ConversationList({ conversations, selectedId, onSelect, userMap, currentUserId }: Props) {
