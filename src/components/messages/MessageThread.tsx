@@ -26,6 +26,8 @@ export function MessageThread({
   messageAttachments,
   onDeleteAttachment,
   isDeletingAttachment,
+  typingUserIds = [],
+  readReceipts,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
