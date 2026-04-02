@@ -165,6 +165,8 @@ export default function MessagesPage() {
                   messages={messages || []}
                   currentUserId={user?.id || ''}
                   userMap={userMap}
+                  typingUserIds={typingUserIds}
+                  readReceipts={readReceipts}
                 />
               )}
 
