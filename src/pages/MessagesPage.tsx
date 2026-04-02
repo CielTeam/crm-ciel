@@ -8,6 +8,9 @@ import {
 
 import { useDirectoryData } from '@/hooks/useDirectoryData';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePresence } from '@/hooks/usePresence';
+import { useTypingIndicator } from '@/hooks/useTypingIndicator';
+import { useReadReceipts } from '@/hooks/useReadReceipts';
 
 import {
   useUploadAttachment
