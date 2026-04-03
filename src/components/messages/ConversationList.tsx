@@ -5,6 +5,7 @@ import type { Conversation } from '@/hooks/useMessages';
 import type { PresenceInfo } from '@/hooks/usePresence';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
+import { Users } from 'lucide-react';
 
 interface Props {
   conversations: Conversation[];
@@ -17,6 +18,14 @@ interface Props {
 
 export function ConversationList({ conversations, selectedId, onSelect, userMap, currentUserId, presenceMap }: Props) {
   const getDisplayName = (conv: Conversation) => {
+    if (conv.type === 'group') {
+      if (conv.name) return conv.name;
+      const others = conv.memberIds
+        .filter(id => id !== currentUserId)
+        .map(id => userMap.get(id) || 'Unknown');
+      if (others.length <= 2) return others.join(', ');
+      return `${others.slice(0, 2).join(', ')}, +${others.length - 2}`;
+    }
     if (conv.name) return conv.name;
     const other = conv.memberIds.find(id => id !== currentUserId);
     return other ? userMap.get(other) || 'Unknown' : 'Unknown';
@@ -31,9 +40,12 @@ export function ConversationList({ conversations, selectedId, onSelect, userMap,
       <div className="space-y-0.5 p-2">
         {conversations.map(conv => {
           const name = getDisplayName(conv);
-          const otherId = conv.memberIds.find(id => id !== currentUserId);
+          const isGroup = conv.type === 'group';
+          const otherId = !isGroup ? conv.memberIds.find(id => id !== currentUserId) : undefined;
           const presence = otherId ? presenceMap?.get(otherId) : undefined;
-          const isOnline = presence?.isOnline ?? false;
+          const isOnline = isGroup
+            ? conv.memberIds.some(id => id !== currentUserId && presenceMap?.get(id)?.isOnline)
+            : (presence?.isOnline ?? false);
 
           return (
             <button
@@ -45,11 +57,17 @@ export function ConversationList({ conversations, selectedId, onSelect, userMap,
               )}
             >
               <div className="relative shrink-0">
-                <Avatar className="h-9 w-9">
-                  <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                    {getInitials(name)}
-                  </AvatarFallback>
-                </Avatar>
+                {isGroup ? (
+                  <div className="flex items-center justify-center h-9 w-9 rounded-full bg-primary/10">
+                    <Users className="h-4 w-4 text-primary" />
+                  </div>
+                ) : (
+                  <Avatar className="h-9 w-9">
+                    <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                      {getInitials(name)}
+                    </AvatarFallback>
+                  </Avatar>
+                )}
                 {isOnline && (
                   <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />
                 )}
@@ -68,7 +86,7 @@ export function ConversationList({ conversations, selectedId, onSelect, userMap,
                     {conv.lastMessage.content}
                   </p>
                 )}
-                {presence && !isOnline && presence.lastSeen ? (
+                {!isGroup && presence && !isOnline && presence.lastSeen ? (
                   <p className="text-[10px] text-muted-foreground/60 mt-0.5">
                     last seen {formatDistanceToNow(new Date(presence.lastSeen), { addSuffix: true })}
                   </p>

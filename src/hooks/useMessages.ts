@@ -29,6 +29,7 @@ interface MessagesFunctionResponse {
   message?: Message;
   conversation?: Conversation;
   success?: boolean;
+  read_message_ids?: string[];
   error?: string;
 }
 
@@ -251,14 +252,14 @@ export function useMarkRead() {
     mutationFn: async (conversationId: string) => {
       const token = await getToken();
 
-      await invokeMessages({
+      const data = await invokeMessages({
         action: 'mark_read',
         conversation_id: conversationId,
       }, token);
 
-      return conversationId;
+      return { conversationId, readMessageIds: data.read_message_ids ?? [] };
     },
-    onSuccess: (conversationId) => {
+    onSuccess: ({ conversationId }) => {
       const userId = user?.id;
       if (!userId) return;
 

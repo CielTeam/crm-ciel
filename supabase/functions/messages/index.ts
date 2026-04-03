@@ -390,7 +390,7 @@ Deno.serve(async (req) => {
 
       const { data: member } = await admin
         .from('conversation_members')
-        .select('id')
+        .select('id, last_read_at')
         .eq('conversation_id', conversation_id)
         .eq('user_id', actorId)
         .maybeSingle();
@@ -401,13 +401,31 @@ Deno.serve(async (req) => {
         });
       }
 
+      const prevLastRead = member.last_read_at;
+      const now = new Date().toISOString();
+
+      // Get message IDs that are now being marked as read
+      let readQuery = admin
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', conversation_id)
+        .is('deleted_at', null)
+        .neq('sender_id', actorId);
+
+      if (prevLastRead) {
+        readQuery = readQuery.gt('created_at', prevLastRead);
+      }
+
+      const { data: readMsgs } = await readQuery;
+      const readMessageIds = (readMsgs || []).map((m: { id: string }) => m.id);
+
       const { error } = await admin.from('conversation_members').update({
-        last_read_at: new Date().toISOString(),
+        last_read_at: now,
       }).eq('conversation_id', conversation_id).eq('user_id', actorId);
 
       if (error) throw error;
 
-      return new Response(JSON.stringify({ success: true }), {
+      return new Response(JSON.stringify({ success: true, read_message_ids: readMessageIds }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

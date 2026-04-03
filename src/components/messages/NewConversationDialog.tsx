@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useCreateConversation } from '@/hooks/useMessages';
@@ -25,6 +26,7 @@ export function NewConversationDialog({ onCreated }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
+  const [groupName, setGroupName] = useState('');
 
   const { user } = useAuth();
   const { data: users } = useDirectoryData();
@@ -56,17 +58,18 @@ export function NewConversationDialog({ onCreated }: Props) {
     if (selected.length === 0) return;
 
     try {
+      const isGroup = selected.length > 1;
       const conv = await createConversation.mutateAsync({
-        type: selected.length > 1 ? 'group' : 'direct',
+        type: isGroup ? 'group' : 'direct',
+        name: isGroup && groupName.trim() ? groupName.trim() : undefined,
         member_ids: selected,
       });
 
       onCreated(conv.id);
-
-      // reset state AFTER success only
       setOpen(false);
       setSelected([]);
       setSearch('');
+      setGroupName('');
     } catch (err: unknown) {
       toast.error(
         err instanceof Error ? err.message : 'Failed to create conversation'
@@ -101,6 +104,18 @@ export function NewConversationDialog({ onCreated }: Props) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+
+        {selected.length > 1 && (
+          <div className="space-y-1.5">
+            <Label htmlFor="group-name" className="text-sm">Group Name (optional)</Label>
+            <Input
+              id="group-name"
+              placeholder="Enter group name..."
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+            />
+          </div>
+        )}
 
         <ScrollArea className="h-64">
           <div className="space-y-1">
