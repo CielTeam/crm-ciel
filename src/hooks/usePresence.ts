@@ -1,10 +1,15 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 export interface PresenceInfo {
   isOnline: boolean;
   lastSeen: string | null;
+}
+
+interface PresencePayload {
+  user_id: string;
+  online_at: string;
 }
 
 export function usePresence(userId: string | undefined) {
@@ -27,7 +32,9 @@ export function usePresence(userId: string | undefined) {
       const map = new Map<string, PresenceInfo>();
 
       for (const [key, presences] of Object.entries(state)) {
-        const latest = (presences as any[])[0];
+        const raw = presences as unknown;
+        const arr = Array.isArray(raw) ? raw : [];
+        const latest = arr[0] as PresencePayload | undefined;
         if (latest) {
           map.set(key, {
             isOnline: true,
@@ -44,7 +51,9 @@ export function usePresence(userId: string | undefined) {
       .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
         setPresenceState((prev) => {
           const next = new Map(prev);
-          const lastLeft = (leftPresences as any[])?.[0];
+          const raw = leftPresences as unknown;
+          const arr = Array.isArray(raw) ? raw : [];
+          const lastLeft = arr[0] as PresencePayload | undefined;
           next.set(key, {
             isOnline: false,
             lastSeen: lastLeft?.online_at ?? new Date().toISOString(),

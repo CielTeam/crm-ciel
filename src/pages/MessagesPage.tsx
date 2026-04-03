@@ -9,8 +9,7 @@ import {
 import { useDirectoryData } from '@/hooks/useDirectoryData';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePresence } from '@/hooks/usePresence';
-import { useTypingIndicator } from '@/hooks/useTypingIndicator';
-import { useReadReceipts } from '@/hooks/useReadReceipts';
+import { useChatChannel } from '@/hooks/useChatChannel';
 
 import {
   useUploadAttachment
@@ -19,6 +18,7 @@ import {
 import { ConversationList } from '@/components/messages/ConversationList';
 import { MessageThread } from '@/components/messages/MessageThread';
 import { MessageInput } from '@/components/messages/MessageInput';
+import { ChatHeader } from '@/components/messages/ChatHeader';
 import { NewConversationDialog } from '@/components/messages/NewConversationDialog';
 import { PageError } from '@/components/PageError';
 import { Card } from '@/components/ui/card';
@@ -42,8 +42,9 @@ export default function MessagesPage() {
   const uploadAttachment = useUploadAttachment();
 
   const presenceMap = usePresence(user?.id);
-  const { typingUserIds, sendTyping } = useTypingIndicator(selectedId, user?.id);
-  const readReceipts = useReadReceipts(selectedId, messages, user?.id);
+  const { typingUserIds, sendTyping, readReceipts, broadcastRead } = useChatChannel(
+    selectedId, messages, user?.id
+  );
 
   const userMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -51,12 +52,20 @@ export default function MessagesPage() {
     return map;
   }, [directoryUsers]);
 
-  // Mark conversation as read when selected — use ref to avoid infinite loop
+  // Mark conversation as read when selected and broadcast read events
   useEffect(() => {
-    if (selectedId) {
-      markReadRef.current.mutate(selectedId);
+    if (!selectedId || !messages || !user?.id) return;
+
+    markReadRef.current.mutate(selectedId);
+
+    // Broadcast read for messages from others
+    const otherMsgIds = messages
+      .filter(m => m.sender_id !== user.id)
+      .map(m => m.id);
+    if (otherMsgIds.length > 0) {
+      broadcastRead(otherMsgIds);
     }
-  }, [selectedId]);
+  }, [selectedId, messages, user?.id, broadcastRead]);
 
   const handleSend = useCallback((content: string) => {
     if (!selectedId) return;
@@ -104,13 +113,6 @@ export default function MessagesPage() {
 
   const selectedConv = conversations?.find(c => c.id === selectedId);
 
-  const otherName =
-    selectedConv?.name ||
-    userMap.get(
-      selectedConv?.memberIds?.find(id => id !== user?.id) || ''
-    ) ||
-    'Chat';
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -146,15 +148,18 @@ export default function MessagesPage() {
         {/* Messages */}
         <Card className="flex-1 flex flex-col overflow-hidden">
 
-          {!selectedId ? (
+          {!selectedId || !selectedConv ? (
             <div className="flex-1 flex items-center justify-center text-sm">
               Select a conversation
             </div>
           ) : (
             <>
-              <div className="p-3 border-b font-semibold">
-                {otherName}
-              </div>
+              <ChatHeader
+                conversation={selectedConv}
+                userMap={userMap}
+                currentUserId={user?.id || ''}
+                presenceMap={presenceMap}
+              />
 
               {msgLoading ? (
                 <div className="flex-1 flex items-center justify-center">
@@ -167,6 +172,7 @@ export default function MessagesPage() {
                   userMap={userMap}
                   typingUserIds={typingUserIds}
                   readReceipts={readReceipts}
+                  isGroup={selectedConv.type === 'group'}
                 />
               )}
 

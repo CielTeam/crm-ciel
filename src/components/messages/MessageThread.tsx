@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Message } from '@/hooks/useMessages';
-import type { ReadStatus } from '@/hooks/useReadReceipts';
+import type { ReadStatus } from '@/hooks/useChatChannel';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { FileAttachmentList } from '@/components/shared/FileAttachmentList';
@@ -17,6 +17,7 @@ interface Props {
   isDeletingAttachment?: boolean;
   typingUserIds?: string[];
   readReceipts?: Map<string, ReadStatus>;
+  isGroup?: boolean;
 }
 
 export function MessageThread({
@@ -28,6 +29,7 @@ export function MessageThread({
   isDeletingAttachment,
   typingUserIds = [],
   readReceipts,
+  isGroup = false,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -64,7 +66,7 @@ export function MessageThread({
                     : 'bg-muted text-foreground'
                 )}
               >
-                {!isMine && (
+                {!isMine && (isGroup || !isMine) && (
                   <p className="text-[10px] font-medium opacity-70 mb-0.5">
                     {senderName}
                   </p>
@@ -120,9 +122,11 @@ export function MessageThread({
           <div className="flex justify-start">
             <div className="bg-muted text-foreground rounded-xl px-3 py-2">
               <p className="text-xs text-muted-foreground">
-                {typingUserIds
-                  .map((id) => userMap.get(id) ?? 'Someone')
-                  .join(', ')}{' '}
+                {typingUserIds.length <= 2
+                  ? typingUserIds
+                      .map((id) => userMap.get(id) ?? 'Someone')
+                      .join(', ')
+                  : `${typingUserIds.length} people`}{' '}
                 {typingUserIds.length === 1 ? 'is' : 'are'} typing
                 <span className="inline-flex ml-0.5">
                   <span className="animate-bounce [animation-delay:0ms]">.</span>

@@ -114,13 +114,14 @@ export function useUploadAttachment() {
       const { file, entity_type, entity_id } = payload;
 
       const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+      const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'];
 
-      if (!['.zip', '.rar'].includes(ext)) {
-        throw new Error('Only .zip and .rar files are allowed');
+      if (!allowedExts.includes(ext)) {
+        throw new Error('Only images (JPG, PNG, GIF, WEBP) and PDF files are allowed');
       }
 
-      if (file.size > 10 * 1024 * 1024) {
-        throw new Error('File size exceeds 10MB limit');
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('File size exceeds 5MB limit');
       }
 
       const token = await getToken();
