@@ -29,6 +29,7 @@ interface MessagesFunctionResponse {
   message?: Message;
   conversation?: Conversation;
   success?: boolean;
+  read_message_ids?: string[];
   error?: string;
 }
 
