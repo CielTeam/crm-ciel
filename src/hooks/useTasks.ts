@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
-// Extended task type since DB types may not have new columns yet
 export interface Task {
   id: string;
   title: string;
@@ -23,6 +22,14 @@ export interface Task {
   actual_duration: string | null;
   feedback: string | null;
   decline_reason: string | null;
+  pinned: boolean;
+  sort_order: number;
+  started_at: string | null;
+  completion_notes: string | null;
+  mark_done_by: string | null;
+  mark_done_at: string | null;
+  mark_undone_by: string | null;
+  mark_undone_at: string | null;
 }
 
 export interface TaskActivityLog {
@@ -37,7 +44,17 @@ export interface TaskActivityLog {
   created_at: string;
 }
 
-export type TaskTab = 'my_tasks' | 'assigned' | 'team_tasks';
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  author_id: string;
+  author_name: string;
+  author_avatar: string | null;
+  content: string;
+  created_at: string;
+}
+
+export type TaskTab = 'my_tasks' | 'assigned' | 'team_tasks' | 'assigned_by_me';
 
 export function useTasksRealtime() {
   const { user } = useAuth();
@@ -53,11 +70,7 @@ export function useTasksRealtime() {
         { event: '*', schema: 'public', table: 'tasks' },
         (payload) => {
           const row = (payload.new || payload.old) as { created_by: string; assigned_to: string | null } | null;
-          // Only invalidate if this user is involved
-          if (
-            row &&
-            (row.created_by === user.id || row.assigned_to === user.id)
-          ) {
+          if (row && (row.created_by === user.id || row.assigned_to === user.id)) {
             qc.invalidateQueries({ queryKey: ['tasks'] });
           }
         }
@@ -70,21 +83,29 @@ export function useTasksRealtime() {
   }, [user?.id, qc]);
 }
 
-export function useTasks(tab: TaskTab = 'my_tasks') {
-  const { user, getToken } = useAuth();
+function useTaskInvoke() {
+  const { getToken } = useAuth();
+  return async (body: Record<string, unknown>) => {
+    const token = await getToken();
+    const { data, error } = await supabase.functions.invoke('tasks', {
+      body,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (error) throw error;
+    if (data.error) throw new Error(data.error);
+    return data;
+  };
+}
 
-  // Subscribe to realtime updates
+export function useTasks(tab: TaskTab = 'my_tasks') {
+  const { user } = useAuth();
+  const invoke = useTaskInvoke();
   useTasksRealtime();
 
   return useQuery({
     queryKey: ['tasks', tab, user?.id],
     queryFn: async () => {
-      const token = await getToken();
-      const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'list', tab },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw error;
+      const data = await invoke({ action: 'list', tab });
       return (data.tasks || []) as Task[];
     },
     enabled: !!user?.id,
@@ -92,17 +113,13 @@ export function useTasks(tab: TaskTab = 'my_tasks') {
 }
 
 export function useAssignableUsers() {
-  const { user, getToken } = useAuth();
+  const { user } = useAuth();
+  const invoke = useTaskInvoke();
 
   return useQuery({
     queryKey: ['assignable-users', user?.id],
     queryFn: async () => {
-      const token = await getToken();
-      const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'assignable_users' },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw error;
+      const data = await invoke({ action: 'assignable_users' });
       return (data.users || []) as Array<{
         user_id: string;
         display_name: string;
@@ -117,7 +134,7 @@ export function useAssignableUsers() {
 
 export function useCreateTask() {
   const qc = useQueryClient();
-  const { getToken } = useAuth();
+  const invoke = useTaskInvoke();
 
   return useMutation({
     mutationFn: async (payload: {
@@ -128,13 +145,7 @@ export function useCreateTask() {
       assigned_to?: string | null;
       estimated_duration?: string | null;
     }) => {
-      const token = await getToken();
-      const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'create', ...payload },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      const data = await invoke({ action: 'create', ...payload });
       return data.task as Task;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
@@ -143,17 +154,11 @@ export function useCreateTask() {
 
 export function useUpdateTask() {
   const qc = useQueryClient();
-  const { getToken } = useAuth();
+  const invoke = useTaskInvoke();
 
   return useMutation({
     mutationFn: async (payload: { id: string; [key: string]: unknown }) => {
-      const token = await getToken();
-      const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'update', ...payload },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      const data = await invoke({ action: 'update', ...payload });
       return data.task as Task;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
@@ -162,17 +167,63 @@ export function useUpdateTask() {
 
 export function useDeleteTask() {
   const qc = useQueryClient();
-  const { getToken } = useAuth();
+  const invoke = useTaskInvoke();
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const token = await getToken();
-      const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'delete', id },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      const data = await invoke({ action: 'delete', id });
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+  });
+}
+
+export function useTogglePin() {
+  const qc = useQueryClient();
+  const invoke = useTaskInvoke();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const data = await invoke({ action: 'toggle_pin', id });
+      return data.task as Task;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+  });
+}
+
+export function useMarkDone() {
+  const qc = useQueryClient();
+  const invoke = useTaskInvoke();
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; completion_notes?: string }) => {
+      const data = await invoke({ action: 'mark_done', ...payload });
+      return data.task as Task;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+  });
+}
+
+export function useMarkUndone() {
+  const qc = useQueryClient();
+  const invoke = useTaskInvoke();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const data = await invoke({ action: 'mark_undone', id });
+      return data.task as Task;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+  });
+}
+
+export function useReorderTasks() {
+  const qc = useQueryClient();
+  const invoke = useTaskInvoke();
+
+  return useMutation({
+    mutationFn: async (task_ids: string[]) => {
+      const data = await invoke({ action: 'reorder', task_ids });
       return data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
@@ -180,45 +231,27 @@ export function useDeleteTask() {
 }
 
 export function useTaskActivity(taskId: string | null) {
-  const { user, getToken } = useAuth();
+  const { user } = useAuth();
+  const invoke = useTaskInvoke();
 
   return useQuery({
     queryKey: ['task-activity', taskId],
     queryFn: async () => {
-      const token = await getToken();
-      const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'list_activity', task_id: taskId },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw error;
+      const data = await invoke({ action: 'list_activity', task_id: taskId });
       return (data.activity || []) as TaskActivityLog[];
     },
     enabled: !!user?.id && !!taskId,
   });
 }
 
-export interface TaskComment {
-  id: string;
-  task_id: string;
-  author_id: string;
-  author_name: string;
-  author_avatar: string | null;
-  content: string;
-  created_at: string;
-}
-
 export function useTaskComments(taskId: string | null) {
-  const { user, getToken } = useAuth();
+  const { user } = useAuth();
+  const invoke = useTaskInvoke();
 
   return useQuery({
     queryKey: ['task-comments', taskId],
     queryFn: async () => {
-      const token = await getToken();
-      const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'list_comments', task_id: taskId },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw error;
+      const data = await invoke({ action: 'list_comments', task_id: taskId });
       return (data.comments || []) as TaskComment[];
     },
     enabled: !!user?.id && !!taskId,
@@ -227,17 +260,11 @@ export function useTaskComments(taskId: string | null) {
 
 export function useAddTaskComment() {
   const qc = useQueryClient();
-  const { getToken } = useAuth();
+  const invoke = useTaskInvoke();
 
   return useMutation({
     mutationFn: async (payload: { task_id: string; content: string }) => {
-      const token = await getToken();
-      const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'add_comment', ...payload },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      const data = await invoke({ action: 'add_comment', ...payload });
       return data.comment as TaskComment;
     },
     onSuccess: (_data, variables) => {
@@ -249,17 +276,11 @@ export function useAddTaskComment() {
 
 export function useReassignTask() {
   const qc = useQueryClient();
-  const { getToken } = useAuth();
+  const invoke = useTaskInvoke();
 
   return useMutation({
     mutationFn: async (payload: { task_id: string; new_assigned_to: string }) => {
-      const token = await getToken();
-      const { data, error } = await supabase.functions.invoke('tasks', {
-        body: { action: 'reassign', ...payload },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      const data = await invoke({ action: 'reassign', ...payload });
       return data.task as Task;
     },
     onSuccess: (_data, variables) => {

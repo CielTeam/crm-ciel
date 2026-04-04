@@ -91,13 +91,24 @@ type TeamRow = { id: string };
 type TeamMemberRow = { user_id: string };
 type ProfileRow = { user_id: string; display_name: string; avatar_url: string | null; email?: string };
 type TaskActivityLog = { actor_id: string };
+type TaskRecord = {
+  id: string; title: string; description: string | null; status: string; priority: string;
+  created_by: string; assigned_to: string | null; team_id: string | null; due_date: string | null;
+  completed_at: string | null; created_at: string; updated_at: string; task_type: string;
+  challenges: string | null; estimated_duration: string | null; actual_duration: string | null;
+  feedback: string | null; decline_reason: string | null; pinned: boolean; sort_order: number;
+  started_at: string | null; completion_notes: string | null;
+  mark_done_by: string | null; mark_done_at: string | null;
+  mark_undone_by: string | null; mark_undone_at: string | null;
+};
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const LEAD_ROLES = ['chairman', 'vice_president', 'hr', 'head_of_operations', 'team_development_lead', 'technical_lead', 'head_of_accounting', 'head_of_marketing', 'sales_lead'];
+const GLOBAL_ASSIGNER_ROLES = ['chairman', 'vice_president', 'hr', 'head_of_operations'];
+const LEAD_ROLES = [...GLOBAL_ASSIGNER_ROLES, 'team_development_lead', 'technical_lead', 'head_of_accounting', 'head_of_marketing', 'sales_lead'];
 
 async function getActorRoles(client: ReturnType<typeof createClient>, actorId: string): Promise<string[]> {
   const { data } = await client.from('user_roles').select('role').eq('user_id', actorId);
@@ -110,6 +121,30 @@ async function getActorTeamMemberIds(client: ReturnType<typeof createClient>, ac
   const teamIds = (teams as TeamRow[]).map(t => t.id);
   const { data: members } = await client.from('team_members').select('user_id').in('team_id', teamIds);
   return (members as TeamMemberRow[] | null)?.map(m => m.user_id).filter(uid => uid !== actorId) ?? [];
+}
+
+async function getExpandedAssignableUsers(client: ReturnType<typeof createClient>, actorId: string, roles: string[]): Promise<string[]> {
+  const isGlobal = roles.some(r => GLOBAL_ASSIGNER_ROLES.includes(r));
+  if (isGlobal) {
+    const { data: allProfiles } = await client.from('profiles').select('user_id').is('deleted_at', null);
+    return (allProfiles as { user_id: string }[] || []).map(p => p.user_id);
+  }
+
+  // sales_lead can assign to sales + marketing teams
+  if (roles.includes('sales_lead')) {
+    const { data: salesMarketingTeams } = await client.from('teams').select('id').in('department', ['sales', 'marketing']).is('deleted_at', null);
+    if (salesMarketingTeams?.length) {
+      const teamIds = (salesMarketingTeams as TeamRow[]).map(t => t.id);
+      const { data: members } = await client.from('team_members').select('user_id').in('team_id', teamIds);
+      const memberIds = (members as TeamMemberRow[] || []).map(m => m.user_id);
+      if (!memberIds.includes(actorId)) memberIds.push(actorId);
+      return memberIds;
+    }
+  }
+
+  const memberIds = await getActorTeamMemberIds(client, actorId);
+  if (!memberIds.includes(actorId)) memberIds.push(actorId);
+  return memberIds;
 }
 
 async function logActivity(client: ReturnType<typeof createClient>, taskId: string, actorId: string, oldStatus: string | null, newStatus: string | null, note?: string | null) {
@@ -136,7 +171,6 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Unauthorized' }, 401);
   }
 
-  // Rate limit: 30 requests per 60 seconds
   if (!checkRateLimit(`tasks:${actorId}`, 30, 60_000)) {
     return jsonResponse({ error: 'Too many requests' }, 429);
   }
@@ -158,6 +192,8 @@ Deno.serve(async (req) => {
         query = query.eq('created_by', actorId);
       } else if (tab === 'assigned') {
         query = query.eq('assigned_to', actorId);
+      } else if (tab === 'assigned_by_me') {
+        query = query.eq('created_by', actorId).eq('task_type', 'assigned');
       } else if (tab === 'team_tasks' && isLead) {
         const memberIds = await getActorTeamMemberIds(admin, actorId);
         if (memberIds.length === 0) return jsonResponse({ tasks: [] });
@@ -166,7 +202,7 @@ Deno.serve(async (req) => {
         query = query.or(`created_by.eq.${actorId},assigned_to.eq.${actorId}`);
       }
 
-      query = query.order('created_at', { ascending: false });
+      query = query.order('pinned', { ascending: false }).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
       const { data, error } = await query;
       if (error) throw error;
       return jsonResponse({ tasks: data || [] });
@@ -179,19 +215,38 @@ Deno.serve(async (req) => {
       const cleanDescription = sanitizeString(description, 5000);
       if (!cleanTitle) return jsonResponse({ error: 'Title is required' }, 400);
 
+      // Validate assignment permission
+      if (assigned_to && assigned_to !== actorId) {
+        const roles = await getActorRoles(admin, actorId);
+        const isLead = roles.some(r => LEAD_ROLES.includes(r));
+        if (!isLead) return jsonResponse({ error: 'You do not have permission to assign tasks' }, 403);
+
+        const allowedUsers = await getExpandedAssignableUsers(admin, actorId, roles);
+        if (!allowedUsers.includes(assigned_to)) {
+          return jsonResponse({ error: 'You cannot assign tasks to this user' }, 403);
+        }
+      }
+
       const taskType = assigned_to && assigned_to !== actorId ? 'assigned' : 'personal';
+      const status = taskType === 'assigned' ? 'pending_accept' : 'todo';
       const { data, error } = await admin.from('tasks').insert({
         title: cleanTitle, description: cleanDescription || null, priority: priority || 'medium',
         due_date: due_date || null, assigned_to: assigned_to || null, estimated_duration: estimated_duration || null,
-        created_by: actorId, task_type: taskType,
+        created_by: actorId, task_type: taskType, status,
       }).select().single();
       if (error) throw error;
 
-      await logActivity(admin, data.id, actorId, null, 'todo', 'Task created');
+      await logActivity(admin, data.id, actorId, null, status, 'Task created');
       await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.create', target_type: 'task', target_id: data.id, metadata: { title: cleanTitle } });
 
       if (assigned_to && assigned_to !== actorId) {
-        await admin.from('notifications').insert({ user_id: assigned_to, type: 'task_assigned', title: 'New task assigned to you', body: cleanTitle, reference_id: data.id, reference_type: 'task' });
+        const { data: actorProfile } = await admin.from('profiles').select('display_name').eq('user_id', actorId).single();
+        const actorName = (actorProfile as ProfileRow | null)?.display_name || 'Someone';
+        await admin.from('notifications').insert({
+          user_id: assigned_to, type: 'task_assigned',
+          title: `New task assigned by ${actorName}`,
+          body: cleanTitle, reference_id: data.id, reference_type: 'task',
+        });
       }
       return jsonResponse({ task: data }, 201);
     }
@@ -203,24 +258,34 @@ Deno.serve(async (req) => {
 
       const { data: existing } = await admin.from('tasks').select('*').eq('id', id).single();
       if (!existing) return jsonResponse({ error: 'Task not found' }, 404);
+      const task = existing as TaskRecord;
 
-      if (existing.created_by !== actorId && existing.assigned_to !== actorId) {
+      if (task.created_by !== actorId && task.assigned_to !== actorId) {
         const roles = await getActorRoles(admin, actorId);
         if (!roles.some(r => LEAD_ROLES.includes(r))) return jsonResponse({ error: 'Forbidden' }, 403);
       }
 
-      const oldStatus = existing.status;
+      const oldStatus = task.status;
       const updatePayload: Record<string, unknown> = {};
-      const allowedFields = ['title', 'description', 'priority', 'due_date', 'status', 'challenges', 'estimated_duration', 'actual_duration', 'feedback', 'decline_reason', 'completed_at'];
+      const allowedFields = ['title', 'description', 'priority', 'due_date', 'status', 'challenges', 'estimated_duration', 'actual_duration', 'feedback', 'decline_reason', 'completed_at', 'completion_notes', 'pinned', 'sort_order'];
       for (const field of allowedFields) {
         if (updates[field] !== undefined) {
           if (field === 'title') updatePayload[field] = sanitizeString(updates[field], 255);
-          else if (field === 'description' || field === 'feedback' || field === 'challenges') updatePayload[field] = sanitizeString(updates[field], 5000);
+          else if (field === 'description' || field === 'feedback' || field === 'challenges' || field === 'completion_notes') updatePayload[field] = sanitizeString(updates[field], 5000);
           else if (field === 'decline_reason') updatePayload[field] = sanitizeString(updates[field], 1000);
           else updatePayload[field] = updates[field];
         }
       }
-      if (updatePayload.status === 'done' && !updatePayload.completed_at) updatePayload.completed_at = new Date().toISOString();
+
+      // Auto-timestamps
+      if (updatePayload.status === 'in_progress' && !task.started_at) {
+        updatePayload.started_at = new Date().toISOString();
+      }
+      if (updatePayload.status === 'done' || updatePayload.status === 'approved') {
+        if (!updatePayload.completed_at) updatePayload.completed_at = new Date().toISOString();
+        updatePayload.mark_done_by = actorId;
+        updatePayload.mark_done_at = new Date().toISOString();
+      }
 
       const { data, error } = await admin.from('tasks').update(updatePayload).eq('id', id).select().single();
       if (error) throw error;
@@ -229,12 +294,136 @@ Deno.serve(async (req) => {
 
       if (updatePayload.status && updatePayload.status !== oldStatus) {
         await logActivity(admin, id, actorId, oldStatus, updatePayload.status as string);
-        const notifyUserId = existing.created_by === actorId ? existing.assigned_to : existing.created_by;
+        const notifyUserId = task.created_by === actorId ? task.assigned_to : task.created_by;
         if (notifyUserId) {
-          await admin.from('notifications').insert({ user_id: notifyUserId, type: 'task_status_changed', title: `Task status changed to ${updatePayload.status}`, body: existing.title, reference_id: id, reference_type: 'task' });
+          await admin.from('notifications').insert({ user_id: notifyUserId, type: 'task_status_changed', title: `Task status changed to ${updatePayload.status}`, body: task.title, reference_id: id, reference_type: 'task' });
         }
       }
       return jsonResponse({ task: data });
+    }
+
+    // ─── MARK DONE ───
+    if (action === 'mark_done') {
+      const { id, completion_notes } = payload;
+      if (!id) return jsonResponse({ error: 'Task id is required' }, 400);
+
+      const { data: existing } = await admin.from('tasks').select('*').eq('id', id).single();
+      if (!existing) return jsonResponse({ error: 'Task not found' }, 404);
+      const task = existing as TaskRecord;
+
+      // Only assignee or creator can mark done
+      if (task.created_by !== actorId && task.assigned_to !== actorId) {
+        return jsonResponse({ error: 'Forbidden' }, 403);
+      }
+
+      const now = new Date().toISOString();
+      const newStatus = task.task_type === 'personal' ? 'done' : 'approved';
+      const updatePayload: Record<string, unknown> = {
+        status: newStatus,
+        completed_at: now,
+        mark_done_by: actorId,
+        mark_done_at: now,
+      };
+      if (completion_notes) {
+        updatePayload.completion_notes = sanitizeString(completion_notes, 5000);
+      }
+      if (!task.started_at) {
+        updatePayload.started_at = now;
+      }
+
+      const { data, error } = await admin.from('tasks').update(updatePayload).eq('id', id).select().single();
+      if (error) throw error;
+
+      await logActivity(admin, id, actorId, task.status, newStatus, 'Marked as done');
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.mark_done', target_type: 'task', target_id: id });
+
+      // Notify creator if assignee marked done
+      if (task.created_by !== actorId && task.created_by) {
+        const { data: actorProfile } = await admin.from('profiles').select('display_name').eq('user_id', actorId).single();
+        const actorName = (actorProfile as ProfileRow | null)?.display_name || 'Someone';
+        await admin.from('notifications').insert({
+          user_id: task.created_by, type: 'task_completed',
+          title: `${actorName} completed task: ${task.title}`,
+          body: task.title, reference_id: id, reference_type: 'task',
+        });
+      }
+      return jsonResponse({ task: data });
+    }
+
+    // ─── MARK UNDONE ───
+    if (action === 'mark_undone') {
+      const { id } = payload;
+      if (!id) return jsonResponse({ error: 'Task id is required' }, 400);
+
+      const { data: existing } = await admin.from('tasks').select('*').eq('id', id).single();
+      if (!existing) return jsonResponse({ error: 'Task not found' }, 404);
+      const task = existing as TaskRecord;
+
+      if (task.created_by !== actorId && task.assigned_to !== actorId) {
+        return jsonResponse({ error: 'Forbidden' }, 403);
+      }
+
+      const now = new Date().toISOString();
+      const newStatus = task.task_type === 'personal' ? 'in_progress' : 'in_progress';
+      const updatePayload: Record<string, unknown> = {
+        status: newStatus,
+        completed_at: null,
+        mark_undone_by: actorId,
+        mark_undone_at: now,
+      };
+
+      const { data, error } = await admin.from('tasks').update(updatePayload).eq('id', id).select().single();
+      if (error) throw error;
+
+      await logActivity(admin, id, actorId, task.status, newStatus, 'Marked as undone');
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.mark_undone', target_type: 'task', target_id: id });
+
+      const notifyUserId = task.created_by === actorId ? task.assigned_to : task.created_by;
+      if (notifyUserId) {
+        await admin.from('notifications').insert({
+          user_id: notifyUserId, type: 'task_status_changed',
+          title: 'Task was marked as not done',
+          body: task.title, reference_id: id, reference_type: 'task',
+        });
+      }
+      return jsonResponse({ task: data });
+    }
+
+    // ─── TOGGLE PIN ───
+    if (action === 'toggle_pin') {
+      const { id } = payload;
+      if (!id) return jsonResponse({ error: 'Task id is required' }, 400);
+
+      const { data: existing } = await admin.from('tasks').select('*').eq('id', id).single();
+      if (!existing) return jsonResponse({ error: 'Task not found' }, 404);
+      const task = existing as TaskRecord;
+
+      // Only creator or lead roles can pin
+      if (task.created_by !== actorId) {
+        const roles = await getActorRoles(admin, actorId);
+        if (!roles.some(r => LEAD_ROLES.includes(r))) return jsonResponse({ error: 'Forbidden' }, 403);
+      }
+
+      const newPinned = !task.pinned;
+      const { data, error } = await admin.from('tasks').update({ pinned: newPinned }).eq('id', id).select().single();
+      if (error) throw error;
+
+      await logActivity(admin, id, actorId, null, null, newPinned ? 'Pinned task' : 'Unpinned task');
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: newPinned ? 'task.pin' : 'task.unpin', target_type: 'task', target_id: id });
+      return jsonResponse({ task: data });
+    }
+
+    // ─── REORDER ───
+    if (action === 'reorder') {
+      const { task_ids } = payload;
+      if (!Array.isArray(task_ids)) return jsonResponse({ error: 'task_ids array is required' }, 400);
+
+      for (let i = 0; i < task_ids.length; i++) {
+        await admin.from('tasks').update({ sort_order: i }).eq('id', task_ids[i]);
+      }
+
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.reorder', target_type: 'task', metadata: { count: task_ids.length } });
+      return jsonResponse({ success: true });
     }
 
     // ─── DELETE ───
@@ -242,10 +431,10 @@ Deno.serve(async (req) => {
       const { id } = payload;
       if (!id) return jsonResponse({ error: 'Task id is required' }, 400);
       const { data: existing } = await admin.from('tasks').select('created_by, title').eq('id', id).single();
-      if (!existing || existing.created_by !== actorId) return jsonResponse({ error: 'Forbidden' }, 403);
+      if (!existing || (existing as { created_by: string }).created_by !== actorId) return jsonResponse({ error: 'Forbidden' }, 403);
       const { error } = await admin.from('tasks').delete().eq('id', id);
       if (error) throw error;
-      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.delete', target_type: 'task', target_id: id, metadata: { title: existing.title } });
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.delete', target_type: 'task', target_id: id, metadata: { title: (existing as { title: string }).title } });
       return jsonResponse({ success: true });
     }
 
@@ -254,7 +443,9 @@ Deno.serve(async (req) => {
       const roles = await getActorRoles(admin, actorId);
       const isLead = roles.some(r => LEAD_ROLES.includes(r));
       let userIds: string[] = [];
-      if (isLead) userIds = await getActorTeamMemberIds(admin, actorId);
+      if (isLead) {
+        userIds = await getExpandedAssignableUsers(admin, actorId, roles);
+      }
       if (!userIds.includes(actorId)) userIds.push(actorId);
 
       const { data: profiles } = await admin.from('profiles').select('user_id, display_name, avatar_url, email').in('user_id', userIds).is('deleted_at', null);
@@ -294,7 +485,7 @@ Deno.serve(async (req) => {
       if (!task_id || !cleanContent) return jsonResponse({ error: 'task_id and content are required' }, 400);
 
       const { data: task } = await admin.from('tasks').select('created_by, assigned_to').eq('id', task_id).single();
-      if (!task || (task.created_by !== actorId && task.assigned_to !== actorId)) return jsonResponse({ error: 'Forbidden' }, 403);
+      if (!task || ((task as TaskRecord).created_by !== actorId && (task as TaskRecord).assigned_to !== actorId)) return jsonResponse({ error: 'Forbidden' }, 403);
 
       const { data, error } = await admin.from('task_comments').insert({ task_id, author_id: actorId, content: cleanContent }).select().single();
       if (error) throw error;
@@ -331,19 +522,27 @@ Deno.serve(async (req) => {
 
       const { data: task } = await admin.from('tasks').select('*').eq('id', task_id).single();
       if (!task) return jsonResponse({ error: 'Task not found' }, 404);
+      const taskData = task as TaskRecord;
 
-      if (task.created_by !== actorId) {
+      if (taskData.created_by !== actorId) {
         const roles = await getActorRoles(admin, actorId);
         if (!roles.some(r => LEAD_ROLES.includes(r))) return jsonResponse({ error: 'Forbidden' }, 403);
       }
 
-      const oldAssignee = task.assigned_to;
-      const { data, error } = await admin.from('tasks').update({ assigned_to: new_assigned_to, task_type: new_assigned_to !== task.created_by ? 'assigned' : 'personal' }).eq('id', task_id).select().single();
+      // Validate target user is in scope
+      const roles = await getActorRoles(admin, actorId);
+      const allowedUsers = await getExpandedAssignableUsers(admin, actorId, roles);
+      if (!allowedUsers.includes(new_assigned_to)) {
+        return jsonResponse({ error: 'You cannot assign tasks to this user' }, 403);
+      }
+
+      const oldAssignee = taskData.assigned_to;
+      const { data, error } = await admin.from('tasks').update({ assigned_to: new_assigned_to, task_type: new_assigned_to !== taskData.created_by ? 'assigned' : 'personal' }).eq('id', task_id).select().single();
       if (error) throw error;
 
       await logActivity(admin, task_id, actorId, null, null, `Reassigned from ${oldAssignee || 'unassigned'} to ${new_assigned_to}`);
       if (new_assigned_to !== actorId) {
-        await admin.from('notifications').insert({ user_id: new_assigned_to, type: 'task_assigned', title: 'A task has been reassigned to you', body: task.title, reference_id: task_id, reference_type: 'task' });
+        await admin.from('notifications').insert({ user_id: new_assigned_to, type: 'task_assigned', title: 'A task has been reassigned to you', body: taskData.title, reference_id: task_id, reference_type: 'task' });
       }
       return jsonResponse({ task: data });
     }
