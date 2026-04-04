@@ -11,21 +11,24 @@ interface SubmitTaskDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   taskTitle: string;
-  onConfirm: (data: { challenges?: string; actual_duration?: string }) => void;
+  onConfirm: (data: { challenges?: string; actual_duration?: string; completion_notes?: string }) => void;
   isLoading?: boolean;
 }
 
 export function SubmitTaskDialog({ open, onOpenChange, taskTitle, onConfirm, isLoading }: SubmitTaskDialogProps) {
   const [challenges, setChallenges] = useState('');
   const [actualDuration, setActualDuration] = useState('');
+  const [completionNotes, setCompletionNotes] = useState('');
 
   const handleSubmit = () => {
     onConfirm({
       challenges: challenges.trim() || undefined,
       actual_duration: actualDuration.trim() || undefined,
+      completion_notes: completionNotes.trim() || undefined,
     });
     setChallenges('');
     setActualDuration('');
+    setCompletionNotes('');
     onOpenChange(false);
   };
 
@@ -35,7 +38,7 @@ export function SubmitTaskDialog({ open, onOpenChange, taskTitle, onConfirm, isL
         <DialogHeader>
           <DialogTitle>Submit Task for Review</DialogTitle>
           <DialogDescription>
-            Submit "{taskTitle}" to your lead for approval.
+            Submit &quot;{taskTitle}&quot; to your lead for approval.
           </DialogDescription>
         </DialogHeader>
 
@@ -46,6 +49,16 @@ export function SubmitTaskDialog({ open, onOpenChange, taskTitle, onConfirm, isL
               value={actualDuration}
               onChange={(e) => setActualDuration(e.target.value)}
               placeholder="e.g. 3 hours, 2 days"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Completion Notes (optional)</Label>
+            <Textarea
+              value={completionNotes}
+              onChange={(e) => setCompletionNotes(e.target.value)}
+              placeholder="Any notes about the completed work..."
+              rows={2}
             />
           </div>
 

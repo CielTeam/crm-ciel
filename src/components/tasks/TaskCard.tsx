@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format, isPast, isToday } from 'date-fns';
-import { Calendar, Trash2, User, Clock, AlertTriangle, CheckCircle2, XCircle, Send, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Calendar, Trash2, User, Clock, AlertTriangle, CheckCircle2, XCircle, Send, ThumbsUp, ThumbsDown, Star, RotateCcw } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import {
 import { AcceptDeclineDialog } from './AcceptDeclineDialog';
 import { SubmitTaskDialog } from './SubmitTaskDialog';
 import { ReviewTaskDialog } from './ReviewTaskDialog';
+import { getTimeToStart, getTimeToComplete, getWaitingTime } from '@/lib/taskTimings';
 import type { Task } from '@/hooks/useTasks';
 
 const priorityConfig: Record<string, { label: string; className: string }> = {
@@ -45,9 +46,12 @@ interface TaskCardProps {
   onStatusChange: (id: string, status: string, extra?: Record<string, unknown>) => void;
   onDelete: (id: string) => void;
   onCardClick?: () => void;
+  onTogglePin: (id: string) => void;
+  onMarkDone: (id: string) => void;
+  onMarkUndone: (id: string) => void;
 }
 
-export function TaskCard({ task, assignee, creator, currentUserId, onStatusChange, onDelete, onCardClick }: TaskCardProps) {
+export function TaskCard({ task, assignee, creator, currentUserId, onStatusChange, onDelete, onCardClick, onTogglePin, onMarkDone, onMarkUndone }: TaskCardProps) {
   const [acceptDeclineMode, setAcceptDeclineMode] = useState<'accept' | 'decline' | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [reviewMode, setReviewMode] = useState<'approve' | 'reject' | null>(null);
@@ -55,6 +59,7 @@ export function TaskCard({ task, assignee, creator, currentUserId, onStatusChang
   const priority = priorityConfig[task.priority] || priorityConfig.medium;
   const status = statusConfig[task.status] || statusConfig.todo;
   const overdue = task.due_date && !task.completed_at && isPast(new Date(task.due_date)) && !isToday(new Date(task.due_date));
+  const isDone = task.status === 'done' || task.status === 'approved';
 
   const isCreator = task.created_by === currentUserId;
   const isAssignee = task.assigned_to === currentUserId;
@@ -68,12 +73,23 @@ export function TaskCard({ task, assignee, creator, currentUserId, onStatusChang
     .slice(0, 2)
     .toUpperCase() || '';
 
+  // Timing metrics
+  const timeToStart = getTimeToStart(task);
+  const timeToComplete = getTimeToComplete(task);
+  const waitingTime = getWaitingTime(task);
+
+  // Can mark done: personal tasks in todo/in_progress, or assigned tasks if assignee in in_progress
+  const canMarkDone = !isDone && (
+    (isPersonal && isCreator && ['todo', 'in_progress'].includes(task.status)) ||
+    (!isPersonal && isAssignee && task.status === 'in_progress')
+  );
+  const canMarkUndone = isDone && (isCreator || isAssignee);
+
   return (
     <>
       <Card
-        className={`border transition-colors cursor-pointer hover:border-primary/40 ${task.status === 'done' || task.status === 'approved' ? 'opacity-60' : ''}`}
+        className={`border transition-colors cursor-pointer hover:border-primary/40 ${isDone ? 'opacity-60' : ''} ${overdue ? 'border-destructive/50' : ''} ${task.pinned ? 'ring-1 ring-amber-400/30' : ''}`}
         onClick={(e) => {
-          // Don't open sheet if clicking buttons/selects
           const target = e.target as HTMLElement;
           if (target.closest('button, [role="combobox"], [role="listbox"], [role="option"]')) return;
           onCardClick?.();
@@ -90,17 +106,31 @@ export function TaskCard({ task, assignee, creator, currentUserId, onStatusChang
                 {!isPersonal && (
                   <Badge variant="secondary" className="text-[10px]">Assigned</Badge>
                 )}
+                {overdue && (
+                  <Badge variant="destructive" className="text-[10px]">Overdue</Badge>
+                )}
               </div>
-              <h3 className={`font-medium text-foreground truncate ${task.status === 'done' || task.status === 'approved' ? 'line-through' : ''}`}>
+              <h3 className={`font-medium text-foreground truncate ${isDone ? 'line-through' : ''}`}>
+                {task.pinned && <Star className="h-3.5 w-3.5 inline mr-1 text-amber-500 fill-amber-500" />}
                 {task.title}
               </h3>
               {task.description && (
                 <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{task.description}</p>
               )}
             </div>
-            <Badge variant="outline" className={priority.className}>
-              {priority.label}
-            </Badge>
+            <div className="flex items-center gap-1">
+              <Badge variant="outline" className={priority.className}>
+                {priority.label}
+              </Badge>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`h-7 w-7 shrink-0 ${task.pinned ? 'text-amber-500' : 'text-muted-foreground'}`}
+                onClick={(e) => { e.stopPropagation(); onTogglePin(task.id); }}
+              >
+                <Star className={`h-3.5 w-3.5 ${task.pinned ? 'fill-amber-500' : ''}`} />
+              </Button>
+            </div>
           </div>
 
           {/* Meta row */}
@@ -142,6 +172,15 @@ export function TaskCard({ task, assignee, creator, currentUserId, onStatusChang
             )}
           </div>
 
+          {/* Timing metrics */}
+          {(timeToStart || timeToComplete || waitingTime) && (
+            <div className="flex items-center gap-3 flex-wrap text-[11px] text-muted-foreground/70">
+              {timeToStart && <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{timeToStart}</span>}
+              {timeToComplete && <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />{timeToComplete}</span>}
+              {waitingTime && <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{waitingTime}</span>}
+            </div>
+          )}
+
           {/* Challenges / Feedback / Decline reason */}
           {task.challenges && (
             <div className="text-xs bg-amber-500/5 border border-amber-500/20 rounded-md p-2">
@@ -170,7 +209,7 @@ export function TaskCard({ task, assignee, creator, currentUserId, onStatusChang
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 flex-wrap">
               {/* Personal task status selector */}
-              {isPersonal && isCreator && (
+              {isPersonal && isCreator && !isDone && (
                 <Select value={task.status} onValueChange={(v) => onStatusChange(task.id, v)}>
                   <SelectTrigger className="h-8 w-[130px] text-xs">
                     <SelectValue />
@@ -181,6 +220,18 @@ export function TaskCard({ task, assignee, creator, currentUserId, onStatusChang
                     <SelectItem value="done">Done</SelectItem>
                   </SelectContent>
                 </Select>
+              )}
+
+              {/* Mark Done / Undone */}
+              {canMarkDone && (
+                <Button size="sm" variant="default" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={(e) => { e.stopPropagation(); onMarkDone(task.id); }}>
+                  <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Mark Done
+                </Button>
+              )}
+              {canMarkUndone && (
+                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={(e) => { e.stopPropagation(); onMarkUndone(task.id); }}>
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> Mark Undone
+                </Button>
               )}
 
               {/* Assigned task: assignee actions */}
@@ -227,7 +278,7 @@ export function TaskCard({ task, assignee, creator, currentUserId, onStatusChang
             </div>
 
             {(isCreator || (isAssignee && task.status === 'pending_accept')) && (
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onDelete(task.id)}>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}>
                 <Trash2 className="h-4 w-4" />
               </Button>
             )}

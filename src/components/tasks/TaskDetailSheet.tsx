@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
   Calendar, Clock, User, AlertTriangle, MessageSquare, CheckCircle2,
-  XCircle, Send, ThumbsUp, ThumbsDown, ArrowRight, Circle, History, Loader2,
-  ChevronsUpDown, Check, UserRoundPlus, Paperclip,
+  XCircle, Send, ThumbsUp, ThumbsDown, Circle, History, Loader2,
+  ChevronsUpDown, Check, UserRoundPlus, Paperclip, Star, RotateCcw,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ import { useTaskActivity, useTaskComments, useAddTaskComment, useAssignableUsers
 import { useAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/useAttachments';
 import { FileAttachmentList } from '@/components/shared/FileAttachmentList';
 import { FileUploadButton } from '@/components/shared/FileUploadButton';
+import { getTimeToStart, getTimeToComplete, getWaitingTime } from '@/lib/taskTimings';
 import type { TaskAssignee } from './TaskCard';
 import { toast } from 'sonner';
 
@@ -44,10 +45,8 @@ const priorityConfig: Record<string, { label: string; className: string }> = {
   urgent: { label: 'Urgent', className: 'bg-destructive/10 text-destructive' },
 };
 
-// Build a timeline from task metadata
 function buildTimeline(task: Task) {
   const steps: Array<{ label: string; date: string | null; status: string; active: boolean }> = [];
-
   steps.push({ label: 'Created', date: task.created_at, status: 'done', active: false });
 
   if (task.task_type === 'assigned') {
@@ -56,83 +55,32 @@ function buildTimeline(task: Task) {
     const rejected = task.status === 'rejected';
     const currentIdx = flow.indexOf(task.status);
 
-    steps.push({
-      label: 'Assigned',
-      date: task.created_at,
-      status: 'done',
-      active: false,
-    });
-
+    steps.push({ label: 'Assigned', date: task.created_at, status: 'done', active: false });
     if (declined) {
       steps.push({ label: 'Declined', date: task.updated_at, status: 'declined', active: true });
       return steps;
     }
-
-    steps.push({
-      label: 'Accepted',
-      date: currentIdx >= 1 ? task.updated_at : null,
-      status: currentIdx >= 1 ? 'done' : (task.status === 'pending_accept' ? 'current' : 'pending'),
-      active: task.status === 'pending_accept',
-    });
-
-    steps.push({
-      label: 'In Progress',
-      date: currentIdx >= 2 ? task.updated_at : null,
-      status: currentIdx >= 2 ? 'done' : (currentIdx === 1 ? 'current' : 'pending'),
-      active: currentIdx === 1,
-    });
-
+    steps.push({ label: 'Accepted', date: currentIdx >= 1 ? task.updated_at : null, status: currentIdx >= 1 ? 'done' : (task.status === 'pending_accept' ? 'current' : 'pending'), active: task.status === 'pending_accept' });
+    steps.push({ label: 'In Progress', date: currentIdx >= 2 ? (task.started_at || task.updated_at) : null, status: currentIdx >= 2 ? 'done' : (currentIdx === 1 ? 'current' : 'pending'), active: currentIdx === 1 });
     if (rejected) {
       steps.push({ label: 'Submitted', date: task.updated_at, status: 'done', active: false });
       steps.push({ label: 'Rejected', date: task.updated_at, status: 'rejected', active: true });
       return steps;
     }
-
-    steps.push({
-      label: 'Submitted',
-      date: currentIdx >= 3 ? task.updated_at : null,
-      status: currentIdx >= 3 ? 'done' : (currentIdx === 2 ? 'current' : 'pending'),
-      active: currentIdx === 2,
-    });
-
-    steps.push({
-      label: 'Approved',
-      date: currentIdx >= 4 ? (task.completed_at || task.updated_at) : null,
-      status: currentIdx >= 4 ? 'done' : (currentIdx === 3 ? 'current' : 'pending'),
-      active: currentIdx === 3,
-    });
+    steps.push({ label: 'Submitted', date: currentIdx >= 3 ? task.updated_at : null, status: currentIdx >= 3 ? 'done' : (currentIdx === 2 ? 'current' : 'pending'), active: currentIdx === 2 });
+    steps.push({ label: 'Approved', date: currentIdx >= 4 ? (task.completed_at || task.updated_at) : null, status: currentIdx >= 4 ? 'done' : (currentIdx === 3 ? 'current' : 'pending'), active: currentIdx === 3 });
   } else {
-    // Personal task
     const flow = ['todo', 'in_progress', 'done'];
     const currentIdx = flow.indexOf(task.status);
-
-    steps.push({
-      label: 'In Progress',
-      date: currentIdx >= 1 ? task.updated_at : null,
-      status: currentIdx >= 1 ? 'done' : (currentIdx === 0 ? 'current' : 'pending'),
-      active: currentIdx === 0,
-    });
-
-    steps.push({
-      label: 'Done',
-      date: currentIdx >= 2 ? (task.completed_at || task.updated_at) : null,
-      status: currentIdx >= 2 ? 'done' : (currentIdx === 1 ? 'current' : 'pending'),
-      active: currentIdx === 1,
-    });
+    steps.push({ label: 'In Progress', date: currentIdx >= 1 ? (task.started_at || task.updated_at) : null, status: currentIdx >= 1 ? 'done' : (currentIdx === 0 ? 'current' : 'pending'), active: currentIdx === 0 });
+    steps.push({ label: 'Done', date: currentIdx >= 2 ? (task.completed_at || task.updated_at) : null, status: currentIdx >= 2 ? 'done' : (currentIdx === 1 ? 'current' : 'pending'), active: currentIdx === 1 });
   }
-
   return steps;
 }
 
 function PersonBadge({ person, label }: { person: TaskAssignee | null; label: string }) {
   if (!person) return null;
-  const initials = person.displayName
-    ?.split(' ')
-    .map((n) => n[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || '';
-
+  const initials = person.displayName?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '';
   return (
     <div className="flex items-center gap-2">
       <Avatar className="h-7 w-7">
@@ -156,10 +104,13 @@ interface TaskDetailSheetProps {
   currentUserId: string;
   onStatusChange: (id: string, status: string, extra?: Record<string, unknown>) => void;
   onActionClick: (action: 'accept' | 'decline' | 'submit' | 'approve' | 'reject') => void;
+  onTogglePin: (id: string) => void;
+  onMarkDone: (id: string) => void;
+  onMarkUndone: (id: string) => void;
 }
 
 export function TaskDetailSheet({
-  task, open, onOpenChange, assignee, creator, currentUserId, onStatusChange, onActionClick,
+  task, open, onOpenChange, assignee, creator, currentUserId, onStatusChange, onActionClick, onTogglePin, onMarkDone, onMarkUndone,
 }: TaskDetailSheetProps) {
   const [commentText, setCommentText] = useState('');
   const [reassignOpen, setReassignOpen] = useState(false);
@@ -182,6 +133,17 @@ export function TaskDetailSheet({
   const isAssignee = task.assigned_to === currentUserId;
   const isPersonal = task.task_type === 'personal';
   const canReassign = isCreator && !isPersonal && assignableUsers.length > 0;
+  const isDone = task.status === 'done' || task.status === 'approved';
+
+  const timeToStart = getTimeToStart(task);
+  const timeToComplete = getTimeToComplete(task);
+  const waitingTime = getWaitingTime(task);
+
+  const canMarkDone = !isDone && (
+    (isPersonal && isCreator && ['todo', 'in_progress'].includes(task.status)) ||
+    (!isPersonal && isAssignee && task.status === 'in_progress')
+  );
+  const canMarkUndone = isDone && (isCreator || isAssignee);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -194,13 +156,17 @@ export function TaskDetailSheet({
             </Badge>
             <Badge variant="outline" className={priority.className}>{priority.label}</Badge>
             {!isPersonal && <Badge variant="secondary" className="text-[10px]">Assigned</Badge>}
+            {task.pinned && (
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-600 text-[10px]">
+                <Star className="h-3 w-3 mr-0.5 fill-amber-500" /> Pinned
+              </Badge>
+            )}
           </div>
           <SheetTitle className="text-lg leading-tight">{task.title}</SheetTitle>
           <SheetDescription className="sr-only">Task details for {task.title}</SheetDescription>
         </SheetHeader>
 
         <div className="space-y-5">
-          {/* Description */}
           {task.description && (
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Description</h4>
@@ -210,13 +176,37 @@ export function TaskDetailSheet({
 
           <Separator />
 
+          {/* Quick actions */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              className={task.pinned ? 'text-amber-600' : ''}
+              onClick={() => onTogglePin(task.id)}
+            >
+              <Star className={`h-3.5 w-3.5 mr-1 ${task.pinned ? 'fill-amber-500' : ''}`} />
+              {task.pinned ? 'Unpin' : 'Pin'}
+            </Button>
+            {canMarkDone && (
+              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => onMarkDone(task.id)}>
+                <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Mark Done
+              </Button>
+            )}
+            {canMarkUndone && (
+              <Button size="sm" variant="outline" onClick={() => onMarkUndone(task.id)}>
+                <RotateCcw className="h-3.5 w-3.5 mr-1" /> Mark Undone
+              </Button>
+            )}
+          </div>
+
+          <Separator />
+
           {/* People */}
           <div className="grid grid-cols-2 gap-4">
             <PersonBadge person={creator} label="Created by" />
             {!isPersonal && <PersonBadge person={assignee} label="Assigned to" />}
           </div>
 
-          {/* Reassign */}
           {canReassign && (
             <div>
               <Popover open={reassignOpen} onOpenChange={setReassignOpen}>
@@ -236,12 +226,7 @@ export function TaskDetailSheet({
                         {assignableUsers
                           .filter((u) => u.user_id !== task.assigned_to)
                           .map((user) => {
-                            const initials = user.display_name
-                              ?.split(' ')
-                              .map((n) => n[0])
-                              .join('')
-                              .slice(0, 2)
-                              .toUpperCase() || '?';
+                            const initials = user.display_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '?';
                             return (
                               <CommandItem
                                 key={user.user_id}
@@ -296,7 +281,36 @@ export function TaskDetailSheet({
             {task.completed_at && (
               <MetaItem icon={CheckCircle2} label="Completed" value={format(new Date(task.completed_at), 'MMM d, yyyy h:mm a')} />
             )}
+            {task.started_at && (
+              <MetaItem icon={Clock} label="Started" value={format(new Date(task.started_at), 'MMM d, yyyy h:mm a')} />
+            )}
           </div>
+
+          {/* Timing metrics */}
+          {(timeToStart || timeToComplete || waitingTime) && (
+            <>
+              <Separator />
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Timing Metrics</h4>
+                <div className="space-y-1.5 text-sm">
+                  {timeToStart && <p className="text-muted-foreground">{timeToStart}</p>}
+                  {timeToComplete && <p className="text-muted-foreground">{timeToComplete}</p>}
+                  {waitingTime && <p className="text-muted-foreground">{waitingTime}</p>}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Completion notes */}
+          {task.completion_notes && (
+            <>
+              <Separator />
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Completion Notes</h4>
+                <p className="text-sm text-foreground whitespace-pre-wrap bg-muted/50 rounded-md p-3">{task.completion_notes}</p>
+              </div>
+            </>
+          )}
 
           {/* Attachments */}
           <Separator />
@@ -352,16 +366,10 @@ export function TaskDetailSheet({
 
                 return (
                   <div key={i} className="relative pb-4">
-                    {/* Connector line */}
-                    {!isLast && (
-                      <div className="absolute left-[-18px] top-3 w-px h-full bg-border" />
-                    )}
-                    {/* Dot */}
+                    {!isLast && <div className="absolute left-[-18px] top-3 w-px h-full bg-border" />}
                     <div className={`absolute left-[-22px] top-1 h-2.5 w-2.5 rounded-full ${dotColor}`} />
                     <div className="flex items-center justify-between">
-                      <span className={`text-sm font-medium ${
-                        step.status === 'pending' ? 'text-muted-foreground/50' : 'text-foreground'
-                      }`}>
+                      <span className={`text-sm font-medium ${step.status === 'pending' ? 'text-muted-foreground/50' : 'text-foreground'}`}>
                         {step.label}
                       </span>
                       {step.date && step.status !== 'pending' && (
@@ -436,14 +444,8 @@ export function TaskDetailSheet({
             ) : (
               <div className="space-y-3">
                 {activityLogs.map((log) => {
-                  const initials = log.actor_name
-                    ?.split(' ')
-                    .map((n) => n[0])
-                    .join('')
-                    .slice(0, 2)
-                    .toUpperCase() || '';
-                  const statusLabel = (s: string | null) =>
-                    s ? (statusConfig[s]?.label || s) : '';
+                  const initials = log.actor_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '';
+                  const statusLabel = (s: string | null) => s ? (statusConfig[s]?.label || s) : '';
 
                   return (
                     <div key={log.id} className="flex gap-2.5">
@@ -459,14 +461,10 @@ export function TaskDetailSheet({
                               {statusLabel(log.old_status)} → {statusLabel(log.new_status)}
                             </span>
                           ) : log.new_status ? (
-                            <span className="text-xs text-muted-foreground">
-                              → {statusLabel(log.new_status)}
-                            </span>
+                            <span className="text-xs text-muted-foreground">→ {statusLabel(log.new_status)}</span>
                           ) : null}
                         </div>
-                        {log.note && (
-                          <p className="text-xs text-muted-foreground mt-0.5">{log.note}</p>
-                        )}
+                        {log.note && <p className="text-xs text-muted-foreground mt-0.5">{log.note}</p>}
                         <p className="text-[10px] text-muted-foreground/60 mt-0.5">
                           {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
                           {' · '}
@@ -494,13 +492,7 @@ export function TaskDetailSheet({
             ) : comments.length > 0 ? (
               <div className="space-y-3 mb-4">
                 {comments.map((c) => {
-                  const initials = c.author_name
-                    ?.split(' ')
-                    .map((n) => n[0])
-                    .join('')
-                    .slice(0, 2)
-                    .toUpperCase() || '';
-
+                  const initials = c.author_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '';
                   return (
                     <div key={c.id} className="flex gap-2.5">
                       <Avatar className="h-6 w-6 mt-0.5 shrink-0">
@@ -524,7 +516,6 @@ export function TaskDetailSheet({
               <p className="text-xs text-muted-foreground italic mb-3">No comments yet.</p>
             )}
 
-            {/* Comment input */}
             <div className="flex gap-2">
               <Textarea
                 placeholder="Add a comment..."
