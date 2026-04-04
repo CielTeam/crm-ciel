@@ -1,111 +1,156 @@
 
 
-# Upgrade Messaging System to Production-Grade
+# Enterprise Task System Upgrade
 
-## Issues Identified
+This is a large scope upgrade. I'll break it into phases executed sequentially — database first, then backend, then frontend.
 
-1. **Read receipts**: Current implementation is broadcast-only (ephemeral). If user B isn't online when user A reads, the "seen" status is lost. No persistence. Also, `useReadReceipts` and `useTypingIndicator` create **separate channels** from `useMessagesRealtime`, causing redundant subscriptions.
+## Phase 1 — Database Migration
 
-2. **Presence**: Uses `(presences as any[])` — violates `no-explicit-any` lint rule. Otherwise structurally sound.
+Add new columns to the `tasks` table:
 
-3. **Attachments**: `FileUploadButton` and `useUploadAttachment` still validate for `.zip/.rar` only (old policy). Server-side was updated to images+PDF but client-side was not. Downloads work via signed URLs from the edge function.
+| Column | Type | Default | Purpose |
+|--------|------|---------|---------|
+| `pinned` | boolean | false | Important/pinned flag |
+| `sort_order` | integer | 0 | Drag-and-drop ordering |
+| `started_at` | timestamptz | null | When work began |
+| `completion_notes` | text | null | Notes on completion |
+| `mark_done_by` | text | null | Who marked done |
+| `mark_done_at` | timestamptz | null | When marked done |
+| `mark_undone_by` | text | null | Who unmarked done |
+| `mark_undone_at` | timestamptz | null | When unmarked |
 
-4. **Group chat**: Backend supports `type: 'group'` and multiple members. UI doesn't differentiate — shows single name, no sender labels in groups, no multi-avatar.
+No new tables needed — activity log already covers audit trail.
 
-5. **Channel sprawl**: Three separate channels per conversation (`chat-{id}`, `chat-read-{id}`, `messages-rt-{id}`). Should consolidate.
+## Phase 2 — Backend (Edge Function)
 
-## Plan
+**`supabase/functions/tasks/index.ts`** — extend with:
 
-### Part 1 — Fix Read Receipts (persistent + broadcast)
+- **`update` action enhancements**:
+  - Auto-set `started_at` when status moves to `in_progress` (if null)
+  - Auto-set `completed_at`, `mark_done_by`, `mark_done_at` on done/approved
+  - Handle "mark undone": record `mark_undone_by`, `mark_undone_at`, clear `completed_at`, set status back to `in_progress`
+  - Add `pinned`, `sort_order`, `started_at`, `completion_notes`, `mark_done_by`, `mark_done_at`, `mark_undone_by`, `mark_undone_at` to allowed update fields
+  - Validate pin/unpin permission (creator or lead roles only)
 
-**`supabase/functions/messages/index.ts`** — `mark_read` action:
-- After updating `last_read_at`, return the list of message IDs that were marked as read (messages from others created after previous `last_read_at`)
-- The response already includes `success: true`; extend to include `{ success: true, read_message_ids: string[] }`
+- **`toggle_pin` action** (new):
+  - Toggle `pinned` on a task
+  - Only creator or lead roles allowed
+  - Audit log entry
 
-**`src/hooks/useReadReceipts.ts`** — Rewrite:
-- Remove separate channel. Use the same `chat-{id}` channel as typing (merge into a single shared channel hook or accept channel ref as param)
-- On conversation open: call `mark_read` mutation → get back `read_message_ids` → broadcast `read` event on the channel with those IDs
-- Listen for `read` broadcast events → update receipts map to `seen`
-- Initialize own messages as `delivered` by default
-- For messages where `created_at < last_read_at` of other member → mark as `seen` (derive from conversation data)
-- Accept a `channelRef` param instead of creating its own channel
+- **`reorder` action** (new):
+  - Accept `{ task_ids: string[] }` — update `sort_order` for each
+  - Only allow reordering own tasks or tasks user has authority over
 
-**`src/hooks/useMessages.ts`** — `useMarkRead`:
-- Update to return the read message IDs from the response
+- **`mark_done` / `mark_undone` actions** (new):
+  - Explicit actions separate from generic `update`
+  - Set appropriate timestamps and fields
+  - Generate notifications: "Sarah completed task: API review" sent to task creator
+  - Log activity
 
-### Part 2 — Fix Presence (remove `any`, keep structure)
+- **`assignable_users` enhancement**:
+  - Global roles (chairman, vice_president) → return ALL users
+  - Currently only returns team members for leads — correct but need to also handle "Sales Operation Manager" concept (sales_lead assigns to sales + marketing teams)
 
-**`src/hooks/usePresence.ts`**:
-- Replace `(presences as any[])` with a proper `PresencePayload` interface: `{ user_id: string; online_at: string }`
-- Cast via `unknown` → typed interface to satisfy `no-explicit-any`
+- **`list` action enhancement**:
+  - Support `tab: 'assigned_by_me'` — tasks where `created_by = actorId AND task_type = 'assigned'`
+  - Return tasks ordered by `pinned DESC, sort_order ASC, created_at DESC` by default
 
-### Part 3 — Consolidate Channels (typing + read on one channel)
+## Phase 3 — Frontend Hooks
 
-**New: `src/hooks/useChatChannel.ts`**:
-- Single hook that creates `chat-{conversationId}` channel
-- Handles: typing broadcast/listen, read broadcast/listen
-- Returns `{ channelRef, typingUserIds, sendTyping, readReceipts, broadcastRead }`
-- Cleans up on conversation change or unmount
-- Replaces separate `useTypingIndicator` and `useReadReceipts`
+**`src/hooks/useTasks.ts`** — updates:
+- Extend `Task` interface with new fields (`pinned`, `sort_order`, `started_at`, `completion_notes`, `mark_done_by`, etc.)
+- Add `useTogglePin()` mutation
+- Add `useMarkDone()` and `useMarkUndone()` mutations
+- Add `useReorderTasks()` mutation
+- Add `'assigned_by_me'` to `TaskTab` type
+- Add computed timing helpers (time-to-start, time-to-complete) as a utility function
 
-**Delete**: `src/hooks/useTypingIndicator.ts` and `src/hooks/useReadReceipts.ts` (merged into `useChatChannel`)
+## Phase 4 — Task Page Overhaul
 
-### Part 4 — Fix Attachments (client-side validation)
+**`src/pages/TasksPage.tsx`** — major rewrite:
+- Add search bar (client-side filter on title/description)
+- Add "Assigned by Me" tab
+- Add filter chips: All, Pending, In Progress, Completed, Overdue, Pinned
+- Add sort options: newest, due date, priority, pinned first, recently updated
+- Add view toggle: List view / Board (Kanban) view
+- Board view: columns by status, drag between columns to update status
+- List view: drag to reorder within same status group
+- Install `@dnd-kit/core` + `@dnd-kit/sortable` for drag-and-drop
 
-**`src/components/shared/FileUploadButton.tsx`**:
-- Update `accept` to `.jpg,.jpeg,.png,.gif,.webp,.pdf`
-- Update validation to allow image extensions + `.pdf`
-- Update max size to 5MB
-- Update error messages
+**New: `src/components/tasks/TaskBoardView.tsx`**:
+- Kanban columns: To Do | In Progress | Submitted | Done (personal) or Pending | Accepted | In Progress | Submitted | Approved (assigned)
+- Each column shows task cards
+- Drag between columns updates status (with permission checks)
+- Pinned tasks shown at top of each column with star icon
 
-**`src/hooks/useAttachments.ts`** — `useUploadAttachment`:
-- Update allowed extensions to images + PDF
-- Update max size to 5MB
+**New: `src/components/tasks/TaskSearchBar.tsx`**:
+- Search input with icon
+- Debounced 300ms filter
 
-### Part 5 — Group Chat UI
+**`src/components/tasks/TaskCard.tsx`** — enhance:
+- Add pin/star icon (toggleable)
+- Add "Mark Done" / "Mark Undone" buttons for eligible tasks
+- Show assigner name (not just assignee)
+- Show time metrics: "Started after 2h 15m", "Completed in 1d 3h", "Waiting: 5h"
+- Overdue styling: red border + badge
+- Done state: muted with checkmark overlay
+- Pinned state: subtle star icon + slightly elevated visual
 
-**`src/components/messages/ConversationList.tsx`**:
-- For `type === 'group'`: show conversation name or fallback "Alice, Bob, +2"
-- Show stacked avatars (2-3 overlapping) for group conversations
-- Presence dot: show if any member is online
+**`src/components/tasks/TaskDetailSheet.tsx`** — enhance:
+- Show timing metrics section (time to start, time to complete, waiting time)
+- Show pin/unpin button
+- Show mark done/undone button
+- Show completion_notes field (editable on submit)
+- Show mark_done_by / mark_undone_by in activity
 
-**`src/components/messages/MessageThread.tsx`**:
-- For group conversations: always show sender name above each message (currently only shows for non-self messages, which is correct — keep)
-- Show image preview for image attachments inline
+## Phase 5 — Dashboard Integration
 
-**`src/pages/MessagesPage.tsx`**:
-- Pass `conversationType` to components so they can differentiate
-- Show member count in header for groups
-- Replace `useChatChannel` instead of separate typing/read hooks
-- Wire up `broadcastRead` on conversation select
+**All dashboards** (Employee, Lead, Executive, Driver):
+- `RecentTasksList` component — add pinned indicator, overdue styling, clickable to navigate to `/tasks`
+- Lead dashboard: show pinned tasks count in stats
+- Executive dashboard: no changes needed beyond existing escalation view
 
-**`src/components/messages/NewConversationDialog.tsx`**:
-- Add optional group name input when >1 member selected
+## Phase 6 — Notifications Enhancement
 
-### Part 6 — Chat Header with Presence
+The notification system already handles:
+- Task assignment → notification to assignee ✓
+- Task status change → notification to other party ✓
+- Sound + browser push ✓
 
-**New: `src/components/messages/ChatHeader.tsx`**:
-- Shows conversation name/user name
-- For direct: green dot + "Online" or "Last seen 5 min ago"
-- For group: member count, "X online"
-- Clean, minimal design
+Enhancements:
+- **`mark_done` action**: Send notification with type `task_completed` to creator with message "Sarah completed task: API review"
+- **`mark_undone` action**: Send notification to relevant party
+- **Pin notification**: No notification needed (personal action)
+- Notification click-through already works via `reference_id` + `reference_type` ✓
 
-## Files Modified/Created
+## Phase 7 — Timing Utility
+
+**New: `src/lib/taskTimings.ts`**:
+- `formatDuration(ms)` → "2h 15m", "1d 3h", "5m"
+- `getTimeToStart(task)` → duration from `created_at` to `started_at`
+- `getTimeToComplete(task)` → duration from `started_at` to `completed_at`
+- `getWaitingTime(task)` → duration since `created_at` if not started
+
+## Files Summary
 
 | File | Action |
 |------|--------|
-| `src/hooks/useChatChannel.ts` | Create — consolidated typing + read receipts |
-| `src/hooks/usePresence.ts` | Fix `any` types |
-| `src/hooks/useTypingIndicator.ts` | Delete (merged) |
-| `src/hooks/useReadReceipts.ts` | Delete (merged) |
-| `src/hooks/useMessages.ts` | Update `useMarkRead` to return read IDs |
-| `src/hooks/useAttachments.ts` | Fix allowed types/size |
-| `src/components/shared/FileUploadButton.tsx` | Fix allowed types/size |
-| `src/components/messages/ChatHeader.tsx` | Create — presence-aware header |
-| `src/components/messages/ConversationList.tsx` | Group chat display, stacked avatars |
-| `src/components/messages/MessageThread.tsx` | Image previews for attachments |
-| `src/components/messages/MessageInput.tsx` | No changes needed |
-| `src/components/messages/NewConversationDialog.tsx` | Group name input |
-| `src/pages/MessagesPage.tsx` | Wire new hooks, add header |
-| `supabase/functions/messages/index.ts` | Return read message IDs from `mark_read` |
+| Migration | Add 8 columns to `tasks` table |
+| `supabase/functions/tasks/index.ts` | Add toggle_pin, mark_done, mark_undone, reorder, assigned_by_me tab, auto-timestamps |
+| `src/hooks/useTasks.ts` | Extend Task type, add new mutations and tab |
+| `src/lib/taskTimings.ts` | Create — duration formatting utilities |
+| `src/pages/TasksPage.tsx` | Rewrite — search, new tabs, view toggle, board view |
+| `src/components/tasks/TaskBoardView.tsx` | Create — Kanban board with dnd-kit |
+| `src/components/tasks/TaskSearchBar.tsx` | Create — debounced search input |
+| `src/components/tasks/TaskCard.tsx` | Enhance — pin, mark done/undone, timings, overdue styling |
+| `src/components/tasks/TaskDetailSheet.tsx` | Enhance — timings section, pin/done controls |
+| `src/components/tasks/SubmitTaskDialog.tsx` | Add completion_notes field |
+| `src/components/dashboard/RecentTasksList.tsx` | Add pinned indicator, overdue styling |
+| `package.json` | Add `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` |
+
+## Dependencies
+
+- `@dnd-kit/core` — drag-and-drop framework
+- `@dnd-kit/sortable` — sortable preset
+- `@dnd-kit/utilities` — CSS utilities
 
