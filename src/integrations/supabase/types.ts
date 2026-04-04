@@ -438,6 +438,7 @@ export type Database = {
           assigned_to: string | null
           challenges: string | null
           completed_at: string | null
+          completion_notes: string | null
           created_at: string
           created_by: string
           decline_reason: string | null
@@ -446,7 +447,14 @@ export type Database = {
           estimated_duration: string | null
           feedback: string | null
           id: string
+          mark_done_at: string | null
+          mark_done_by: string | null
+          mark_undone_at: string | null
+          mark_undone_by: string | null
+          pinned: boolean
           priority: string
+          sort_order: number
+          started_at: string | null
           status: string
           task_type: string
           team_id: string | null
@@ -458,6 +466,7 @@ export type Database = {
           assigned_to?: string | null
           challenges?: string | null
           completed_at?: string | null
+          completion_notes?: string | null
           created_at?: string
           created_by: string
           decline_reason?: string | null
@@ -466,7 +475,14 @@ export type Database = {
           estimated_duration?: string | null
           feedback?: string | null
           id?: string
+          mark_done_at?: string | null
+          mark_done_by?: string | null
+          mark_undone_at?: string | null
+          mark_undone_by?: string | null
+          pinned?: boolean
           priority?: string
+          sort_order?: number
+          started_at?: string | null
           status?: string
           task_type?: string
           team_id?: string | null
@@ -478,6 +494,7 @@ export type Database = {
           assigned_to?: string | null
           challenges?: string | null
           completed_at?: string | null
+          completion_notes?: string | null
           created_at?: string
           created_by?: string
           decline_reason?: string | null
@@ -486,7 +503,14 @@ export type Database = {
           estimated_duration?: string | null
           feedback?: string | null
           id?: string
+          mark_done_at?: string | null
+          mark_done_by?: string | null
+          mark_undone_at?: string | null
+          mark_undone_by?: string | null
+          pinned?: boolean
           priority?: string
+          sort_order?: number
+          started_at?: string | null
           status?: string
           task_type?: string
           team_id?: string | null
