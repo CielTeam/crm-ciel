@@ -110,17 +110,62 @@ const corsHeaders = {
 const GLOBAL_ASSIGNER_ROLES = ['chairman', 'vice_president', 'hr', 'head_of_operations'];
 const LEAD_ROLES = [...GLOBAL_ASSIGNER_ROLES, 'team_development_lead', 'technical_lead', 'head_of_accounting', 'head_of_marketing', 'sales_lead'];
 
+const ROLE_TO_DEPARTMENT: Record<string, string> = {
+  chairman: 'executive', vice_president: 'executive', hr: 'hr',
+  head_of_operations: 'operations', operations_employee: 'operations',
+  team_development_lead: 'development', developer_employee: 'development',
+  technical_lead: 'technical', technical_employee: 'technical',
+  head_of_accounting: 'accounting', accounting_employee: 'accounting',
+  head_of_marketing: 'marketing', marketing_employee: 'marketing',
+  sales_lead: 'sales', sales_employee: 'sales', driver: 'logistics',
+};
+
+const DEPARTMENT_TO_ROLES: Record<string, string[]> = {};
+for (const [role, dept] of Object.entries(ROLE_TO_DEPARTMENT)) {
+  if (!DEPARTMENT_TO_ROLES[dept]) DEPARTMENT_TO_ROLES[dept] = [];
+  DEPARTMENT_TO_ROLES[dept].push(role);
+}
+
 async function getActorRoles(client: ReturnType<typeof createClient>, actorId: string): Promise<string[]> {
   const { data } = await client.from('user_roles').select('role').eq('user_id', actorId);
   return (data as UserRoleRow[] | null)?.map(r => r.role) ?? [];
 }
 
-async function getActorTeamMemberIds(client: ReturnType<typeof createClient>, actorId: string): Promise<string[]> {
+async function getUserIdsByRoles(client: ReturnType<typeof createClient>, roleList: string[]): Promise<string[]> {
+  const { data } = await client.from('user_roles').select('user_id').in('role', roleList);
+  return (data as { user_id: string }[] || []).map(r => r.user_id);
+}
+
+async function getActorDepartmentMemberIds(client: ReturnType<typeof createClient>, actorId: string, roles: string[]): Promise<string[]> {
+  const departments = new Set<string>();
+  for (const role of roles) {
+    const dept = ROLE_TO_DEPARTMENT[role];
+    if (dept) departments.add(dept);
+  }
+  if (roles.includes('sales_lead')) departments.add('marketing');
+  if (departments.size === 0) return [];
+
+  const deptRoles: string[] = [];
+  for (const dept of departments) {
+    const rolesInDept = DEPARTMENT_TO_ROLES[dept];
+    if (rolesInDept) deptRoles.push(...rolesInDept);
+  }
+
+  const memberIds = await getUserIdsByRoles(client, deptRoles);
+
+  // Union with team_members for forward compatibility
   const { data: teams } = await client.from('teams').select('id').eq('lead_user_id', actorId).is('deleted_at', null);
-  if (!teams?.length) return [];
-  const teamIds = (teams as TeamRow[]).map(t => t.id);
-  const { data: members } = await client.from('team_members').select('user_id').in('team_id', teamIds);
-  return (members as TeamMemberRow[] | null)?.map(m => m.user_id).filter(uid => uid !== actorId) ?? [];
+  if (teams?.length) {
+    const teamIds = (teams as TeamRow[]).map(t => t.id);
+    const { data: members } = await client.from('team_members').select('user_id').in('team_id', teamIds);
+    if (members) {
+      for (const m of members as TeamMemberRow[]) {
+        if (!memberIds.includes(m.user_id)) memberIds.push(m.user_id);
+      }
+    }
+  }
+
+  return memberIds.filter(uid => uid !== actorId);
 }
 
 async function getExpandedAssignableUsers(client: ReturnType<typeof createClient>, actorId: string, roles: string[]): Promise<string[]> {
@@ -130,19 +175,7 @@ async function getExpandedAssignableUsers(client: ReturnType<typeof createClient
     return (allProfiles as { user_id: string }[] || []).map(p => p.user_id);
   }
 
-  // sales_lead can assign to sales + marketing teams
-  if (roles.includes('sales_lead')) {
-    const { data: salesMarketingTeams } = await client.from('teams').select('id').in('department', ['sales', 'marketing']).is('deleted_at', null);
-    if (salesMarketingTeams?.length) {
-      const teamIds = (salesMarketingTeams as TeamRow[]).map(t => t.id);
-      const { data: members } = await client.from('team_members').select('user_id').in('team_id', teamIds);
-      const memberIds = (members as TeamMemberRow[] || []).map(m => m.user_id);
-      if (!memberIds.includes(actorId)) memberIds.push(actorId);
-      return memberIds;
-    }
-  }
-
-  const memberIds = await getActorTeamMemberIds(client, actorId);
+  const memberIds = await getActorDepartmentMemberIds(client, actorId, roles);
   if (!memberIds.includes(actorId)) memberIds.push(actorId);
   return memberIds;
 }
@@ -195,7 +228,7 @@ Deno.serve(async (req) => {
       } else if (tab === 'assigned_by_me') {
         query = query.eq('created_by', actorId).eq('task_type', 'assigned');
       } else if (tab === 'team_tasks' && isLead) {
-        const memberIds = await getActorTeamMemberIds(admin, actorId);
+        const memberIds = await getActorDepartmentMemberIds(admin, actorId, roles);
         if (memberIds.length === 0) return jsonResponse({ tasks: [] });
         query = query.or(memberIds.map(id => `assigned_to.eq.${id}`).join(',') + ',' + memberIds.map(id => `created_by.eq.${id}`).join(','));
       } else {
