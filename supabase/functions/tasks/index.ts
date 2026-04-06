@@ -195,7 +195,7 @@ Deno.serve(async (req) => {
       } else if (tab === 'assigned_by_me') {
         query = query.eq('created_by', actorId).eq('task_type', 'assigned');
       } else if (tab === 'team_tasks' && isLead) {
-        const memberIds = await getActorTeamMemberIds(admin, actorId);
+        const memberIds = await getActorDepartmentMemberIds(admin, actorId, roles);
         if (memberIds.length === 0) return jsonResponse({ tasks: [] });
         query = query.or(memberIds.map(id => `assigned_to.eq.${id}`).join(',') + ',' + memberIds.map(id => `created_by.eq.${id}`).join(','));
       } else {

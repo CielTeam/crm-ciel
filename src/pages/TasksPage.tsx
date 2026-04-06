@@ -350,6 +350,7 @@ export default function TasksPage() {
         onOpenChange={setDialogOpen}
         onSubmit={(payload) => {
           createTask.mutate(payload, {
+            onSuccess: () => toast.success('Task created successfully'),
             onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to create task'),
           });
         }}
