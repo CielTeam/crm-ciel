@@ -608,7 +608,8 @@ Deno.serve(async (req) => {
 
     return jsonResponse({ error: 'Unknown action' }, 400);
   } catch (err) {
-    console.error('tasks error:', err);
-    return jsonResponse({ error: 'Internal server error' }, 500);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('tasks error:', message, err);
+    return jsonResponse({ error: `Server error: ${message}` }, 500);
   }
 });
