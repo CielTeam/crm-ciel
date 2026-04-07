@@ -91,8 +91,14 @@ function useTaskInvoke() {
       body,
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (error) throw error;
-    if (data.error) throw new Error(data.error);
+    if (error) {
+      // Try to extract message from FunctionsHttpError
+      const message = (error as any)?.context?.body
+        ? await (error as any).context.json().catch(() => null)
+        : null;
+      throw new Error(message?.error || error.message || 'Request failed');
+    }
+    if (data?.error) throw new Error(data.error);
     return data;
   };
 }

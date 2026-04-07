@@ -230,9 +230,35 @@ Deno.serve(async (req) => {
       } else if (tab === 'team_tasks' && isLead) {
         const memberIds = await getActorDepartmentMemberIds(admin, actorId, roles);
         if (memberIds.length === 0) return jsonResponse({ tasks: [] });
-        query = query.or(memberIds.map(id => `assigned_to.eq.${id}`).join(',') + ',' + memberIds.map(id => `created_by.eq.${id}`).join(','));
+        // Use separate queries to avoid .or() with special chars in Auth0 IDs
+        const { data: assignedData } = await admin.from('tasks').select('*').in('assigned_to', memberIds)
+          .order('pinned', { ascending: false }).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
+        const { data: createdData } = await admin.from('tasks').select('*').in('created_by', memberIds)
+          .order('pinned', { ascending: false }).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
+        const taskMap = new Map<string, TaskRecord>();
+        for (const t of (assignedData || []) as TaskRecord[]) taskMap.set(t.id, t);
+        for (const t of (createdData || []) as TaskRecord[]) taskMap.set(t.id, t);
+        const merged = [...taskMap.values()].sort((a, b) => {
+          if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+          if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+        return jsonResponse({ tasks: merged });
       } else {
-        query = query.or(`created_by.eq.${actorId},assigned_to.eq.${actorId}`);
+        // Use separate queries for safety with special chars in user IDs
+        const { data: createdData } = await admin.from('tasks').select('*').eq('created_by', actorId)
+          .order('pinned', { ascending: false }).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
+        const { data: assignedData } = await admin.from('tasks').select('*').eq('assigned_to', actorId)
+          .order('pinned', { ascending: false }).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
+        const taskMap = new Map<string, TaskRecord>();
+        for (const t of (createdData || []) as TaskRecord[]) taskMap.set(t.id, t);
+        for (const t of (assignedData || []) as TaskRecord[]) taskMap.set(t.id, t);
+        const merged = [...taskMap.values()].sort((a, b) => {
+          if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+          if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+        return jsonResponse({ tasks: merged });
       }
 
       query = query.order('pinned', { ascending: false }).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
@@ -582,7 +608,8 @@ Deno.serve(async (req) => {
 
     return jsonResponse({ error: 'Unknown action' }, 400);
   } catch (err) {
-    console.error('tasks error:', err);
-    return jsonResponse({ error: 'Internal server error' }, 500);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('tasks error:', message, err);
+    return jsonResponse({ error: `Server error: ${message}` }, 500);
   }
 });
