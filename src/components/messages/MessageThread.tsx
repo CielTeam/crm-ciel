@@ -62,7 +62,7 @@ export function MessageThread({
                 className={cn(
                   'max-w-[75%] rounded-xl px-3 py-2',
                   isMine
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-slate-700 text-white dark:bg-slate-600'
                     : 'bg-muted text-foreground'
                 )}
               >
