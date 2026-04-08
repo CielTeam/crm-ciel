@@ -95,8 +95,8 @@ export function MessageThread({
                   <p
                     className={cn(
                       'text-[10px]',
-                      isMine
-                        ? 'text-primary-foreground/60'
+                    isMine
+                        ? 'text-white/60'
                         : 'text-muted-foreground/60'
                     )}
                   >
