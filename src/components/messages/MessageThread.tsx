@@ -108,9 +108,9 @@ export function MessageThread({
                       return <CheckCheck className="h-3 w-3 text-blue-400" />;
                     }
                     if (status === 'delivered') {
-                      return <CheckCheck className="h-3 w-3 text-primary-foreground/50" />;
+                      return <CheckCheck className="h-3 w-3 text-white/50" />;
                     }
-                    return <Check className="h-3 w-3 text-primary-foreground/50" />;
+                    return <Check className="h-3 w-3 text-white/50" />;
                   })()}
                 </div>
               </div>
