@@ -8,6 +8,7 @@ interface Props {
   onSend: (content: string) => void;
   onFileUpload?: (file: File) => void;
   onTyping?: () => void;
+  onStopTyping?: () => void;
   disabled?: boolean;
   isUploading?: boolean;
 }
