@@ -17,6 +17,7 @@ export function MessageInput({
   onSend,
   onFileUpload,
   onTyping,
+  onStopTyping,
   disabled,
   isUploading,
 }: Props) {
