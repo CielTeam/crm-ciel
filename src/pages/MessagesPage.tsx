@@ -42,7 +42,7 @@ export default function MessagesPage() {
   const uploadAttachment = useUploadAttachment();
 
   const presenceMap = usePresence(user?.id);
-  const { typingUserIds, sendTyping, readReceipts, broadcastRead } = useChatChannel(
+  const { typingUserIds, sendTyping, sendStopTyping, readReceipts, broadcastRead, broadcastNewMessage } = useChatChannel(
     selectedId, messages, user?.id
   );
 
