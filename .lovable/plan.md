@@ -1,47 +1,51 @@
 
 
-# Fix 500 Error + Upgrade Task Creation UI
+# Fix Task Creation Error + Messaging Improvements
 
-## Issue 1: 500 Internal Server Error
+## Issue 1: Task creation 500 error — `tasks_status_check` constraint
 
-**Diagnosis**: The edge function's generic catch block (line 584-587) swallows the actual error and returns a generic "Internal server error" with no details. Edge function logs show no errors, suggesting the function may not be deployed with the latest code (the `ROLE_TO_DEPARTMENT` fix). Additionally, the `.or()` PostgREST filter at line 233 builds raw filter strings with Auth0 IDs containing `|` characters which may cause query parsing issues.
+**Root cause**: The database has a CHECK constraint `tasks_status_check` that only allows `todo`, `in_progress`, `done`. The edge function tries to insert `pending_accept` for assigned tasks, which the DB rejects. The error is then serialized as `[object Object]` because the catch block does `String(err)` on a Postgres error object.
 
-**Fix**:
-1. **Redeploy the edge function** with the current code that has the `ROLE_TO_DEPARTMENT` mapping
-2. **Improve error logging** in the catch block — include the actual error message in the response (sanitized) so the frontend can surface it
-3. **Replace `.or()` string building** at line 233 with `.in()` queries — split into two queries (one for `assigned_to`, one for `created_by`) and merge results, avoiding raw filter string construction with special characters
-4. **Frontend**: In `useTaskInvoke`, improve error parsing to surface the backend error message to the toast
+**Fix**: Database migration to expand the CHECK constraint to include all statuses the system uses: `todo`, `in_progress`, `done`, `pending_accept`, `approved`, `declined`, `submitted`.
 
-## Issue 2: Task Creation UI/UX Upgrade
+Also fix the error serialization in the edge function catch block to properly stringify error objects.
 
-**Current state**: The duration field is a free-text input ("e.g. 2 hours"). Due time is a raw `<input type="time">`. Not professional enough.
+## Issue 2: Task creation dialog not fully visible on small screens
 
-**Redesign `AddTaskDialog.tsx`**:
+**Fix**: Make the dialog scrollable by wrapping the form content in a `ScrollArea` with `max-h-[80vh]` and add `overflow-y-auto` so all fields are accessible on any screen size.
 
-### Duration Picker
-- Replace free-text input with two side-by-side numeric inputs: **Hours** (0-99) and **Minutes** (0-59)
-- Clean number steppers with labels
-- Computed display: "2h 30m" stored as the `estimated_duration` string
+## Issue 3: Sent message bubble is blue — blue read ticks invisible
 
-### Due Date & Time
-- Keep the date input but style it better with a calendar icon
-- Keep the time input but add a label clarifying the timezone behavior
-- Group date + time in a clear "Due Date & Time" section
+**Fix**: Change the sender's message bubble from `bg-primary text-primary-foreground` to a neutral dark color like `bg-slate-700 text-white` (dark theme friendly: `dark:bg-slate-600`). This makes blue checkmarks clearly visible.
 
-### Overall UX Polish
-- Add section groupings with subtle dividers
-- Improve field spacing and visual hierarchy
-- Inline validation: show red border + helper text for empty title on blur
-- Priority selector: add color-coded dots next to each option (gray/yellow/orange/red)
-- Disabled submit button shows tooltip explaining what's missing
+## Issue 4: Typing indicator disappears after 2 seconds instead of persisting until message sent
+
+**Fix**: 
+- Increase `TYPING_EXPIRE_MS` from 2000 to 5000ms in `useChatChannel.ts`
+- Add a `stop_typing` broadcast event — sender broadcasts it after sending a message
+- The `sendTyping` function should also broadcast on every keystroke (reduce debounce to 200ms so it keeps refreshing the timer)
+- In `MessageInput`, call a new `sendStopTyping` callback after `onSend` completes
+
+## Issue 5: Messages don't appear in real-time for the other user already in the chat
+
+**Fix**: The `useMessagesRealtime` hook subscribes to `postgres_changes` on the `messages` table, filtered by `conversation_id`. This relies on Supabase Realtime being enabled for the `messages` table. The current RLS policy for `messages` SELECT uses a subquery on `conversation_members` which has a self-referencing bug (`cm.conversation_id = cm.id` instead of `cm.conversation_id = messages.conversation_id`). However, since the edge function inserts via service_role, the INSERT event should still fire.
+
+The more likely issue: the realtime channel filter uses `conversation_id=eq.${conversationId}` but the `conversation_id` column is `uuid` type — the filter string format should work. Let me check if there's a simpler issue: the hook skips messages from the current user (`if (newMsg.sender_id === userId) return`), which is correct. For the OTHER user, the channel subscription should pick up the INSERT. The issue may be that Supabase Realtime is not enabled for the `messages` table, or the RLS policy blocks the realtime subscription.
+
+**Fix approach**: Since the system already uses broadcast channels (`chat-{conversationId}`), add a `new_message` broadcast event. When a message is sent successfully, broadcast it on the chat channel. The receiver's `useChatChannel` hook listens for this and appends it to the React Query cache — no dependency on postgres_changes.
+
+---
 
 ## Files Modified
 
 | File | Change |
 |------|--------|
-| `supabase/functions/tasks/index.ts` | Fix `.or()` filter, improve error responses, add error detail logging |
-| `src/components/tasks/AddTaskDialog.tsx` | Redesign with structured duration picker, polished layout |
-| `src/hooks/useTasks.ts` | Improve error message parsing in `useTaskInvoke` |
-
-Then redeploy the edge function and verify.
+| **Migration** | Drop and recreate `tasks_status_check` to include `pending_accept`, `approved`, `declined`, `submitted` |
+| `supabase/functions/tasks/index.ts` | Fix error serialization in catch block |
+| `src/components/tasks/AddTaskDialog.tsx` | Add scroll area wrapper for responsiveness |
+| `src/components/messages/MessageThread.tsx` | Change sent bubble from `bg-primary` to `bg-slate-700` |
+| `src/hooks/useChatChannel.ts` | Increase typing timeout to 5s, reduce debounce to 200ms, add `stop_typing` event, add `new_message` broadcast listener |
+| `src/components/messages/MessageInput.tsx` | Call `onStopTyping` after send |
+| `src/pages/MessagesPage.tsx` | Broadcast `new_message` on send success, pass `sendStopTyping` to MessageInput |
+| `src/hooks/useMessages.ts` | Remove duplicate message guard in realtime (keep as fallback) |
 
