@@ -29,8 +29,9 @@ export function MessageInput({
     if (!trimmed || disabled) return;
 
     onSend(trimmed);
+    onStopTyping?.();
     setValue('');
-  }, [value, disabled, onSend]);
+  }, [value, disabled, onSend, onStopTyping]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
