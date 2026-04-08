@@ -137,13 +137,13 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTa
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="text-lg">New Task</DialogTitle>
           <DialogDescription>Create a new task with details below.</DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-5 overflow-y-auto flex-1 pr-1">
           {/* Title */}
           <div className="space-y-1.5">
             <Label htmlFor="title" className="text-sm font-medium">

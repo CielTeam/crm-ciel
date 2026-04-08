@@ -62,7 +62,7 @@ export function MessageThread({
                 className={cn(
                   'max-w-[75%] rounded-xl px-3 py-2',
                   isMine
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-slate-700 text-white dark:bg-slate-600'
                     : 'bg-muted text-foreground'
                 )}
               >
@@ -95,8 +95,8 @@ export function MessageThread({
                   <p
                     className={cn(
                       'text-[10px]',
-                      isMine
-                        ? 'text-primary-foreground/60'
+                    isMine
+                        ? 'text-white/60'
                         : 'text-muted-foreground/60'
                     )}
                   >
@@ -108,9 +108,9 @@ export function MessageThread({
                       return <CheckCheck className="h-3 w-3 text-blue-400" />;
                     }
                     if (status === 'delivered') {
-                      return <CheckCheck className="h-3 w-3 text-primary-foreground/50" />;
+                      return <CheckCheck className="h-3 w-3 text-white/50" />;
                     }
-                    return <Check className="h-3 w-3 text-primary-foreground/50" />;
+                    return <Check className="h-3 w-3 text-white/50" />;
                   })()}
                 </div>
               </div>

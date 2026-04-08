@@ -42,7 +42,7 @@ export default function MessagesPage() {
   const uploadAttachment = useUploadAttachment();
 
   const presenceMap = usePresence(user?.id);
-  const { typingUserIds, sendTyping, readReceipts, broadcastRead } = useChatChannel(
+  const { typingUserIds, sendTyping, sendStopTyping, readReceipts, broadcastRead, broadcastNewMessage } = useChatChannel(
     selectedId, messages, user?.id
   );
 
@@ -71,11 +71,18 @@ export default function MessagesPage() {
     if (!selectedId) return;
     if (!content.trim()) return;
 
-    sendMessage.mutate({
-      conversation_id: selectedId,
-      content: content.trim(),
-    });
-  }, [selectedId, sendMessage]);
+    sendMessage.mutate(
+      {
+        conversation_id: selectedId,
+        content: content.trim(),
+      },
+      {
+        onSuccess: (message) => {
+          broadcastNewMessage(message);
+        },
+      }
+    );
+  }, [selectedId, sendMessage, broadcastNewMessage]);
 
   const handleFileUpload = useCallback((file: File) => {
     if (!selectedId) return;
@@ -180,6 +187,7 @@ export default function MessagesPage() {
                 onSend={handleSend}
                 onFileUpload={handleFileUpload}
                 onTyping={sendTyping}
+                onStopTyping={sendStopTyping}
                 disabled={sendMessage.isPending}
                 isUploading={uploadAttachment.isPending}
               />
