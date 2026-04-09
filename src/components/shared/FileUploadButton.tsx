@@ -3,9 +3,9 @@ import { Paperclip, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'];
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.zip'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const ACCEPT_STRING = '.jpg,.jpeg,.png,.gif,.webp,.pdf';
+const ACCEPT_STRING = '.jpg,.jpeg,.png,.gif,.webp,.pdf,.zip';
 
 interface FileUploadButtonProps {
   onFileSelected: (file: File) => void;
@@ -30,7 +30,7 @@ export function FileUploadButton({
 
     const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
-      toast.error('Only images (JPG, PNG, GIF, WEBP) and PDF files are allowed');
+      toast.error('Only images (JPG, PNG, GIF, WEBP), PDF, and ZIP files are allowed');
       e.target.value = '';
       return;
     }

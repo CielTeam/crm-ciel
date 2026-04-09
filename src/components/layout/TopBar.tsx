@@ -12,10 +12,13 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROLE_LABELS } from '@/types/roles';
 import { useNavigate } from 'react-router-dom';
+import { useUnreadCount } from '@/hooks/useNotifications';
+import { Badge } from '@/components/ui/badge';
 
 export function TopBar() {
   const { user, primaryRole, logout } = useAuth();
   const navigate = useNavigate();
+  const { data: unreadCount = 0 } = useUnreadCount();
 
   const initials = user?.displayName
     ?.split(' ')
@@ -44,7 +47,14 @@ export function TopBar() {
           onClick={() => navigate('/notifications')}
         >
           <Bell className="h-4 w-4" />
-          {/* Notification badge placeholder */}
+          {unreadCount > 0 && (
+            <Badge
+              variant="destructive"
+              className="absolute -top-1 -right-1 h-4 min-w-[16px] text-[9px] px-1 flex items-center justify-center"
+            >
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </Badge>
+          )}
         </Button>
 
         <DropdownMenu>

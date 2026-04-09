@@ -5,7 +5,6 @@ import {
   Palmtree,
   MessageSquare,
   Video,
-  Bell,
   Users,
   Settings,
   Shield,
@@ -30,7 +29,6 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { title: 'Messages', path: '/messages', icon: MessageSquare },
       { title: 'Meetings', path: '/meetings', icon: Video },
-      { title: 'Notifications', path: '/notifications', icon: Bell },
     ],
   },
   {

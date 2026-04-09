@@ -114,10 +114,10 @@ export function useUploadAttachment() {
       const { file, entity_type, entity_id } = payload;
 
       const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-      const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'];
+      const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.zip'];
 
       if (!allowedExts.includes(ext)) {
-        throw new Error('Only images (JPG, PNG, GIF, WEBP) and PDF files are allowed');
+        throw new Error('Only images (JPG, PNG, GIF, WEBP), PDF, and ZIP files are allowed');
       }
 
       if (file.size > 5 * 1024 * 1024) {

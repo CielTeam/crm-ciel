@@ -4,6 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import {
+  playMessageSound,
+  playTaskSound,
   playNotificationSound,
   requestNotificationPermission,
   showBrowserNotification,
@@ -20,6 +22,16 @@ interface Notification {
   is_read: boolean;
   created_at: string;
   deleted_at: string | null;
+}
+
+/** Get the currently active conversation id from the URL */
+function getActiveConversationId(): string | null {
+  try {
+    const url = new URL(window.location.href);
+    return url.searchParams.get('conversation');
+  } catch {
+    return null;
+  }
 }
 
 export function useNotifications(filter: 'all' | 'unread' | 'read' = 'all') {
@@ -68,22 +80,41 @@ export function useNotificationsRealtime() {
           qc.invalidateQueries({ queryKey: ['notifications'] });
           qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
 
-          const isUrgent = row?.type === 'task_urgent' ||
-            (row?.title && row.title.toLowerCase().includes('urgent'));
+          if (!row) return;
 
-          // Play sound
-          playNotificationSound(isUrgent);
+          const nType = row.type || '';
+          const isUrgent = nType === 'task_urgent' ||
+            (row.title && row.title.toLowerCase().includes('urgent'));
+
+          // Choose sound based on notification type
+          if (nType === 'new_message') {
+            // Suppress sound if user is viewing the exact conversation
+            const activeConvId = getActiveConversationId();
+            const isViewingConv = activeConvId && row.reference_id === activeConvId;
+            if (!isViewingConv) {
+              playMessageSound();
+            }
+          } else if (
+            nType === 'task_assigned' ||
+            nType === 'task_status_changed' ||
+            nType === 'task_completed' ||
+            nType.startsWith('task_')
+          ) {
+            playTaskSound();
+          } else {
+            playNotificationSound(isUrgent);
+          }
 
           // Show in-app toast
-          if (row?.title) {
+          if (row.title) {
             toast.info(row.title, {
               description: row.body || undefined,
               duration: isUrgent ? 10000 : 5000,
             });
           }
 
-          // Show browser push notification (works even when tab is background)
-          if (row?.title) {
+          // Show browser push notification
+          if (row.title) {
             showBrowserNotification(row.title, {
               body: row.body || undefined,
               tag: row.id || 'notification',
