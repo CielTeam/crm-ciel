@@ -326,9 +326,13 @@ Deno.serve(async (req) => {
 
       const oldStatus = task.status;
       const updatePayload: Record<string, unknown> = {};
+      const VALID_STATUSES = ['todo', 'in_progress', 'done', 'pending_accept', 'accepted', 'declined', 'submitted', 'approved', 'rejected'];
       const allowedFields = ['title', 'description', 'priority', 'due_date', 'status', 'challenges', 'estimated_duration', 'actual_duration', 'feedback', 'decline_reason', 'completed_at', 'completion_notes', 'pinned', 'sort_order'];
       for (const field of allowedFields) {
         if (updates[field] !== undefined) {
+          if (field === 'status' && !VALID_STATUSES.includes(updates[field])) {
+            return jsonResponse({ error: `Invalid status: ${updates[field]}. Allowed: ${VALID_STATUSES.join(', ')}` }, 400);
+          }
           if (field === 'title') updatePayload[field] = sanitizeString(updates[field], 255);
           else if (field === 'description' || field === 'feedback' || field === 'challenges' || field === 'completion_notes') updatePayload[field] = sanitizeString(updates[field], 5000);
           else if (field === 'decline_reason') updatePayload[field] = sanitizeString(updates[field], 1000);
