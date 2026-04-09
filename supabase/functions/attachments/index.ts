@@ -87,8 +87,8 @@ function checkRateLimit(key: string, maxRequests: number, windowMs: number): boo
 
 // ─── Types & Constants ───
 
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'] as const;
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'];
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 'application/zip', 'application/x-zip-compressed'] as const;
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.zip'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 type AttachmentAction = 'upload' | 'list' | 'delete';
@@ -141,6 +141,7 @@ function getMimeType(ext: string): string {
   const map: Record<string, string> = {
     '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
     '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf',
+    '.zip': 'application/zip',
   };
   return map[ext] || 'application/octet-stream';
 }
@@ -205,7 +206,7 @@ Deno.serve(async (req) => {
       if (!['task', 'comment', 'message'].includes(entity_type)) return jsonResponse({ error: 'entity_type must be task, comment, or message' }, 400);
 
       const ext = getExtension(file_name);
-      if (!ALLOWED_EXTENSIONS.includes(ext)) return jsonResponse({ error: 'Only images (jpg, png, gif, webp) and PDF files are allowed' }, 400);
+      if (!ALLOWED_EXTENSIONS.includes(ext)) return jsonResponse({ error: 'Only images (jpg, png, gif, webp), PDF, and ZIP files are allowed' }, 400);
 
       const bytes = decodeBase64ToBytes(file_base64);
       if (bytes.length > MAX_FILE_SIZE) return jsonResponse({ error: 'File size exceeds 5MB limit' }, 400);

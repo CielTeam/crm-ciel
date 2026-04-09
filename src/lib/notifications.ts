@@ -9,7 +9,54 @@ function getAudioContext() {
   return audioContext;
 }
 
-/** Play a short alert tone using Web Audio API — no external files needed */
+/** Play a short message received chime — two soft rising notes */
+export function playMessageSound() {
+  try {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(523, ctx.currentTime);       // C5
+    osc.frequency.setValueAtTime(659, ctx.currentTime + 0.12); // E5
+    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  } catch {
+    // Audio not available
+  }
+}
+
+/** Play a task assignment alert — three staccato beeps */
+export function playTaskSound() {
+  try {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') ctx.resume();
+
+    for (let i = 0; i < 3; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(784, ctx.currentTime + i * 0.15); // G5
+      gain.gain.setValueAtTime(0.12, ctx.currentTime + i * 0.15);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.1);
+      osc.start(ctx.currentTime + i * 0.15);
+      osc.stop(ctx.currentTime + i * 0.15 + 0.1);
+    }
+  } catch {
+    // Audio not available
+  }
+}
+
+/** Play a general notification chime — single mellow tone */
 export function playNotificationSound(urgent = false) {
   try {
     const ctx = getAudioContext();
@@ -21,7 +68,6 @@ export function playNotificationSound(urgent = false) {
     gain.connect(ctx.destination);
 
     if (urgent) {
-      // Two-tone urgent beep
       osc.frequency.setValueAtTime(880, ctx.currentTime);
       osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.15);
       osc.frequency.setValueAtTime(880, ctx.currentTime + 0.3);
@@ -30,15 +76,15 @@ export function playNotificationSound(urgent = false) {
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.5);
     } else {
-      // Simple soft chime
-      osc.frequency.setValueAtTime(660, ctx.currentTime);
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
       gain.gain.setValueAtTime(0.15, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
       osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.3);
+      osc.stop(ctx.currentTime + 0.35);
     }
   } catch {
-    // Audio not available — silently ignore
+    // Audio not available
   }
 }
 
@@ -69,7 +115,6 @@ export function showBrowserNotification(title: string, options?: { body?: string
       notification.close();
     };
 
-    // Auto-close non-urgent after 8s
     if (!options?.urgent) {
       setTimeout(() => notification.close(), 8000);
     }

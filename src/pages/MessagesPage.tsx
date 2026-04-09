@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   useConversations,
   useMessages,
@@ -12,7 +13,9 @@ import { usePresence } from '@/hooks/usePresence';
 import { useChatChannel } from '@/hooks/useChatChannel';
 
 import {
-  useUploadAttachment
+  useUploadAttachment,
+  useAttachments,
+  type Attachment,
 } from '@/hooks/useAttachments';
 
 import { ConversationList } from '@/components/messages/ConversationList';
@@ -27,7 +30,19 @@ import { toast } from 'sonner';
 
 export default function MessagesPage() {
   const { user } = useAuth();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string | null>(
+    searchParams.get('conversation')
+  );
+
+  // Sync selected conversation to URL for notification sound suppression
+  useEffect(() => {
+    if (selectedId) {
+      setSearchParams({ conversation: selectedId }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
+    }
+  }, [selectedId, setSearchParams]);
 
   const { data: conversations, isLoading: convLoading, error: convErr } = useConversations();
   const { data: messages, isLoading: msgLoading } = useMessages(selectedId);
@@ -40,6 +55,18 @@ export default function MessagesPage() {
   markReadRef.current = markRead;
 
   const uploadAttachment = useUploadAttachment();
+
+  // Fetch attachments for messages in the active conversation
+  const { data: convAttachments } = useAttachments(
+    selectedId ? 'message' : null,
+    // We pass a pseudo entity_id; the edge function lists by entity_type+entity_id
+    // For message attachments we need per-message queries — see messageAttachments map below
+    null
+  );
+
+  // Build message attachment map from individual message attachment queries
+  // For simplicity, we fetch all message-type attachments for messages in this conversation
+  const messageIds = useMemo(() => messages?.map(m => m.id) ?? [], [messages]);
 
   const presenceMap = usePresence(user?.id);
   const { typingUserIds, sendTyping, sendStopTyping, readReceipts, broadcastRead, broadcastNewMessage } = useChatChannel(
