@@ -188,6 +188,14 @@ function jsonResponse(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
+async function broadcastNotification(admin: ReturnType<typeof createClient>, userId: string, notification: { type: string; title: string; body?: string | null; reference_id?: string | null; reference_type?: string | null; id?: string }) {
+  try {
+    const channel = admin.channel(`user-notify-${userId}`);
+    await channel.send({ type: 'broadcast', event: 'new_notification', payload: notification });
+    await admin.removeChannel(channel);
+  } catch { /* best effort */ }
+}
+
 // ─── Edge Function ───
 
 Deno.serve(async (req) => {
@@ -301,11 +309,13 @@ Deno.serve(async (req) => {
       if (assigned_to && assigned_to !== actorId) {
         const { data: actorProfile } = await admin.from('profiles').select('display_name').eq('user_id', actorId).single();
         const actorName = (actorProfile as ProfileRow | null)?.display_name || 'Someone';
-        await admin.from('notifications').insert({
-          user_id: assigned_to, type: 'task_assigned',
+        const notif = {
+          type: 'task_assigned',
           title: `New task assigned by ${actorName}`,
           body: cleanTitle, reference_id: data.id, reference_type: 'task',
-        });
+        };
+        await admin.from('notifications').insert({ user_id: assigned_to, ...notif });
+        await broadcastNotification(admin, assigned_to, notif);
       }
       return jsonResponse({ task: data }, 201);
     }
@@ -359,7 +369,9 @@ Deno.serve(async (req) => {
         await logActivity(admin, id, actorId, oldStatus, updatePayload.status as string);
         const notifyUserId = task.created_by === actorId ? task.assigned_to : task.created_by;
         if (notifyUserId) {
-          await admin.from('notifications').insert({ user_id: notifyUserId, type: 'task_status_changed', title: `Task status changed to ${updatePayload.status}`, body: task.title, reference_id: id, reference_type: 'task' });
+          const notif = { type: 'task_status_changed', title: `Task status changed to ${updatePayload.status}`, body: task.title, reference_id: id, reference_type: 'task' };
+          await admin.from('notifications').insert({ user_id: notifyUserId, ...notif });
+          await broadcastNotification(admin, notifyUserId, notif);
         }
       }
       return jsonResponse({ task: data });
@@ -404,11 +416,13 @@ Deno.serve(async (req) => {
       if (task.created_by !== actorId && task.created_by) {
         const { data: actorProfile } = await admin.from('profiles').select('display_name').eq('user_id', actorId).single();
         const actorName = (actorProfile as ProfileRow | null)?.display_name || 'Someone';
-        await admin.from('notifications').insert({
-          user_id: task.created_by, type: 'task_completed',
+        const notif = {
+          type: 'task_completed',
           title: `${actorName} completed task: ${task.title}`,
           body: task.title, reference_id: id, reference_type: 'task',
-        });
+        };
+        await admin.from('notifications').insert({ user_id: task.created_by, ...notif });
+        await broadcastNotification(admin, task.created_by, notif);
       }
       return jsonResponse({ task: data });
     }
@@ -443,11 +457,9 @@ Deno.serve(async (req) => {
 
       const notifyUserId = task.created_by === actorId ? task.assigned_to : task.created_by;
       if (notifyUserId) {
-        await admin.from('notifications').insert({
-          user_id: notifyUserId, type: 'task_status_changed',
-          title: 'Task was marked as not done',
-          body: task.title, reference_id: id, reference_type: 'task',
-        });
+        const notif = { type: 'task_status_changed', title: 'Task was marked as not done', body: task.title, reference_id: id, reference_type: 'task' };
+        await admin.from('notifications').insert({ user_id: notifyUserId, ...notif });
+        await broadcastNotification(admin, notifyUserId, notif);
       }
       return jsonResponse({ task: data });
     }
@@ -605,7 +617,9 @@ Deno.serve(async (req) => {
 
       await logActivity(admin, task_id, actorId, null, null, `Reassigned from ${oldAssignee || 'unassigned'} to ${new_assigned_to}`);
       if (new_assigned_to !== actorId) {
-        await admin.from('notifications').insert({ user_id: new_assigned_to, type: 'task_assigned', title: 'A task has been reassigned to you', body: taskData.title, reference_id: task_id, reference_type: 'task' });
+        const notif = { type: 'task_assigned', title: 'A task has been reassigned to you', body: taskData.title, reference_id: task_id, reference_type: 'task' };
+        await admin.from('notifications').insert({ user_id: new_assigned_to, ...notif });
+        await broadcastNotification(admin, new_assigned_to, notif);
       }
       return jsonResponse({ task: data });
     }

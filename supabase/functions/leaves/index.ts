@@ -86,6 +86,14 @@ function sanitizeString(val: unknown, maxLen: number): string {
   return val.replace(/<[^>]*>/g, '').trim().substring(0, maxLen);
 }
 
+async function broadcastNotification(admin: ReturnType<typeof createClient>, userId: string, notification: { type: string; title: string; body?: string | null; reference_id?: string | null; reference_type?: string | null; id?: string }) {
+  try {
+    const channel = admin.channel(`user-notify-${userId}`);
+    await channel.send({ type: 'broadcast', event: 'new_notification', payload: notification });
+    await admin.removeChannel(channel);
+  } catch { /* best effort */ }
+}
+
 // ─── Edge Function ───
 
 const corsHeaders = {
@@ -209,7 +217,9 @@ Deno.serve(async (req) => {
       await admin.from('audit_logs').insert({ actor_id: actorId, action: `leave.${decision}`, target_type: 'leave', target_id: leave_id, metadata: { decision, reviewer_note: cleanNote } });
       const notifType = decision === 'approved' ? 'leave_approved' : 'leave_rejected';
       const notifTitle = decision === 'approved' ? 'Your leave request has been approved' : 'Your leave request has been rejected';
-      await admin.from('notifications').insert({ user_id: leave.user_id, type: notifType, title: notifTitle, body: cleanNote || `${leave.leave_type} leave: ${leave.start_date} – ${leave.end_date}`, reference_id: leave_id, reference_type: 'leave' });
+      const notifBody = cleanNote || `${leave.leave_type} leave: ${leave.start_date} – ${leave.end_date}`;
+      await admin.from('notifications').insert({ user_id: leave.user_id, type: notifType, title: notifTitle, body: notifBody, reference_id: leave_id, reference_type: 'leave' });
+      await broadcastNotification(admin, leave.user_id, { type: notifType, title: notifTitle, body: notifBody, reference_id: leave_id, reference_type: 'leave' });
 
       return new Response(JSON.stringify({ leave: updated }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }

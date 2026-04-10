@@ -10,6 +10,7 @@ import {
   requestNotificationPermission,
   showBrowserNotification,
 } from '@/lib/notifications';
+import { readSoundPreferences } from '@/hooks/useSoundPreferences';
 
 interface Notification {
   id: string;
@@ -22,6 +23,15 @@ interface Notification {
   is_read: boolean;
   created_at: string;
   deleted_at: string | null;
+}
+
+interface BroadcastPayload {
+  id?: string;
+  type: string;
+  title: string;
+  body?: string | null;
+  reference_id?: string | null;
+  reference_type?: string | null;
 }
 
 /** Get the currently active conversation id from the URL */
@@ -66,63 +76,58 @@ export function useNotificationsRealtime() {
     if (!user?.id) return;
 
     const channel = supabase
-      .channel('notifications-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          const row = payload.new as Notification | null;
-          qc.invalidateQueries({ queryKey: ['notifications'] });
-          qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
+      .channel(`user-notify-${user.id}`)
+      .on('broadcast', { event: 'new_notification' }, (payload) => {
+        const row = (payload?.payload ?? null) as BroadcastPayload | null;
+        qc.invalidateQueries({ queryKey: ['notifications'] });
+        qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
 
-          if (!row) return;
+        if (!row) return;
 
-          const nType = row.type || '';
-          const isUrgent = nType === 'task_urgent' ||
-            (row.title && row.title.toLowerCase().includes('urgent'));
+        const nType = row.type || '';
+        const isUrgent =
+          nType === 'task_urgent' ||
+          (row.title && row.title.toLowerCase().includes('urgent'));
 
-          // Choose sound based on notification type
-          if (nType === 'new_message') {
-            // Suppress sound if user is viewing the exact conversation
-            const activeConvId = getActiveConversationId();
-            const isViewingConv = activeConvId && row.reference_id === activeConvId;
-            if (!isViewingConv) {
-              playMessageSound();
-            }
-          } else if (
-            nType === 'task_assigned' ||
-            nType === 'task_status_changed' ||
-            nType === 'task_completed' ||
-            nType.startsWith('task_')
-          ) {
-            playTaskSound();
-          } else {
-            playNotificationSound(isUrgent);
+        // Read user's sound preferences
+        const prefs = readSoundPreferences(user.id);
+
+        // Choose sound based on notification type
+        if (nType === 'new_message') {
+          // Suppress sound if user is viewing the exact conversation
+          const activeConvId = getActiveConversationId();
+          const isViewingConv = activeConvId && row.reference_id === activeConvId;
+          if (!isViewingConv && prefs.messages) {
+            playMessageSound();
           }
-
-          // Show in-app toast
-          if (row.title) {
-            toast.info(row.title, {
-              description: row.body || undefined,
-              duration: isUrgent ? 10000 : 5000,
-            });
-          }
-
-          // Show browser push notification
-          if (row.title) {
-            showBrowserNotification(row.title, {
-              body: row.body || undefined,
-              tag: row.id || 'notification',
-              urgent: isUrgent,
-            });
-          }
+        } else if (
+          nType === 'task_assigned' ||
+          nType === 'task_status_changed' ||
+          nType === 'task_completed' ||
+          nType.startsWith('task_')
+        ) {
+          if (prefs.tasks) playTaskSound();
+        } else {
+          if (prefs.notifications) playNotificationSound(isUrgent);
         }
-      )
+
+        // Show in-app toast
+        if (row.title) {
+          toast.info(row.title, {
+            description: row.body || undefined,
+            duration: isUrgent ? 10000 : 5000,
+          });
+        }
+
+        // Show browser push notification
+        if (row.title) {
+          showBrowserNotification(row.title, {
+            body: row.body || undefined,
+            tag: row.id || 'notification',
+            urgent: isUrgent,
+          });
+        }
+      })
       .subscribe();
 
     return () => {
@@ -134,7 +139,7 @@ export function useNotificationsRealtime() {
 export function useUnreadCount() {
   const { user, getToken } = useAuth();
 
-  // Subscribe to realtime notification inserts
+  // Subscribe to realtime notification broadcasts
   useNotificationsRealtime();
 
   return useQuery({

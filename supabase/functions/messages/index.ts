@@ -91,6 +91,14 @@ function sanitizeString(val: unknown, maxLen: number): string {
   return val.replace(/<[^>]*>/g, '').trim().substring(0, maxLen);
 }
 
+async function broadcastNotification(admin: ReturnType<typeof createClient>, userId: string, notification: { type: string; title: string; body?: string | null; reference_id?: string | null; reference_type?: string | null; id?: string }) {
+  try {
+    const channel = admin.channel(`user-notify-${userId}`);
+    await channel.send({ type: 'broadcast', event: 'new_notification', payload: notification });
+    await admin.removeChannel(channel);
+  } catch { /* best effort */ }
+}
+
 // ─── Edge Function ───
 
 Deno.serve(async (req) => {
@@ -300,6 +308,10 @@ Deno.serve(async (req) => {
           reference_type: 'conversation',
         }));
         await admin.from('notifications').insert(notifications);
+        // Broadcast to each recipient
+        for (const n of notifications) {
+          await broadcastNotification(admin, n.user_id, { type: n.type, title: n.title, body: n.body, reference_id: n.reference_id, reference_type: n.reference_type });
+        }
       }
 
       return new Response(JSON.stringify({ message: data }), {
