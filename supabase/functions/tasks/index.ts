@@ -188,6 +188,14 @@ function jsonResponse(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
+async function broadcastNotification(admin: ReturnType<typeof createClient>, userId: string, notification: { type: string; title: string; body?: string | null; reference_id?: string | null; reference_type?: string | null; id?: string }) {
+  try {
+    const channel = admin.channel(`user-notify-${userId}`);
+    await channel.send({ type: 'broadcast', event: 'new_notification', payload: notification });
+    await admin.removeChannel(channel);
+  } catch { /* best effort */ }
+}
+
 // ─── Edge Function ───
 
 Deno.serve(async (req) => {
