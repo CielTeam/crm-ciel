@@ -313,6 +313,10 @@ Deno.serve(async (req) => {
           await broadcastNotification(admin, n.user_id, { type: n.type, title: n.title, body: n.body, reference_id: n.reference_id, reference_type: n.reference_type });
         }
       }
+
+      return new Response(JSON.stringify({ message: data }), {
+        status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     // CREATE CONVERSATION
