@@ -457,11 +457,9 @@ Deno.serve(async (req) => {
 
       const notifyUserId = task.created_by === actorId ? task.assigned_to : task.created_by;
       if (notifyUserId) {
-        await admin.from('notifications').insert({
-          user_id: notifyUserId, type: 'task_status_changed',
-          title: 'Task was marked as not done',
-          body: task.title, reference_id: id, reference_type: 'task',
-        });
+        const notif = { type: 'task_status_changed', title: 'Task was marked as not done', body: task.title, reference_id: id, reference_type: 'task' };
+        await admin.from('notifications').insert({ user_id: notifyUserId, ...notif });
+        await broadcastNotification(admin, notifyUserId, notif);
       }
       return jsonResponse({ task: data });
     }
@@ -619,7 +617,9 @@ Deno.serve(async (req) => {
 
       await logActivity(admin, task_id, actorId, null, null, `Reassigned from ${oldAssignee || 'unassigned'} to ${new_assigned_to}`);
       if (new_assigned_to !== actorId) {
-        await admin.from('notifications').insert({ user_id: new_assigned_to, type: 'task_assigned', title: 'A task has been reassigned to you', body: taskData.title, reference_id: task_id, reference_type: 'task' });
+        const notif = { type: 'task_assigned', title: 'A task has been reassigned to you', body: taskData.title, reference_id: task_id, reference_type: 'task' };
+        await admin.from('notifications').insert({ user_id: new_assigned_to, ...notif });
+        await broadcastNotification(admin, new_assigned_to, notif);
       }
       return jsonResponse({ task: data });
     }
