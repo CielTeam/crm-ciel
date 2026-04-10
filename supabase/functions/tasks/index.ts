@@ -309,11 +309,13 @@ Deno.serve(async (req) => {
       if (assigned_to && assigned_to !== actorId) {
         const { data: actorProfile } = await admin.from('profiles').select('display_name').eq('user_id', actorId).single();
         const actorName = (actorProfile as ProfileRow | null)?.display_name || 'Someone';
-        await admin.from('notifications').insert({
-          user_id: assigned_to, type: 'task_assigned',
+        const notif = {
+          type: 'task_assigned',
           title: `New task assigned by ${actorName}`,
           body: cleanTitle, reference_id: data.id, reference_type: 'task',
-        });
+        };
+        await admin.from('notifications').insert({ user_id: assigned_to, ...notif });
+        await broadcastNotification(admin, assigned_to, notif);
       }
       return jsonResponse({ task: data }, 201);
     }
@@ -367,7 +369,9 @@ Deno.serve(async (req) => {
         await logActivity(admin, id, actorId, oldStatus, updatePayload.status as string);
         const notifyUserId = task.created_by === actorId ? task.assigned_to : task.created_by;
         if (notifyUserId) {
-          await admin.from('notifications').insert({ user_id: notifyUserId, type: 'task_status_changed', title: `Task status changed to ${updatePayload.status}`, body: task.title, reference_id: id, reference_type: 'task' });
+          const notif = { type: 'task_status_changed', title: `Task status changed to ${updatePayload.status}`, body: task.title, reference_id: id, reference_type: 'task' };
+          await admin.from('notifications').insert({ user_id: notifyUserId, ...notif });
+          await broadcastNotification(admin, notifyUserId, notif);
         }
       }
       return jsonResponse({ task: data });
@@ -412,11 +416,13 @@ Deno.serve(async (req) => {
       if (task.created_by !== actorId && task.created_by) {
         const { data: actorProfile } = await admin.from('profiles').select('display_name').eq('user_id', actorId).single();
         const actorName = (actorProfile as ProfileRow | null)?.display_name || 'Someone';
-        await admin.from('notifications').insert({
-          user_id: task.created_by, type: 'task_completed',
+        const notif = {
+          type: 'task_completed',
           title: `${actorName} completed task: ${task.title}`,
           body: task.title, reference_id: id, reference_type: 'task',
-        });
+        };
+        await admin.from('notifications').insert({ user_id: task.created_by, ...notif });
+        await broadcastNotification(admin, task.created_by, notif);
       }
       return jsonResponse({ task: data });
     }
