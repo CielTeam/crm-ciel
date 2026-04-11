@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { useEffect } from 'react';
 import { Bell, LogOut, User, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
