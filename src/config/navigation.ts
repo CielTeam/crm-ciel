@@ -9,10 +9,11 @@ import {
   Settings,
   Shield,
   Activity,
+  Target,
 } from 'lucide-react';
 import type { NavGroup } from '@/types/navigation';
 import type { AppRole } from '@/types/roles';
-import { ADMIN_ROLES } from '@/types/roles';
+import { ADMIN_ROLES, LEADS_ROLES } from '@/types/roles';
 
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -35,6 +36,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Organization',
     items: [
       { title: 'Directory', path: '/directory', icon: Users },
+      {
+        title: 'Leads',
+        path: '/leads',
+        icon: Target,
+        allowedRoles: LEADS_ROLES,
+      },
       { title: 'Settings', path: '/settings', icon: Settings },
     ],
   },
