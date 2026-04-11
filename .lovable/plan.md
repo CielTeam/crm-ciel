@@ -1,65 +1,105 @@
 
 
-# Fix Notification Sounds + Add Sound Preferences
+# Browser Tab Notification Count + Leads Management Module
 
-## Root Cause: Why Sounds Don't Play
+## 1. Browser Tab Notification Count
 
-The realtime subscription in `useNotificationsRealtime` uses `postgres_changes` on the `notifications` table, filtered by `user_id=eq.${user.id}`. However, the RLS SELECT policy on `notifications` checks `user_id = current_setting('request.headers')::json->>'x-auth0-sub'` — a custom header. The Supabase JS client never sets this header on its realtime WebSocket connection, so **RLS blocks all realtime events** and the client never receives INSERT payloads. No payloads → no sounds.
+Update `document.title` reactively based on unread count in `TopBar.tsx`. When unread > 0, prefix the title with `(N)`, e.g. `(3) CIEL CRM`. Reset when count is 0.
 
-## Fix Approach
+**File**: `src/components/layout/TopBar.tsx` — add a `useEffect` that sets `document.title` based on `unreadCount`.
 
-### 1. Server-side: Broadcast after every notification insert
+## 2. Leads Management Module
 
-In each edge function that inserts into `notifications` (`tasks`, `messages`, `leaves`), add a Supabase Realtime broadcast immediately after the insert:
+A full CRM leads feature restricted to `chairman`, `vice_president`, and `head_of_operations`.
 
-```typescript
-const channel = admin.channel(`user-notify-${userId}`);
-await channel.send({
-  type: 'broadcast',
-  event: 'new_notification',
-  payload: { id, type, title, body, reference_id, reference_type }
-});
-await admin.removeChannel(channel);
-```
+### Database Tables (2 new tables via migration)
 
-This bypasses RLS entirely since broadcast channels don't go through Postgres.
+**`leads`** table:
+- `id` (uuid, PK)
+- `company_name` (text)
+- `contact_name` (text)
+- `contact_email` (text, nullable)
+- `contact_phone` (text, nullable)
+- `status` (text: `potential`, `active`, `inactive`, `lost`) — default `potential`
+- `source` (text, nullable) — how they found us
+- `notes` (text, nullable)
+- `created_by` (text) — user_id
+- `assigned_to` (text, nullable) — user_id
+- `deleted_at` (timestamptz, nullable) — soft delete
+- `created_at`, `updated_at` (timestamptz)
 
-### 2. Client-side: Listen to broadcast instead of postgres_changes
+**`lead_services`** table:
+- `id` (uuid, PK)
+- `lead_id` (uuid, FK → leads)
+- `service_name` (text)
+- `description` (text, nullable)
+- `start_date` (date, nullable)
+- `expiry_date` (date) — drives expiry notifications
+- `status` (text: `active`, `expired`, `renewed`) — default `active`
+- `deleted_at` (timestamptz, nullable)
+- `created_at` (timestamptz)
 
-Rewrite `useNotificationsRealtime` to subscribe to `user-notify-${user.id}` broadcast channel. On receiving `new_notification`, play the appropriate sound (checking user preferences first), show toast, show browser notification, and invalidate queries.
+RLS: service_role full access; SELECT for anon/authenticated where `deleted_at IS NULL`.
 
-### 3. Sound preferences in Settings page
+### Edge Function: `leads`
 
-Replace the "coming soon" placeholder card with a **Notification Sounds** card containing three switches (using the existing `Switch` component):
+Actions: `list`, `get`, `create`, `update`, `delete` (soft), plus `list_services`, `add_service`, `update_service`, `delete_service` (soft).
 
-- **Message sounds** — toggle for new message alerts
-- **Task sounds** — toggle for task assignment/status alerts
-- **Notification sounds** — toggle for general notifications (leaves, etc.)
+Server-side role guard: only `chairman`, `vice_president`, `head_of_operations` can invoke.
 
-Store preferences in `localStorage` under key `sound-prefs-{userId}` as JSON:
-```json
-{ "messages": true, "tasks": true, "notifications": true }
-```
+### Edge Function: `leads-expiry-check` (scheduled)
 
-All three default to `true`. Each user's preferences are independent.
+A cron job (daily) that queries `lead_services` for services expiring in 60, 30, 15, 7, 3, 1 days. For each match, inserts a notification for each allowed user and broadcasts via `user-notify-{userId}`. Notification type: `lead_expiry` — plays the notification sound.
 
-### 4. Create a shared hook for sound preferences
+Scheduled via `pg_cron` + `pg_net`.
 
-New file `src/hooks/useSoundPreferences.ts`:
-- `useSoundPreferences()` returns `{ messages, tasks, notifications, toggle(key) }`
-- Reads/writes localStorage
-- Used by both `useNotificationsRealtime` (to check before playing) and `SettingsPage` (to render toggles)
+### Frontend Pages & Components
 
-## Files Modified
+**New files**:
+- `src/pages/LeadsPage.tsx` — main page with tabs: All Leads, Potential, Active, Inactive
+- `src/components/leads/LeadsTable.tsx` — sortable/filterable table of leads
+- `src/components/leads/LeadDetailSheet.tsx` — slide-over with lead info + services list
+- `src/components/leads/AddLeadDialog.tsx` — form: company, contact, status, source, notes
+- `src/components/leads/EditLeadDialog.tsx` — edit existing lead
+- `src/components/leads/AddServiceDialog.tsx` — add service/solution to a lead with expiry date
+- `src/components/leads/LeadStatsCards.tsx` — summary cards: total leads, active services, expiring soon count
+- `src/hooks/useLeads.ts` — queries and mutations for leads + services
 
-| File | Change |
+**Routing** (`src/App.tsx`):
+- Add `/leads` route wrapped in `ProtectedRoute` with `allowedRoles={LEADS_ROLES}`
+
+**Navigation** (`src/config/navigation.ts`):
+- Add "Leads" item under Organization group with `allowedRoles: ['chairman', 'vice_president', 'head_of_operations']`
+
+**Notification sound mapping** (`src/hooks/useNotifications.ts`):
+- Add `lead_expiry` type → plays notification sound (with urgent flag for 1-day and 3-day warnings)
+
+### Stats & Features on Leads Page
+
+- **Stats cards**: Total Leads, Active Services, Expiring in 30 days, Lost Leads
+- **Lead detail sheet**: Full contact info, list of services with status badges and expiry countdown
+- **Service expiry badges**: Color-coded (green = >60d, yellow = 30-60d, orange = 7-30d, red = <7d)
+- **Bulk actions**: Soft-delete multiple leads
+- **Search & filter**: By status, company name, expiry range
+
+## Files to Create/Modify
+
+| File | Action |
 |------|--------|
-| `src/hooks/useSoundPreferences.ts` | **New** — localStorage-backed sound preference hook |
-| `src/hooks/useNotifications.ts` | Switch from postgres_changes to broadcast channel; check sound prefs before playing |
-| `src/pages/SettingsPage.tsx` | Add Notification Sounds card with 3 Switch toggles |
-| `supabase/functions/tasks/index.ts` | Add broadcast after each notification insert (6 locations) |
-| `supabase/functions/messages/index.ts` | Add broadcast after notification insert |
-| `supabase/functions/leaves/index.ts` | Add broadcast after notification insert |
-
-Edge functions will be redeployed after changes.
+| `src/components/layout/TopBar.tsx` | Add `useEffect` for `document.title` |
+| `supabase/migrations/new.sql` | Create `leads` + `lead_services` tables with RLS |
+| `supabase/functions/leads/index.ts` | New — CRUD for leads and services |
+| `supabase/functions/leads-expiry-check/index.ts` | New — scheduled expiry notification sender |
+| `src/pages/LeadsPage.tsx` | New — main leads page |
+| `src/components/leads/LeadsTable.tsx` | New |
+| `src/components/leads/LeadDetailSheet.tsx` | New |
+| `src/components/leads/AddLeadDialog.tsx` | New |
+| `src/components/leads/EditLeadDialog.tsx` | New |
+| `src/components/leads/AddServiceDialog.tsx` | New |
+| `src/components/leads/LeadStatsCards.tsx` | New |
+| `src/hooks/useLeads.ts` | New |
+| `src/hooks/useNotifications.ts` | Add `lead_expiry` sound mapping |
+| `src/config/navigation.ts` | Add Leads nav item |
+| `src/types/roles.ts` | Add `LEADS_ROLES` constant |
+| `src/App.tsx` | Add `/leads` route |
 
