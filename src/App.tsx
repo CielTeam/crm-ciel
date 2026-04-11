@@ -8,7 +8,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { ADMIN_ROLES } from "@/types/roles";
+import { ADMIN_ROLES, LEADS_ROLES } from "@/types/roles";
 
 import LoginPage from "./pages/LoginPage";
 import NotFound from "./pages/NotFound";
@@ -23,6 +23,7 @@ import DirectoryPage from "./pages/DirectoryPage";
 import SettingsPage from "./pages/SettingsPage";
 import AdminConsolePage from "./pages/AdminConsolePage";
 import AuditLogsPage from "./pages/AuditLogsPage";
+import LeadsPage from "./pages/LeadsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -89,6 +90,16 @@ const App = () => (
                   element={
                     <ProtectedRoute allowedRoles={[...ADMIN_ROLES]}>
                       <AuditLogsPage />
+                    </ProtectedRoute>
+                  }
+                />
+
+                {/* Leads — restricted roles */}
+                <Route
+                  path="/leads"
+                  element={
+                    <ProtectedRoute allowedRoles={[...LEADS_ROLES]}>
+                      <LeadsPage />
                     </ProtectedRoute>
                   }
                 />
