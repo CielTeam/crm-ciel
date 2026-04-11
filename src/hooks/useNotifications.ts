@@ -87,6 +87,7 @@ export function useNotificationsRealtime() {
         const nType = row.type || '';
         const isUrgent =
           nType === 'task_urgent' ||
+          nType === 'lead_expiry' && (row.title?.includes('1 day') || row.title?.includes('3 day')) ||
           (row.title && row.title.toLowerCase().includes('urgent'));
 
         // Read user's sound preferences
@@ -94,7 +95,6 @@ export function useNotificationsRealtime() {
 
         // Choose sound based on notification type
         if (nType === 'new_message') {
-          // Suppress sound if user is viewing the exact conversation
           const activeConvId = getActiveConversationId();
           const isViewingConv = activeConvId && row.reference_id === activeConvId;
           if (!isViewingConv && prefs.messages) {
@@ -107,8 +107,10 @@ export function useNotificationsRealtime() {
           nType.startsWith('task_')
         ) {
           if (prefs.tasks) playTaskSound();
+        } else if (nType === 'lead_expiry') {
+          if (prefs.notifications) playNotificationSound(!!isUrgent);
         } else {
-          if (prefs.notifications) playNotificationSound(isUrgent);
+          if (prefs.notifications) playNotificationSound(!!isUrgent);
         }
 
         // Show in-app toast
