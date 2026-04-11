@@ -87,6 +87,9 @@ export const LEAD_ROLES: AppRole[] = [
 // Roles that are executives
 export const EXECUTIVE_ROLES: AppRole[] = ['chairman', 'vice_president'];
 
+// Roles that can access the Leads module
+export const LEADS_ROLES: AppRole[] = ['chairman', 'vice_president', 'head_of_operations'];
+
 export function isAdmin(role: AppRole): boolean {
   return ADMIN_ROLES.includes(role);
 }

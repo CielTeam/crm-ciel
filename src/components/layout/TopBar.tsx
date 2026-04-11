@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Bell, LogOut, User, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,6 +20,10 @@ export function TopBar() {
   const { user, primaryRole, logout } = useAuth();
   const navigate = useNavigate();
   const { data: unreadCount = 0 } = useUnreadCount();
+
+  useEffect(() => {
+    document.title = unreadCount > 0 ? `(${unreadCount > 99 ? '99+' : unreadCount}) CIEL CRM` : 'CIEL CRM';
+  }, [unreadCount]);
 
   const initials = user?.displayName
     ?.split(' ')

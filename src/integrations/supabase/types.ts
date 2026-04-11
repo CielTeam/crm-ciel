@@ -145,6 +145,98 @@ export type Database = {
         }
         Relationships: []
       }
+      lead_services: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          expiry_date: string
+          id: string
+          lead_id: string
+          service_name: string
+          start_date: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          expiry_date: string
+          id?: string
+          lead_id: string
+          service_name: string
+          start_date?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          expiry_date?: string
+          id?: string
+          lead_id?: string
+          service_name?: string
+          start_date?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_services_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leads: {
+        Row: {
+          assigned_to: string | null
+          company_name: string
+          contact_email: string | null
+          contact_name: string
+          contact_phone: string | null
+          created_at: string
+          created_by: string
+          deleted_at: string | null
+          id: string
+          notes: string | null
+          source: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          company_name: string
+          contact_email?: string | null
+          contact_name: string
+          contact_phone?: string | null
+          created_at?: string
+          created_by: string
+          deleted_at?: string | null
+          id?: string
+          notes?: string | null
+          source?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          company_name?: string
+          contact_email?: string | null
+          contact_name?: string
+          contact_phone?: string | null
+          created_at?: string
+          created_by?: string
+          deleted_at?: string | null
+          id?: string
+          notes?: string | null
+          source?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       leave_balances: {
         Row: {
           annual: number
