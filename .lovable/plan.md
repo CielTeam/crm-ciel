@@ -1,105 +1,79 @@
 
 
-# Browser Tab Notification Count + Leads Management Module
+# Enhance Notification Sounds + Enterprise Leads Page
 
-## 1. Browser Tab Notification Count
+## 1. Notification sounds play over music/media
 
-Update `document.title` reactively based on unread count in `TopBar.tsx`. When unread > 0, prefix the title with `(N)`, e.g. `(3) CIEL CRM`. Reset when count is 0.
+**Problem**: The Web Audio API `AudioContext` connects to `ctx.destination` which is the same audio output as media players. However, the sounds already use separate oscillator nodes so they should mix with music. The real issue is that `AudioContext` may be suspended and `resume()` is async but we don't await it.
 
-**File**: `src/components/layout/TopBar.tsx` — add a `useEffect` that sets `document.title` based on `unreadCount`.
+**Fix** in `src/lib/notifications.ts`:
+- `await ctx.resume()` before scheduling oscillators (make all play functions async)
+- Set higher gain values (0.35-0.5 instead of 0.12-0.18) so sounds are audible over music
+- Use a `DynamicsCompressorNode` between gain and destination to ensure the notification punches through
 
-## 2. Leads Management Module
+No changes needed in callers since they don't await the sound functions anyway.
 
-A full CRM leads feature restricted to `chairman`, `vice_president`, and `head_of_operations`.
+## 2. Deeper Lead Services / Solutions Display
 
-### Database Tables (2 new tables via migration)
+Currently services are only visible inside the `LeadDetailSheet` slide-over. The user wants each lead's purchased solutions (SSL, Digital Certificate, etc.) visible directly, with validity and expiry dates and per-solution expiry alerts.
 
-**`leads`** table:
-- `id` (uuid, PK)
-- `company_name` (text)
-- `contact_name` (text)
-- `contact_email` (text, nullable)
-- `contact_phone` (text, nullable)
-- `status` (text: `potential`, `active`, `inactive`, `lost`) — default `potential`
-- `source` (text, nullable) — how they found us
-- `notes` (text, nullable)
-- `created_by` (text) — user_id
-- `assigned_to` (text, nullable) — user_id
-- `deleted_at` (timestamptz, nullable) — soft delete
-- `created_at`, `updated_at` (timestamptz)
+**Changes**:
 
-**`lead_services`** table:
-- `id` (uuid, PK)
-- `lead_id` (uuid, FK → leads)
-- `service_name` (text)
-- `description` (text, nullable)
-- `start_date` (date, nullable)
-- `expiry_date` (date) — drives expiry notifications
-- `status` (text: `active`, `expired`, `renewed`) — default `active`
-- `deleted_at` (timestamptz, nullable)
-- `created_at` (timestamptz)
+### LeadsTable.tsx — Show services inline
+- Add an expandable row or a "solutions" column showing service count + nearest expiry badge
+- When a lead row is expanded, show a sub-table of all services with: service name, start date, expiry date, status, days-left badge
 
-RLS: service_role full access; SELECT for anon/authenticated where `deleted_at IS NULL`.
+### LeadDetailSheet.tsx — Make it a full-page-width sheet
+- Expand to `sm:max-w-2xl`
+- Add a **Services Portfolio** section with:
+  - Each service as a card showing: service name, description, start/expiry dates, countdown badge, status toggle, edit/delete actions
+  - Visual timeline bar showing validity period
+  - "Renew" quick action button (sets status to `renewed` and opens date picker for new expiry)
 
-### Edge Function: `leads`
+### AddServiceDialog.tsx — Enhance
+- Add a predefined service type dropdown (SSL, Digital Certificate, Digital Signature, ACME, Custom) alongside the free-text field
+- Add contract value / amount field (optional, for stats)
 
-Actions: `list`, `get`, `create`, `update`, `delete` (soft), plus `list_services`, `add_service`, `update_service`, `delete_service` (soft).
+## 3. Enterprise-Level Leads Page Enhancements
 
-Server-side role guard: only `chairman`, `vice_president`, `head_of_operations` can invoke.
+### New components and features:
 
-### Edge Function: `leads-expiry-check` (scheduled)
+**LeadsPage.tsx — Complete redesign**:
+- Header with title, lead count, "New Lead" and "Export" buttons
+- Enhanced stats row with 6 cards: Total Leads, Active Clients, Total Services, Expiring in 30d, Expiring in 7d, Revenue at Risk
+- Two view modes: Table view and Card/Grid view (toggle)
+- Advanced filters bar: status, source, expiry range, search
+- Pagination for large datasets
 
-A cron job (daily) that queries `lead_services` for services expiring in 60, 30, 15, 7, 3, 1 days. For each match, inserts a notification for each allowed user and broadcasts via `user-notify-{userId}`. Notification type: `lead_expiry` — plays the notification sound.
+**LeadStatsCards.tsx — Expand to 6 metrics**:
+- Total Leads, Active Clients, Potential Leads, Total Active Services, Expiring in 30 Days, Expiring in 7 Days
+- Add `stats` action in edge function to return additional counts (potential, total_services, expiring_7)
 
-Scheduled via `pg_cron` + `pg_net`.
+**New: LeadServicesSummary component** (inline in table):
+- Shows service pills/chips for each lead row with color-coded expiry status
+- Hoverable to see expiry date details
 
-### Frontend Pages & Components
+**LeadDetailSheet.tsx — Enterprise upgrade**:
+- Full contact card with all details
+- Services section with individual service cards (not just a table)
+- Each service card: name, description, start date, expiry date, countdown timer, status badge, renewal button
+- Activity timeline placeholder (future: track when services were added/renewed)
+- "Total Services" and "At Risk" counters at the top of services section
 
-**New files**:
-- `src/pages/LeadsPage.tsx` — main page with tabs: All Leads, Potential, Active, Inactive
-- `src/components/leads/LeadsTable.tsx` — sortable/filterable table of leads
-- `src/components/leads/LeadDetailSheet.tsx` — slide-over with lead info + services list
-- `src/components/leads/AddLeadDialog.tsx` — form: company, contact, status, source, notes
-- `src/components/leads/EditLeadDialog.tsx` — edit existing lead
-- `src/components/leads/AddServiceDialog.tsx` — add service/solution to a lead with expiry date
-- `src/components/leads/LeadStatsCards.tsx` — summary cards: total leads, active services, expiring soon count
-- `src/hooks/useLeads.ts` — queries and mutations for leads + services
-
-**Routing** (`src/App.tsx`):
-- Add `/leads` route wrapped in `ProtectedRoute` with `allowedRoles={LEADS_ROLES}`
-
-**Navigation** (`src/config/navigation.ts`):
-- Add "Leads" item under Organization group with `allowedRoles: ['chairman', 'vice_president', 'head_of_operations']`
-
-**Notification sound mapping** (`src/hooks/useNotifications.ts`):
-- Add `lead_expiry` type → plays notification sound (with urgent flag for 1-day and 3-day warnings)
-
-### Stats & Features on Leads Page
-
-- **Stats cards**: Total Leads, Active Services, Expiring in 30 days, Lost Leads
-- **Lead detail sheet**: Full contact info, list of services with status badges and expiry countdown
-- **Service expiry badges**: Color-coded (green = >60d, yellow = 30-60d, orange = 7-30d, red = <7d)
-- **Bulk actions**: Soft-delete multiple leads
-- **Search & filter**: By status, company name, expiry range
+### Edge function updates (`leads/index.ts`):
+- Enhanced `stats` action: add `potential`, `total_services`, `expiring_7` counts
+- New `lead_with_services` action: returns a lead with all its services in one call (reduce round trips)
 
 ## Files to Create/Modify
 
-| File | Action |
+| File | Change |
 |------|--------|
-| `src/components/layout/TopBar.tsx` | Add `useEffect` for `document.title` |
-| `supabase/migrations/new.sql` | Create `leads` + `lead_services` tables with RLS |
-| `supabase/functions/leads/index.ts` | New — CRUD for leads and services |
-| `supabase/functions/leads-expiry-check/index.ts` | New — scheduled expiry notification sender |
-| `src/pages/LeadsPage.tsx` | New — main leads page |
-| `src/components/leads/LeadsTable.tsx` | New |
-| `src/components/leads/LeadDetailSheet.tsx` | New |
-| `src/components/leads/AddLeadDialog.tsx` | New |
-| `src/components/leads/EditLeadDialog.tsx` | New |
-| `src/components/leads/AddServiceDialog.tsx` | New |
-| `src/components/leads/LeadStatsCards.tsx` | New |
-| `src/hooks/useLeads.ts` | New |
-| `src/hooks/useNotifications.ts` | Add `lead_expiry` sound mapping |
-| `src/config/navigation.ts` | Add Leads nav item |
-| `src/types/roles.ts` | Add `LEADS_ROLES` constant |
-| `src/App.tsx` | Add `/leads` route |
+| `src/lib/notifications.ts` | Await resume, boost gain, add compressor for sound-over-music |
+| `src/pages/LeadsPage.tsx` | Enterprise layout with filters, view toggle, pagination, export |
+| `src/components/leads/LeadStatsCards.tsx` | 6 stat cards instead of 4 |
+| `src/components/leads/LeadsTable.tsx` | Expandable rows showing services inline with expiry badges |
+| `src/components/leads/LeadDetailSheet.tsx` | Wider sheet, service cards with renewal, countdown timers |
+| `src/components/leads/AddServiceDialog.tsx` | Predefined service types dropdown |
+| `src/hooks/useLeads.ts` | Add `useLeadWithServices` hook, update stats type |
+| `supabase/functions/leads/index.ts` | Enhanced stats, `lead_with_services` action |
 
