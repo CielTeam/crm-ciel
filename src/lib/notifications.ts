@@ -1,4 +1,5 @@
 // Notification sound & browser push notification utilities
+// Uses DynamicsCompressor + boosted gain so alerts punch through music/media
 
 let audioContext: AudioContext | null = null;
 
@@ -9,21 +10,41 @@ function getAudioContext() {
   return audioContext;
 }
 
+/** Ensure context is running (must await before scheduling nodes) */
+async function ensureResumed(ctx: AudioContext) {
+  if (ctx.state === 'suspended') {
+    await ctx.resume();
+  }
+}
+
+/** Create a compressor node that ensures the notification cuts through other audio */
+function createPunchThrough(ctx: AudioContext): DynamicsCompressorNode {
+  const compressor = ctx.createDynamicsCompressor();
+  compressor.threshold.setValueAtTime(-20, ctx.currentTime);
+  compressor.knee.setValueAtTime(10, ctx.currentTime);
+  compressor.ratio.setValueAtTime(12, ctx.currentTime);
+  compressor.attack.setValueAtTime(0.003, ctx.currentTime);
+  compressor.release.setValueAtTime(0.1, ctx.currentTime);
+  compressor.connect(ctx.destination);
+  return compressor;
+}
+
 /** Play a short message received chime — two soft rising notes */
-export function playMessageSound() {
+export async function playMessageSound() {
   try {
     const ctx = getAudioContext();
-    if (ctx.state === 'suspended') ctx.resume();
+    await ensureResumed(ctx);
+    const compressor = createPunchThrough(ctx);
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(compressor);
 
     osc.type = 'sine';
     osc.frequency.setValueAtTime(523, ctx.currentTime);       // C5
     osc.frequency.setValueAtTime(659, ctx.currentTime + 0.12); // E5
-    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.setValueAtTime(0.4, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
     osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + 0.3);
@@ -33,20 +54,21 @@ export function playMessageSound() {
 }
 
 /** Play a task assignment alert — three staccato beeps */
-export function playTaskSound() {
+export async function playTaskSound() {
   try {
     const ctx = getAudioContext();
-    if (ctx.state === 'suspended') ctx.resume();
+    await ensureResumed(ctx);
+    const compressor = createPunchThrough(ctx);
 
     for (let i = 0; i < 3; i++) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(compressor);
 
       osc.type = 'square';
       osc.frequency.setValueAtTime(784, ctx.currentTime + i * 0.15); // G5
-      gain.gain.setValueAtTime(0.12, ctx.currentTime + i * 0.15);
+      gain.gain.setValueAtTime(0.35, ctx.currentTime + i * 0.15);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.1);
       osc.start(ctx.currentTime + i * 0.15);
       osc.stop(ctx.currentTime + i * 0.15 + 0.1);
@@ -57,28 +79,29 @@ export function playTaskSound() {
 }
 
 /** Play a general notification chime — single mellow tone */
-export function playNotificationSound(urgent = false) {
+export async function playNotificationSound(urgent = false) {
   try {
     const ctx = getAudioContext();
-    if (ctx.state === 'suspended') ctx.resume();
+    await ensureResumed(ctx);
+    const compressor = createPunchThrough(ctx);
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(compressor);
 
     if (urgent) {
       osc.frequency.setValueAtTime(880, ctx.currentTime);
       osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.15);
       osc.frequency.setValueAtTime(880, ctx.currentTime + 0.3);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.setValueAtTime(0.5, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.5);
     } else {
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(440, ctx.currentTime);
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.setValueAtTime(0.4, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.35);
