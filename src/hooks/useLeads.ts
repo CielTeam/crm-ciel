@@ -3,6 +3,18 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 
+export interface LeadService {
+  id: string;
+  lead_id: string;
+  service_name: string;
+  description: string | null;
+  start_date: string | null;
+  expiry_date: string;
+  status: string;
+  deleted_at: string | null;
+  created_at: string;
+}
+
 export interface Lead {
   id: string;
   company_name: string;
@@ -17,18 +29,17 @@ export interface Lead {
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
+  services?: LeadService[];
 }
 
-export interface LeadService {
-  id: string;
-  lead_id: string;
-  service_name: string;
-  description: string | null;
-  start_date: string | null;
-  expiry_date: string;
-  status: string;
-  deleted_at: string | null;
-  created_at: string;
+export interface LeadStats {
+  total: number;
+  active: number;
+  potential: number;
+  total_services: number;
+  expiring_30: number;
+  expiring_7: number;
+  lost: number;
 }
 
 async function invokeLeads(token: string, body: Record<string, unknown>) {
@@ -38,6 +49,19 @@ async function invokeLeads(token: string, body: Record<string, unknown>) {
   });
   if (error) throw error;
   return data;
+}
+
+export function useLeadsWithServices(statusFilter?: string) {
+  const { user, getToken } = useAuth();
+  return useQuery({
+    queryKey: ['leads-with-services', user?.id, statusFilter],
+    queryFn: async () => {
+      const token = await getToken();
+      const data = await invokeLeads(token, { action: 'list_with_services', status: statusFilter });
+      return (data.leads || []) as Lead[];
+    },
+    enabled: !!user?.id,
+  });
 }
 
 export function useLeadsList(statusFilter?: string) {
@@ -73,7 +97,7 @@ export function useLeadStats() {
     queryFn: async () => {
       const token = await getToken();
       const data = await invokeLeads(token, { action: 'stats' });
-      return data.stats as { total: number; active: number; expiring_30: number; lost: number };
+      return data.stats as LeadStats;
     },
     enabled: !!user?.id,
   });
@@ -87,7 +111,7 @@ export function useCreateLead() {
       const token = await getToken();
       return invokeLeads(token, { action: 'create', ...lead });
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['leads'] }); qc.invalidateQueries({ queryKey: ['lead-stats'] }); toast.success('Lead created'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['leads'] }); qc.invalidateQueries({ queryKey: ['leads-with-services'] }); qc.invalidateQueries({ queryKey: ['lead-stats'] }); toast.success('Lead created'); },
     onError: (e: Error) => toast.error(e.message),
   });
 }
@@ -100,7 +124,7 @@ export function useUpdateLead() {
       const token = await getToken();
       return invokeLeads(token, { action: 'update', ...payload });
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['leads'] }); qc.invalidateQueries({ queryKey: ['lead-stats'] }); toast.success('Lead updated'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['leads'] }); qc.invalidateQueries({ queryKey: ['leads-with-services'] }); qc.invalidateQueries({ queryKey: ['lead-stats'] }); toast.success('Lead updated'); },
     onError: (e: Error) => toast.error(e.message),
   });
 }
@@ -113,7 +137,7 @@ export function useDeleteLead() {
       const token = await getToken();
       return invokeLeads(token, { action: 'delete', id });
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['leads'] }); qc.invalidateQueries({ queryKey: ['lead-stats'] }); toast.success('Lead deleted'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['leads'] }); qc.invalidateQueries({ queryKey: ['leads-with-services'] }); qc.invalidateQueries({ queryKey: ['lead-stats'] }); toast.success('Lead deleted'); },
     onError: (e: Error) => toast.error(e.message),
   });
 }
@@ -126,7 +150,7 @@ export function useAddService() {
       const token = await getToken();
       return invokeLeads(token, { action: 'add_service', ...payload });
     },
-    onSuccess: (_d, v) => { qc.invalidateQueries({ queryKey: ['lead-services', v.lead_id] }); qc.invalidateQueries({ queryKey: ['lead-stats'] }); toast.success('Service added'); },
+    onSuccess: (_d, v) => { qc.invalidateQueries({ queryKey: ['lead-services', v.lead_id] }); qc.invalidateQueries({ queryKey: ['leads-with-services'] }); qc.invalidateQueries({ queryKey: ['lead-stats'] }); toast.success('Service added'); },
     onError: (e: Error) => toast.error(e.message),
   });
 }
@@ -139,7 +163,7 @@ export function useUpdateService() {
       const token = await getToken();
       return invokeLeads(token, { action: 'update_service', ...payload });
     },
-    onSuccess: (_d, v) => { qc.invalidateQueries({ queryKey: ['lead-services', v.lead_id] }); qc.invalidateQueries({ queryKey: ['lead-stats'] }); toast.success('Service updated'); },
+    onSuccess: (_d, v) => { qc.invalidateQueries({ queryKey: ['lead-services', v.lead_id] }); qc.invalidateQueries({ queryKey: ['leads-with-services'] }); qc.invalidateQueries({ queryKey: ['lead-stats'] }); toast.success('Service updated'); },
     onError: (e: Error) => toast.error(e.message),
   });
 }
@@ -152,7 +176,7 @@ export function useDeleteService() {
       const token = await getToken();
       return invokeLeads(token, { action: 'delete_service', ...payload });
     },
-    onSuccess: (_d, v) => { qc.invalidateQueries({ queryKey: ['lead-services', v.lead_id] }); qc.invalidateQueries({ queryKey: ['lead-stats'] }); toast.success('Service removed'); },
+    onSuccess: (_d, v) => { qc.invalidateQueries({ queryKey: ['lead-services', v.lead_id] }); qc.invalidateQueries({ queryKey: ['leads-with-services'] }); qc.invalidateQueries({ queryKey: ['lead-stats'] }); toast.success('Service removed'); },
     onError: (e: Error) => toast.error(e.message),
   });
 }
