@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// ─── Auth0 JWT Verification (same pattern as other functions) ───
+// ─── Auth0 JWT Verification ───
 
 interface JwtHeader { alg: string; typ: string; kid: string }
 interface JwtPayload { iss: string; sub: string; aud: string | string[]; exp: number; iat: number }
@@ -123,28 +123,80 @@ Deno.serve(async (req) => {
       return json({ leads: data || [] });
     }
 
-    // ─── STATS ───
+    // ─── LIST WITH SERVICES (returns leads + their services in one call) ───
+    if (action === 'list_with_services') {
+      let query = admin.from('leads').select('*').is('deleted_at', null).order('created_at', { ascending: false });
+      if (payload.status) query = query.eq('status', payload.status);
+      const { data: leads, error } = await query;
+      if (error) throw error;
+
+      // Fetch all active services for these leads
+      const leadIds = (leads || []).map((l: { id: string }) => l.id);
+      let services: Record<string, unknown>[] = [];
+      if (leadIds.length > 0) {
+        const { data: svcData } = await admin.from('lead_services').select('*')
+          .in('lead_id', leadIds).is('deleted_at', null).order('expiry_date', { ascending: true });
+        services = svcData || [];
+      }
+
+      // Group services by lead_id
+      const serviceMap: Record<string, Record<string, unknown>[]> = {};
+      for (const s of services) {
+        const lid = s.lead_id as string;
+        if (!serviceMap[lid]) serviceMap[lid] = [];
+        serviceMap[lid].push(s);
+      }
+
+      const enriched = (leads || []).map((l: { id: string }) => ({
+        ...l,
+        services: serviceMap[l.id] || [],
+      }));
+
+      return json({ leads: enriched });
+    }
+
+    // ─── STATS (enhanced with 6 metrics) ───
     if (action === 'stats') {
       const { count: total } = await admin.from('leads').select('*', { count: 'exact', head: true }).is('deleted_at', null);
       const { count: active } = await admin.from('leads').select('*', { count: 'exact', head: true }).is('deleted_at', null).eq('status', 'active');
+      const { count: potential } = await admin.from('leads').select('*', { count: 'exact', head: true }).is('deleted_at', null).eq('status', 'potential');
       const { count: lost } = await admin.from('leads').select('*', { count: 'exact', head: true }).is('deleted_at', null).eq('status', 'lost');
 
-      // Count services expiring within 30 days
       const now = new Date();
+      const todayStr = now.toISOString().slice(0, 10);
+      const in7 = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
       const in30 = new Date(now.getTime() + 30 * 86400000).toISOString().slice(0, 10);
-      const { count: expiring_30 } = await admin.from('lead_services').select('*', { count: 'exact', head: true })
-        .is('deleted_at', null).eq('status', 'active').lte('expiry_date', in30).gte('expiry_date', now.toISOString().slice(0, 10));
 
-      return json({ stats: { total: total || 0, active: active || 0, expiring_30: expiring_30 || 0, lost: lost || 0 } });
+      const { count: total_services } = await admin.from('lead_services').select('*', { count: 'exact', head: true })
+        .is('deleted_at', null).eq('status', 'active');
+
+      const { count: expiring_30 } = await admin.from('lead_services').select('*', { count: 'exact', head: true })
+        .is('deleted_at', null).eq('status', 'active').lte('expiry_date', in30).gte('expiry_date', todayStr);
+
+      const { count: expiring_7 } = await admin.from('lead_services').select('*', { count: 'exact', head: true })
+        .is('deleted_at', null).eq('status', 'active').lte('expiry_date', in7).gte('expiry_date', todayStr);
+
+      return json({
+        stats: {
+          total: total || 0,
+          active: active || 0,
+          potential: potential || 0,
+          total_services: total_services || 0,
+          expiring_30: expiring_30 || 0,
+          expiring_7: expiring_7 || 0,
+          lost: lost || 0,
+        }
+      });
     }
 
-    // ─── GET ───
+    // ─── GET (single lead with services) ───
     if (action === 'get') {
       const { id } = payload;
       if (!id) return json({ error: 'id required' }, 400);
       const { data, error } = await admin.from('leads').select('*').eq('id', id).is('deleted_at', null).single();
       if (error) throw error;
-      return json({ lead: data });
+      const { data: services } = await admin.from('lead_services').select('*').eq('lead_id', id).is('deleted_at', null).order('expiry_date', { ascending: true });
+      return json({ lead: { ...data, services: services || [] } });
     }
 
     // ─── CREATE ───
