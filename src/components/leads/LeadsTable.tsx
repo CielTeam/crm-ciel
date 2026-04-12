@@ -157,43 +157,47 @@ export function LeadsTable({ leads, isLoading, onView, onEdit }: Props) {
               const isExpanded = expandedIds.has(lead.id);
               const services = lead.services || [];
               return (
-                <TableRow key={lead.id} className="group">
-                  <TableCell className="pr-0">
-                    {services.length > 0 && (
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleExpand(lead.id)}>
-                        {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                      </Button>
-                    )}
-                  </TableCell>
-                  <TableCell className="font-medium text-foreground cursor-pointer" onClick={() => onView(lead)}>{lead.company_name}</TableCell>
-                  <TableCell className="cursor-pointer" onClick={() => onView(lead)}>
-                    <div><span className="text-sm text-foreground">{lead.contact_name}</span></div>
-                    {lead.contact_email && <div className="text-xs text-muted-foreground">{lead.contact_email}</div>}
-                  </TableCell>
-                  <TableCell><Badge variant="outline" className={STATUS_COLORS[lead.status] || ''}>{lead.status}</Badge></TableCell>
-                  <TableCell>
-                    <ServicePills services={services} />
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{lead.source || '—'}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{format(new Date(lead.created_at), 'MMM d, yyyy')}</TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => onView(lead)}><Eye className="mr-2 h-4 w-4" />View</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onEdit(lead)}><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive" onClick={() => deleteLead.mutate(lead.id)}><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                  {isExpanded && services.length > 0 && (
-                    <TableCell colSpan={8} className="p-0">
-                      <div className="px-4 py-2">
-                        <ServiceSubTable services={services} />
-                      </div>
+                <>
+                  <TableRow key={lead.id} className="group">
+                    <TableCell className="pr-0">
+                      {services.length > 0 && (
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleExpand(lead.id)}>
+                          {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        </Button>
+                      )}
                     </TableCell>
+                    <TableCell className="font-medium text-foreground cursor-pointer" onClick={() => onView(lead)}>{lead.company_name}</TableCell>
+                    <TableCell className="cursor-pointer" onClick={() => onView(lead)}>
+                      <div><span className="text-sm text-foreground">{lead.contact_name}</span></div>
+                      {lead.contact_email && <div className="text-xs text-muted-foreground">{lead.contact_email}</div>}
+                    </TableCell>
+                    <TableCell><Badge variant="outline" className={STATUS_COLORS[lead.status] || ''}>{lead.status}</Badge></TableCell>
+                    <TableCell>
+                      <ServicePills services={services} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{lead.source || '—'}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{format(new Date(lead.created_at), 'MMM d, yyyy')}</TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => onView(lead)}><Eye className="mr-2 h-4 w-4" />View</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onEdit(lead)}><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive" onClick={() => deleteLead.mutate(lead.id)}><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                  {isExpanded && services.length > 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="p-0 bg-muted/20">
+                        <div className="px-4 py-2">
+                          <ServiceSubTable services={services} />
+                        </div>
+                      </TableCell>
+                    </TableRow>
                   )}
-                </TableRow>
+                </>
               );
             })}
           </TableBody>
