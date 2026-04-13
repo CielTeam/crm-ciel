@@ -314,6 +314,8 @@ Deno.serve(async (req) => {
 
       return jsonResponse({ attachments });
     }
+
+    if (action === 'delete') {
       if (!checkRateLimit(`att:${actorId}`, 30, 60_000)) {
         return jsonResponse({ error: 'Too many requests' }, 429);
       }
