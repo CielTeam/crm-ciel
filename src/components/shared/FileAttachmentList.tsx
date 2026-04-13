@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { FileArchive, Download, Trash2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { type Attachment } from '@/hooks/useAttachments';
@@ -6,6 +7,23 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function handleBlobDownload(url: string, fileName: string) {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch {
+    window.open(url, '_blank');
+  }
 }
 
 interface FileAttachmentListProps {
@@ -23,7 +41,15 @@ export function FileAttachmentList({
   isDeleting,
   compact = false,
 }: FileAttachmentListProps) {
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
   if (attachments.length === 0) return null;
+
+  const onDownload = async (att: Attachment) => {
+    setDownloadingId(att.id);
+    await handleBlobDownload(att.url, att.file_name);
+    setDownloadingId(null);
+  };
 
   return (
     <div className={compact ? 'space-y-1' : 'space-y-2'}>
@@ -44,11 +70,14 @@ export function FileAttachmentList({
               variant="ghost"
               size="icon"
               className="h-7 w-7"
-              asChild
+              onClick={() => onDownload(att)}
+              disabled={downloadingId === att.id}
             >
-              <a href={att.url} download={att.file_name} target="_blank" rel="noopener noreferrer">
+              {downloadingId === att.id ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
                 <Download className="h-3.5 w-3.5" />
-              </a>
+              )}
             </Button>
             {onDelete && att.uploaded_by === currentUserId && (
               <Button

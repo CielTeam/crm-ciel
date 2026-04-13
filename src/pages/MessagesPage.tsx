@@ -14,8 +14,8 @@ import { useChatChannel } from '@/hooks/useChatChannel';
 
 import {
   useUploadAttachment,
-  useAttachments,
-  type Attachment,
+  useDeleteAttachment,
+  useAttachmentsByEntityIds,
 } from '@/hooks/useAttachments';
 
 import { ConversationList } from '@/components/messages/ConversationList';
@@ -35,7 +35,6 @@ export default function MessagesPage() {
     searchParams.get('conversation')
   );
 
-  // Sync selected conversation to URL for notification sound suppression
   useEffect(() => {
     if (selectedId) {
       setSearchParams({ conversation: selectedId }, { replace: true });
@@ -55,18 +54,14 @@ export default function MessagesPage() {
   markReadRef.current = markRead;
 
   const uploadAttachment = useUploadAttachment();
+  const deleteAttachment = useDeleteAttachment();
 
-  // Fetch attachments for messages in the active conversation
-  const { data: convAttachments } = useAttachments(
-    selectedId ? 'message' : null,
-    // We pass a pseudo entity_id; the edge function lists by entity_type+entity_id
-    // For message attachments we need per-message queries — see messageAttachments map below
-    null
-  );
-
-  // Build message attachment map from individual message attachment queries
-  // For simplicity, we fetch all message-type attachments for messages in this conversation
+  // Fetch attachments for all messages in the active conversation
   const messageIds = useMemo(() => messages?.map(m => m.id) ?? [], [messages]);
+  const { data: messageAttachments } = useAttachmentsByEntityIds(
+    selectedId ? 'message' : null,
+    messageIds
+  );
 
   const presenceMap = usePresence(user?.id);
   const { typingUserIds, sendTyping, sendStopTyping, readReceipts, broadcastRead, broadcastNewMessage } = useChatChannel(
@@ -79,69 +74,37 @@ export default function MessagesPage() {
     return map;
   }, [directoryUsers]);
 
-  // Mark conversation as read when selected and broadcast read events
   useEffect(() => {
     if (!selectedId || !messages || !user?.id) return;
-
     markReadRef.current.mutate(selectedId);
-
-    // Broadcast read for messages from others
-    const otherMsgIds = messages
-      .filter(m => m.sender_id !== user.id)
-      .map(m => m.id);
-    if (otherMsgIds.length > 0) {
-      broadcastRead(otherMsgIds);
-    }
+    const otherMsgIds = messages.filter(m => m.sender_id !== user.id).map(m => m.id);
+    if (otherMsgIds.length > 0) broadcastRead(otherMsgIds);
   }, [selectedId, messages, user?.id, broadcastRead]);
 
   const handleSend = useCallback((content: string) => {
-    if (!selectedId) return;
-    if (!content.trim()) return;
-
-    sendMessage.mutate(
-      {
-        conversation_id: selectedId,
-        content: content.trim(),
-      },
-      {
-        onSuccess: (message) => {
-          broadcastNewMessage(message);
-        },
-      }
-    );
+    if (!selectedId || !content.trim()) return;
+    sendMessage.mutate({ conversation_id: selectedId, content: content.trim() }, {
+      onSuccess: (message) => broadcastNewMessage(message),
+    });
   }, [selectedId, sendMessage, broadcastNewMessage]);
 
   const handleFileUpload = useCallback((file: File) => {
     if (!selectedId) return;
-
-    sendMessage.mutate(
-      {
-        conversation_id: selectedId,
-        content: `📎 ${file.name}`,
+    sendMessage.mutate({ conversation_id: selectedId, content: `📎 ${file.name}` }, {
+      onSuccess: (msg) => {
+        if (!msg?.id) { toast.error('Failed to attach file'); return; }
+        uploadAttachment.mutate({ file, entity_type: 'message', entity_id: msg.id }, {
+          onSuccess: () => toast.success('File attached'),
+          onError: () => toast.error('Upload failed'),
+        });
       },
-      {
-        onSuccess: (msg) => {
-          if (!msg?.id) {
-            toast.error('Failed to attach file');
-            return;
-          }
-
-          uploadAttachment.mutate(
-            {
-              file,
-              entity_type: 'message',
-              entity_id: msg.id,
-            },
-            {
-              onSuccess: () => toast.success('File attached'),
-              onError: () => toast.error('Upload failed'),
-            }
-          );
-        },
-        onError: () => toast.error('Message send failed'),
-      }
-    );
+      onError: () => toast.error('Message send failed'),
+    });
   }, [selectedId, sendMessage, uploadAttachment]);
+
+  const handleDeleteAttachment = useCallback((att: { id: string; entity_id: string }) => {
+    deleteAttachment.mutate({ attachment_id: att.id, entity_type: 'message', entity_id: att.entity_id });
+  }, [deleteAttachment]);
 
   if (convErr) return <PageError message="Failed to load conversations" />;
 
@@ -155,50 +118,24 @@ export default function MessagesPage() {
       </div>
 
       <div className="flex gap-4 h-[calc(100vh-12rem)]">
-
-        {/* Conversations */}
         <Card className="w-80 flex flex-col overflow-hidden">
           {convLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="animate-spin" />
-            </div>
+            <div className="flex-1 flex items-center justify-center"><Loader2 className="animate-spin" /></div>
           ) : !conversations?.length ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-sm">
-              <MessageSquare className="mb-2 opacity-30" />
-              No conversations
-            </div>
+            <div className="flex-1 flex flex-col items-center justify-center text-sm"><MessageSquare className="mb-2 opacity-30" />No conversations</div>
           ) : (
-            <ConversationList
-              conversations={conversations}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              userMap={userMap}
-              currentUserId={user?.id || ''}
-              presenceMap={presenceMap}
-            />
+            <ConversationList conversations={conversations} selectedId={selectedId} onSelect={setSelectedId} userMap={userMap} currentUserId={user?.id || ''} presenceMap={presenceMap} />
           )}
         </Card>
 
-        {/* Messages */}
         <Card className="flex-1 flex flex-col overflow-hidden">
-
           {!selectedId || !selectedConv ? (
-            <div className="flex-1 flex items-center justify-center text-sm">
-              Select a conversation
-            </div>
+            <div className="flex-1 flex items-center justify-center text-sm">Select a conversation</div>
           ) : (
             <>
-              <ChatHeader
-                conversation={selectedConv}
-                userMap={userMap}
-                currentUserId={user?.id || ''}
-                presenceMap={presenceMap}
-              />
-
+              <ChatHeader conversation={selectedConv} userMap={userMap} currentUserId={user?.id || ''} presenceMap={presenceMap} />
               {msgLoading ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <Loader2 className="animate-spin" />
-                </div>
+                <div className="flex-1 flex items-center justify-center"><Loader2 className="animate-spin" /></div>
               ) : (
                 <MessageThread
                   messages={messages || []}
@@ -207,17 +144,12 @@ export default function MessagesPage() {
                   typingUserIds={typingUserIds}
                   readReceipts={readReceipts}
                   isGroup={selectedConv.type === 'group'}
+                  messageAttachments={messageAttachments}
+                  onDeleteAttachment={handleDeleteAttachment}
+                  isDeletingAttachment={deleteAttachment.isPending}
                 />
               )}
-
-              <MessageInput
-                onSend={handleSend}
-                onFileUpload={handleFileUpload}
-                onTyping={sendTyping}
-                onStopTyping={sendStopTyping}
-                disabled={sendMessage.isPending}
-                isUploading={uploadAttachment.isPending}
-              />
+              <MessageInput onSend={handleSend} onFileUpload={handleFileUpload} onTyping={sendTyping} onStopTyping={sendStopTyping} disabled={sendMessage.isPending} isUploading={uploadAttachment.isPending} />
             </>
           )}
         </Card>
