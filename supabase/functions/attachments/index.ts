@@ -91,7 +91,7 @@ const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.zip'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
-type AttachmentAction = 'upload' | 'list' | 'delete';
+type AttachmentAction = 'upload' | 'list' | 'list_by_entity_ids' | 'delete';
 type EntityType = 'task' | 'comment' | 'message';
 
 interface AttachmentRequest {
@@ -100,6 +100,7 @@ interface AttachmentRequest {
   file_base64?: string;
   entity_type?: EntityType;
   entity_id?: string;
+  entity_ids?: string[];
   attachment_id?: string;
 }
 
