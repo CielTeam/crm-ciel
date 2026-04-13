@@ -284,6 +284,36 @@ Deno.serve(async (req) => {
       return jsonResponse({ attachments });
     }
 
+    if (action === 'list_by_entity_ids') {
+      if (!checkRateLimit(`att:${actorId}`, 30, 60_000)) {
+        return jsonResponse({ error: 'Too many requests' }, 429);
+      }
+
+      const { entity_type, entity_ids } = body;
+      if (!entity_type || !entity_ids || !Array.isArray(entity_ids) || entity_ids.length === 0) {
+        return jsonResponse({ error: 'entity_type and entity_ids[] are required' }, 400);
+      }
+
+      // Limit batch size
+      const ids = (entity_ids as string[]).slice(0, 200);
+
+      const { data, error } = await admin.from('attachments')
+        .select('*')
+        .eq('entity_type', entity_type)
+        .in('entity_id', ids)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+
+      const attachments = [];
+      for (const attachment of (data ?? []) as AttachmentRow[]) {
+        const { data: signedUrlData, error: signedUrlError } = await admin.storage.from('attachments').createSignedUrl(attachment.storage_path, 3600);
+        if (signedUrlError) { console.error('Signed URL error:', signedUrlError); continue; }
+        attachments.push({ ...attachment, url: signedUrlData.signedUrl });
+      }
+
+      return jsonResponse({ attachments });
+
     if (action === 'delete') {
       if (!checkRateLimit(`att:${actorId}`, 30, 60_000)) {
         return jsonResponse({ error: 'Too many requests' }, 429);
