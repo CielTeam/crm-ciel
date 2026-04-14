@@ -71,6 +71,8 @@ const corsHeaders = {
 };
 
 const ALLOWED_ROLES = ['chairman', 'vice_president', 'head_of_operations'];
+const VALID_STAGES = ['new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost'] as const;
+const VALID_LOST_REASONS = ['competitor', 'price_issue', 'no_response', 'timing', 'budget', 'invalid', 'duplicate', 'deprioritized', 'other'] as const;
 
 function json(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -81,12 +83,50 @@ function sanitize(val: unknown, maxLen: number): string {
   return val.replace(/<[^>]*>/g, '').trim().substring(0, maxLen);
 }
 
-async function broadcastNotification(admin: ReturnType<typeof createClient>, userId: string, notification: Record<string, unknown>) {
-  try {
-    const channel = admin.channel(`user-notify-${userId}`);
-    await channel.send({ type: 'broadcast', event: 'new_notification', payload: notification });
-    await admin.removeChannel(channel);
-  } catch { /* best effort */ }
+// Get team-scoped user IDs for head_of_operations
+async function getScopedUserIds(admin: ReturnType<typeof createClient>, actorId: string): Promise<string[] | null> {
+  // null = global access (chairman/VP), string[] = scoped to these user IDs
+  const { data: roleRows } = await admin.from('user_roles').select('role').eq('user_id', actorId);
+  const roles = (roleRows || []).map((r: { role: string }) => r.role);
+  
+  if (roles.includes('chairman') || roles.includes('vice_president')) return null; // global
+  if (!roles.includes('head_of_operations')) return []; // no access
+  
+  // Get all team members from actor's teams
+  const { data: myTeams } = await admin.from('team_members').select('team_id').eq('user_id', actorId);
+  if (!myTeams || myTeams.length === 0) return [actorId]; // only own leads
+  
+  const teamIds = myTeams.map((t: { team_id: string }) => t.team_id);
+  const { data: members } = await admin.from('team_members').select('user_id').in('team_id', teamIds);
+  const userIds = [...new Set([actorId, ...(members || []).map((m: { user_id: string }) => m.user_id)])];
+  return userIds;
+}
+
+function filterLeadsByScope(leads: Record<string, unknown>[], scopedIds: string[] | null): Record<string, unknown>[] {
+  if (scopedIds === null) return leads; // global access
+  return leads.filter(l => {
+    const assignedTo = l.assigned_to as string | null;
+    return assignedTo === null || scopedIds.includes(assignedTo);
+  });
+}
+
+async function logActivity(
+  admin: ReturnType<typeof createClient>,
+  leadId: string,
+  actorId: string,
+  activityType: string,
+  title: string,
+  changes: Record<string, { old: unknown; new: unknown }> = {},
+  metadata: Record<string, unknown> = {}
+) {
+  await admin.from('lead_activities').insert({
+    lead_id: leadId,
+    actor_id: actorId,
+    activity_type: activityType,
+    title,
+    changes,
+    metadata,
+  });
 }
 
 // ─── Edge Function ───
@@ -111,6 +151,8 @@ Deno.serve(async (req) => {
       return json({ error: 'Forbidden — insufficient role' }, 403);
     }
 
+    const scopedIds = await getScopedUserIds(admin, actorId);
+
     const body = await req.json();
     const { action, ...payload } = body;
 
@@ -118,20 +160,22 @@ Deno.serve(async (req) => {
     if (action === 'list') {
       let query = admin.from('leads').select('*').is('deleted_at', null).order('created_at', { ascending: false });
       if (payload.status) query = query.eq('status', payload.status);
+      if (payload.stage) query = query.eq('stage', payload.stage);
       const { data, error } = await query;
       if (error) throw error;
-      return json({ leads: data || [] });
+      return json({ leads: filterLeadsByScope(data || [], scopedIds) });
     }
 
-    // ─── LIST WITH SERVICES (returns leads + their services in one call) ───
+    // ─── LIST WITH SERVICES ───
     if (action === 'list_with_services') {
       let query = admin.from('leads').select('*').is('deleted_at', null).order('created_at', { ascending: false });
       if (payload.status) query = query.eq('status', payload.status);
+      if (payload.stage) query = query.eq('stage', payload.stage);
       const { data: leads, error } = await query;
       if (error) throw error;
 
-      // Fetch all active services for these leads
-      const leadIds = (leads || []).map((l: { id: string }) => l.id);
+      const filteredLeads = filterLeadsByScope(leads || [], scopedIds);
+      const leadIds = filteredLeads.map((l: Record<string, unknown>) => l.id as string);
       let services: Record<string, unknown>[] = [];
       if (leadIds.length > 0) {
         const { data: svcData } = await admin.from('lead_services').select('*')
@@ -139,7 +183,6 @@ Deno.serve(async (req) => {
         services = svcData || [];
       }
 
-      // Group services by lead_id
       const serviceMap: Record<string, Record<string, unknown>[]> = {};
       for (const s of services) {
         const lid = s.lead_id as string;
@@ -147,54 +190,90 @@ Deno.serve(async (req) => {
         serviceMap[lid].push(s);
       }
 
-      const enriched = (leads || []).map((l: { id: string }) => ({
+      const enriched = filteredLeads.map((l: Record<string, unknown>) => ({
         ...l,
-        services: serviceMap[l.id] || [],
+        services: serviceMap[l.id as string] || [],
       }));
 
       return json({ leads: enriched });
     }
 
-    // ─── STATS (enhanced with 6 metrics) ───
+    // ─── STATS ───
     if (action === 'stats') {
-      const { count: total } = await admin.from('leads').select('*', { count: 'exact', head: true }).is('deleted_at', null);
-      const { count: active } = await admin.from('leads').select('*', { count: 'exact', head: true }).is('deleted_at', null).eq('status', 'active');
-      const { count: potential } = await admin.from('leads').select('*', { count: 'exact', head: true }).is('deleted_at', null).eq('status', 'potential');
-      const { count: lost } = await admin.from('leads').select('*', { count: 'exact', head: true }).is('deleted_at', null).eq('status', 'lost');
-
+      // Get all leads for scope filtering
+      const { data: allLeads } = await admin.from('leads').select('id,stage,status,estimated_value,probability_percent,weighted_forecast,next_follow_up_at,assigned_to').is('deleted_at', null);
+      const leads = filterLeadsByScope(allLeads || [], scopedIds);
+      
       const now = new Date();
       const todayStr = now.toISOString().slice(0, 10);
       const in7 = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
       const in30 = new Date(now.getTime() + 30 * 86400000).toISOString().slice(0, 10);
 
-      const { count: total_services } = await admin.from('lead_services').select('*', { count: 'exact', head: true })
-        .is('deleted_at', null).eq('status', 'active');
+      // Stage counts
+      const stageCounts: Record<string, number> = {};
+      for (const s of VALID_STAGES) stageCounts[s] = 0;
+      let pipelineValue = 0;
+      let weightedForecast = 0;
+      let overdueFollowUps = 0;
 
-      const { count: expiring_30 } = await admin.from('lead_services').select('*', { count: 'exact', head: true })
-        .is('deleted_at', null).eq('status', 'active').lte('expiry_date', in30).gte('expiry_date', todayStr);
+      for (const l of leads) {
+        const stage = l.stage as string;
+        if (stageCounts[stage] !== undefined) stageCounts[stage]++;
+        pipelineValue += Number(l.estimated_value || 0);
+        weightedForecast += Number(l.weighted_forecast || 0);
+        const followUp = l.next_follow_up_at as string | null;
+        if (followUp && new Date(followUp) < now) overdueFollowUps++;
+      }
 
-      const { count: expiring_7 } = await admin.from('lead_services').select('*', { count: 'exact', head: true })
-        .is('deleted_at', null).eq('status', 'active').lte('expiry_date', in7).gte('expiry_date', todayStr);
+      // Service stats (scoped to visible leads)
+      const leadIds = leads.map(l => l.id as string);
+      let totalServices = 0;
+      let expiring30 = 0;
+      let expiring7 = 0;
+
+      if (leadIds.length > 0) {
+        const { count: ts } = await admin.from('lead_services').select('*', { count: 'exact', head: true })
+          .in('lead_id', leadIds).is('deleted_at', null).eq('status', 'active');
+        totalServices = ts || 0;
+
+        const { count: e30 } = await admin.from('lead_services').select('*', { count: 'exact', head: true })
+          .in('lead_id', leadIds).is('deleted_at', null).eq('status', 'active').lte('expiry_date', in30).gte('expiry_date', todayStr);
+        expiring30 = e30 || 0;
+
+        const { count: e7 } = await admin.from('lead_services').select('*', { count: 'exact', head: true })
+          .in('lead_id', leadIds).is('deleted_at', null).eq('status', 'active').lte('expiry_date', in7).gte('expiry_date', todayStr);
+        expiring7 = e7 || 0;
+      }
 
       return json({
         stats: {
-          total: total || 0,
-          active: active || 0,
-          potential: potential || 0,
-          total_services: total_services || 0,
-          expiring_30: expiring_30 || 0,
-          expiring_7: expiring_7 || 0,
-          lost: lost || 0,
+          total: leads.length,
+          active: stageCounts['won'] || 0,
+          potential: stageCounts['new'] || 0,
+          total_services: totalServices,
+          expiring_30: expiring30,
+          expiring_7: expiring7,
+          lost: stageCounts['lost'] || 0,
+          stage_counts: stageCounts,
+          pipeline_value: pipelineValue,
+          weighted_forecast: weightedForecast,
+          overdue_follow_ups: overdueFollowUps,
+          qualified: stageCounts['qualified'] || 0,
+          won: stageCounts['won'] || 0,
         }
       });
     }
 
-    // ─── GET (single lead with services) ───
+    // ─── GET ───
     if (action === 'get') {
       const { id } = payload;
       if (!id) return json({ error: 'id required' }, 400);
       const { data, error } = await admin.from('leads').select('*').eq('id', id).is('deleted_at', null).single();
       if (error) throw error;
+      // Check scope
+      if (scopedIds !== null && data.assigned_to && !scopedIds.includes(data.assigned_to)) {
+        return json({ error: 'Forbidden' }, 403);
+      }
       const { data: services } = await admin.from('lead_services').select('*').eq('lead_id', id).is('deleted_at', null).order('expiry_date', { ascending: true });
       return json({ lead: { ...data, services: services || [] } });
     }
@@ -204,7 +283,10 @@ Deno.serve(async (req) => {
       const company_name = sanitize(payload.company_name, 255);
       const contact_name = sanitize(payload.contact_name, 255);
       if (!company_name || !contact_name) return json({ error: 'company_name and contact_name required' }, 400);
-      const { data, error } = await admin.from('leads').insert({
+
+      const stage = VALID_STAGES.includes(payload.stage) ? payload.stage : 'new';
+      
+      const insertData: Record<string, unknown> = {
         company_name,
         contact_name,
         contact_email: sanitize(payload.contact_email, 255) || null,
@@ -214,9 +296,28 @@ Deno.serve(async (req) => {
         notes: sanitize(payload.notes, 5000) || null,
         created_by: actorId,
         assigned_to: payload.assigned_to || null,
-      }).select().single();
+        stage,
+        estimated_value: payload.estimated_value != null ? Number(payload.estimated_value) : null,
+        currency: sanitize(payload.currency, 10) || 'USD',
+        probability_percent: Math.min(100, Math.max(0, Number(payload.probability_percent) || 0)),
+        expected_close_date: payload.expected_close_date || null,
+        next_follow_up_at: payload.next_follow_up_at || null,
+        industry: sanitize(payload.industry, 255) || null,
+        website: sanitize(payload.website, 500) || null,
+        secondary_phone: sanitize(payload.secondary_phone, 50) || null,
+        city: sanitize(payload.city, 255) || null,
+        country: sanitize(payload.country, 255) || null,
+        tags: Array.isArray(payload.tags) ? payload.tags.map((t: unknown) => sanitize(t, 100)).filter(Boolean) : [],
+        assigned_by: payload.assigned_to ? actorId : null,
+        assigned_at: payload.assigned_to ? new Date().toISOString() : null,
+      };
+
+      const { data, error } = await admin.from('leads').insert(insertData).select().single();
       if (error) throw error;
+
+      await logActivity(admin, data.id, actorId, 'created', `Lead "${company_name}" created`);
       await admin.from('audit_logs').insert({ actor_id: actorId, action: 'lead.create', target_type: 'lead', target_id: data.id, metadata: { company_name } });
+      
       return json({ lead: data }, 201);
     }
 
@@ -224,20 +325,249 @@ Deno.serve(async (req) => {
     if (action === 'update') {
       const { id, ...updates } = payload;
       if (!id) return json({ error: 'id required' }, 400);
+
+      // Get current lead for change tracking
+      const { data: current } = await admin.from('leads').select('*').eq('id', id).is('deleted_at', null).single();
+      if (!current) return json({ error: 'Lead not found' }, 404);
+      if (scopedIds !== null && current.assigned_to && !scopedIds.includes(current.assigned_to)) {
+        return json({ error: 'Forbidden' }, 403);
+      }
+
       const fields: Record<string, unknown> = {};
-      if (updates.company_name !== undefined) fields.company_name = sanitize(updates.company_name, 255);
-      if (updates.contact_name !== undefined) fields.contact_name = sanitize(updates.contact_name, 255);
-      if (updates.contact_email !== undefined) fields.contact_email = sanitize(updates.contact_email, 255) || null;
-      if (updates.contact_phone !== undefined) fields.contact_phone = sanitize(updates.contact_phone, 50) || null;
-      if (updates.status !== undefined && ['potential', 'active', 'inactive', 'lost'].includes(updates.status)) fields.status = updates.status;
-      if (updates.source !== undefined) fields.source = sanitize(updates.source, 255) || null;
-      if (updates.notes !== undefined) fields.notes = sanitize(updates.notes, 5000) || null;
-      if (updates.assigned_to !== undefined) fields.assigned_to = updates.assigned_to || null;
+      const changes: Record<string, { old: unknown; new: unknown }> = {};
+
+      const trackField = (key: string, newVal: unknown, oldVal: unknown) => {
+        if (newVal !== undefined && newVal !== oldVal) {
+          fields[key] = newVal;
+          changes[key] = { old: oldVal, new: newVal };
+        }
+      };
+
+      if (updates.company_name !== undefined) trackField('company_name', sanitize(updates.company_name, 255), current.company_name);
+      if (updates.contact_name !== undefined) trackField('contact_name', sanitize(updates.contact_name, 255), current.contact_name);
+      if (updates.contact_email !== undefined) trackField('contact_email', sanitize(updates.contact_email, 255) || null, current.contact_email);
+      if (updates.contact_phone !== undefined) trackField('contact_phone', sanitize(updates.contact_phone, 50) || null, current.contact_phone);
+      if (updates.status !== undefined && ['potential', 'active', 'inactive', 'lost'].includes(updates.status)) trackField('status', updates.status, current.status);
+      if (updates.source !== undefined) trackField('source', sanitize(updates.source, 255) || null, current.source);
+      if (updates.notes !== undefined) trackField('notes', sanitize(updates.notes, 5000) || null, current.notes);
+      if (updates.stage !== undefined && VALID_STAGES.includes(updates.stage)) trackField('stage', updates.stage, current.stage);
+      if (updates.estimated_value !== undefined) trackField('estimated_value', updates.estimated_value != null ? Number(updates.estimated_value) : null, current.estimated_value);
+      if (updates.currency !== undefined) trackField('currency', sanitize(updates.currency, 10) || 'USD', current.currency);
+      if (updates.probability_percent !== undefined) trackField('probability_percent', Math.min(100, Math.max(0, Number(updates.probability_percent) || 0)), current.probability_percent);
+      if (updates.expected_close_date !== undefined) trackField('expected_close_date', updates.expected_close_date || null, current.expected_close_date);
+      if (updates.next_follow_up_at !== undefined) trackField('next_follow_up_at', updates.next_follow_up_at || null, current.next_follow_up_at);
+      if (updates.last_contacted_at !== undefined) trackField('last_contacted_at', updates.last_contacted_at || null, current.last_contacted_at);
+      if (updates.industry !== undefined) trackField('industry', sanitize(updates.industry, 255) || null, current.industry);
+      if (updates.website !== undefined) trackField('website', sanitize(updates.website, 500) || null, current.website);
+      if (updates.secondary_phone !== undefined) trackField('secondary_phone', sanitize(updates.secondary_phone, 50) || null, current.secondary_phone);
+      if (updates.city !== undefined) trackField('city', sanitize(updates.city, 255) || null, current.city);
+      if (updates.country !== undefined) trackField('country', sanitize(updates.country, 255) || null, current.country);
+      if (updates.tags !== undefined) trackField('tags', Array.isArray(updates.tags) ? updates.tags.map((t: unknown) => sanitize(t, 100)).filter(Boolean) : [], current.tags);
+      
+      if (updates.assigned_to !== undefined && updates.assigned_to !== current.assigned_to) {
+        trackField('assigned_to', updates.assigned_to || null, current.assigned_to);
+        fields.assigned_by = actorId;
+        fields.assigned_at = new Date().toISOString();
+      }
+
+      if (Object.keys(fields).length === 0) return json({ lead: current });
 
       const { data, error } = await admin.from('leads').update(fields).eq('id', id).is('deleted_at', null).select().single();
       if (error) throw error;
-      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'lead.update', target_type: 'lead', target_id: id });
+
+      if (Object.keys(changes).length > 0) {
+        await logActivity(admin, id, actorId, 'updated', 'Lead updated', changes);
+      }
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'lead.update', target_type: 'lead', target_id: id, metadata: changes });
+
       return json({ lead: data });
+    }
+
+    // ─── CHANGE STAGE ───
+    if (action === 'change_stage') {
+      const { id, stage, lost_reason_code, lost_notes: lostNotesVal } = payload;
+      if (!id || !stage) return json({ error: 'id and stage required' }, 400);
+      if (!VALID_STAGES.includes(stage)) return json({ error: 'Invalid stage' }, 400);
+
+      const { data: current } = await admin.from('leads').select('*').eq('id', id).is('deleted_at', null).single();
+      if (!current) return json({ error: 'Lead not found' }, 404);
+      if (scopedIds !== null && current.assigned_to && !scopedIds.includes(current.assigned_to)) {
+        return json({ error: 'Forbidden' }, 403);
+      }
+
+      if (stage === 'lost' && !lost_reason_code) return json({ error: 'lost_reason_code required when marking as lost' }, 400);
+      if (stage === 'lost' && !VALID_LOST_REASONS.includes(lost_reason_code)) return json({ error: 'Invalid lost_reason_code' }, 400);
+
+      const updateFields: Record<string, unknown> = { stage };
+      if (stage === 'lost') {
+        updateFields.lost_reason_code = lost_reason_code;
+        updateFields.lost_notes = sanitize(lostNotesVal, 2000) || null;
+      }
+
+      const { data, error } = await admin.from('leads').update(updateFields).eq('id', id).select().single();
+      if (error) throw error;
+
+      await logActivity(admin, id, actorId, 'stage_change', `Stage changed to ${stage}`, {
+        stage: { old: current.stage, new: stage },
+        ...(stage === 'lost' ? { lost_reason_code: { old: current.lost_reason_code, new: lost_reason_code } } : {}),
+      });
+
+      return json({ lead: data });
+    }
+
+    // ─── ASSIGN OWNER ───
+    if (action === 'assign_owner') {
+      const { id, assigned_to } = payload;
+      if (!id) return json({ error: 'id required' }, 400);
+
+      const { data: current } = await admin.from('leads').select('*').eq('id', id).is('deleted_at', null).single();
+      if (!current) return json({ error: 'Lead not found' }, 404);
+
+      const { data, error } = await admin.from('leads').update({
+        assigned_to: assigned_to || null,
+        assigned_by: actorId,
+        assigned_at: new Date().toISOString(),
+      }).eq('id', id).select().single();
+      if (error) throw error;
+
+      await logActivity(admin, id, actorId, 'owner_change', 'Owner changed', {
+        assigned_to: { old: current.assigned_to, new: assigned_to || null },
+      });
+
+      return json({ lead: data });
+    }
+
+    // ─── MARK LOST ───
+    if (action === 'mark_lost') {
+      const { id, lost_reason_code, lost_notes: lostNotesVal } = payload;
+      if (!id || !lost_reason_code) return json({ error: 'id and lost_reason_code required' }, 400);
+      if (!VALID_LOST_REASONS.includes(lost_reason_code)) return json({ error: 'Invalid lost_reason_code' }, 400);
+
+      const { data: current } = await admin.from('leads').select('*').eq('id', id).is('deleted_at', null).single();
+      if (!current) return json({ error: 'Lead not found' }, 404);
+
+      const { data, error } = await admin.from('leads').update({
+        stage: 'lost',
+        lost_reason_code,
+        lost_notes: sanitize(lostNotesVal, 2000) || null,
+      }).eq('id', id).select().single();
+      if (error) throw error;
+
+      await logActivity(admin, id, actorId, 'lost', `Lead marked as lost: ${lost_reason_code}`, {
+        stage: { old: current.stage, new: 'lost' },
+        lost_reason_code: { old: current.lost_reason_code, new: lost_reason_code },
+      });
+
+      return json({ lead: data });
+    }
+
+    // ─── REOPEN ───
+    if (action === 'reopen') {
+      const { id, stage } = payload;
+      if (!id) return json({ error: 'id required' }, 400);
+      const newStage = VALID_STAGES.includes(stage) && stage !== 'lost' ? stage : 'new';
+
+      const { data: current } = await admin.from('leads').select('*').eq('id', id).is('deleted_at', null).single();
+      if (!current) return json({ error: 'Lead not found' }, 404);
+
+      const { data, error } = await admin.from('leads').update({
+        stage: newStage,
+        lost_reason_code: null,
+        lost_notes: null,
+      }).eq('id', id).select().single();
+      if (error) throw error;
+
+      await logActivity(admin, id, actorId, 'reopened', `Lead reopened to ${newStage}`, {
+        stage: { old: current.stage, new: newStage },
+      });
+
+      return json({ lead: data });
+    }
+
+    // ─── ADD NOTE ───
+    if (action === 'add_note') {
+      const { lead_id, note_type, content, outcome, next_step, contact_date, duration_minutes } = payload;
+      if (!lead_id || !content) return json({ error: 'lead_id and content required' }, 400);
+      const validNoteTypes = ['general', 'call_log', 'email_log', 'meeting_log', 'follow_up'];
+      const type = validNoteTypes.includes(note_type) ? note_type : 'general';
+
+      const { data, error } = await admin.from('lead_notes').insert({
+        lead_id,
+        author_id: actorId,
+        note_type: type,
+        content: sanitize(content, 5000),
+        outcome: sanitize(outcome, 500) || null,
+        next_step: sanitize(next_step, 500) || null,
+        contact_date: contact_date || null,
+        duration_minutes: duration_minutes ? Number(duration_minutes) : null,
+      }).select().single();
+      if (error) throw error;
+
+      // Update last_contacted_at for interaction types
+      if (['call_log', 'email_log', 'meeting_log'].includes(type)) {
+        await admin.from('leads').update({ last_contacted_at: new Date().toISOString() }).eq('id', lead_id);
+      }
+
+      await logActivity(admin, lead_id, actorId, 'note_added', `${type.replace('_', ' ')} added`, {}, { note_id: data.id, note_type: type });
+
+      return json({ note: data }, 201);
+    }
+
+    // ─── LIST ACTIVITIES ───
+    if (action === 'list_activities') {
+      const { lead_id } = payload;
+      if (!lead_id) return json({ error: 'lead_id required' }, 400);
+      const { data, error } = await admin.from('lead_activities').select('*').eq('lead_id', lead_id).order('created_at', { ascending: false }).limit(100);
+      if (error) throw error;
+      return json({ activities: data || [] });
+    }
+
+    // ─── LIST NOTES ───
+    if (action === 'list_notes') {
+      const { lead_id } = payload;
+      if (!lead_id) return json({ error: 'lead_id required' }, 400);
+      const { data, error } = await admin.from('lead_notes').select('*').eq('lead_id', lead_id).is('deleted_at', null).order('created_at', { ascending: false }).limit(100);
+      if (error) throw error;
+      return json({ notes: data || [] });
+    }
+
+    // ─── CHECK DUPLICATES ───
+    if (action === 'check_duplicates') {
+      const { company_name, email, phone, exclude_id } = payload;
+      const conditions: string[] = [];
+      const results: Record<string, unknown>[] = [];
+
+      if (company_name) {
+        const normalized = company_name.toLowerCase().trim().replace(/\s+/g, ' ');
+        const { data } = await admin.from('leads').select('id,company_name,contact_email,contact_phone,stage')
+          .is('deleted_at', null).ilike('normalized_company', `%${normalized}%`).limit(5);
+        if (data) results.push(...data.filter((d: Record<string, unknown>) => d.id !== exclude_id));
+      }
+      if (email) {
+        const normalized = email.toLowerCase().trim();
+        const { data } = await admin.from('leads').select('id,company_name,contact_email,contact_phone,stage')
+          .is('deleted_at', null).eq('normalized_email', normalized).limit(5);
+        if (data) results.push(...data.filter((d: Record<string, unknown>) => d.id !== exclude_id));
+      }
+      if (phone) {
+        const normalized = phone.replace(/[^0-9+]/g, '');
+        if (normalized.length >= 6) {
+          const { data } = await admin.from('leads').select('id,company_name,contact_email,contact_phone,stage')
+            .is('deleted_at', null).eq('normalized_phone', normalized).limit(5);
+          if (data) results.push(...data.filter((d: Record<string, unknown>) => d.id !== exclude_id));
+        }
+      }
+
+      // Deduplicate by id
+      const seen = new Set<string>();
+      const unique = results.filter(r => {
+        const id = r.id as string;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+
+      return json({ duplicates: unique });
     }
 
     // ─── DELETE (soft) ───
@@ -271,6 +601,9 @@ Deno.serve(async (req) => {
         expiry_date: payload.expiry_date,
       }).select().single();
       if (error) throw error;
+
+      await logActivity(admin, payload.lead_id, actorId, 'service_added', `Service "${service_name}" added`, {}, { service_id: data.id });
+
       return json({ service: data }, 201);
     }
 
