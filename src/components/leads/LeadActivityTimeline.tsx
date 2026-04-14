@@ -48,8 +48,8 @@ export function LeadActivityTimeline({ leadId }: Props) {
   const { data: profiles } = useDirectoryData();
 
   const getActorName = (actorId: string) => {
-    const profile = profiles?.find(p => p.user_id === actorId);
-    return profile?.display_name || actorId.slice(0, 8);
+    const profile = profiles?.find(p => p.userId === actorId);
+    return profile?.displayName || actorId.slice(0, 8);
   };
 
   const getActorInitials = (actorId: string) => {

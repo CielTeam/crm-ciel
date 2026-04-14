@@ -49,7 +49,7 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
 
   const stageConfig = LEAD_STAGES.find(s => s.value === lead.stage);
   const { score, band } = computeLeadScore(lead);
-  const ownerProfile = profiles?.find(p => p.user_id === lead.assigned_to);
+  const ownerProfile = profiles?.find(p => p.userId === lead.assigned_to);
   const isOverdue = lead.next_follow_up_at && new Date(lead.next_follow_up_at) < new Date();
 
   const atRisk = (services || []).filter(s => {
@@ -119,7 +119,7 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
                         <div><span className="text-muted-foreground">Close:</span> <span className="font-medium text-foreground">{lead.expected_close_date ? format(new Date(lead.expected_close_date), 'MMM d, yyyy') : '—'}</span></div>
                       </div>
                       {ownerProfile && (
-                        <div className="text-sm"><span className="text-muted-foreground">Owner:</span> <span className="font-medium text-foreground">{ownerProfile.display_name}</span></div>
+                        <div className="text-sm"><span className="text-muted-foreground">Owner:</span> <span className="font-medium text-foreground">{ownerProfile.displayName}</span></div>
                       )}
                       {lead.next_follow_up_at && (
                         <div className={`flex items-center gap-1 text-sm ${isOverdue ? 'text-destructive' : 'text-muted-foreground'}`}>

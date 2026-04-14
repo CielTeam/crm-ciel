@@ -95,8 +95,8 @@ export function LeadsTable({ leads, isLoading, onView, onEdit }: Props) {
 
   const getOwnerName = (userId: string | null) => {
     if (!userId) return null;
-    const p = profiles?.find(pr => pr.user_id === userId);
-    return p?.display_name || userId.slice(0, 8);
+    const p = profiles?.find(pr => pr.userId === userId);
+    return p?.displayName || userId.slice(0, 8);
   };
 
   const getOwnerInitials = (userId: string | null) => {

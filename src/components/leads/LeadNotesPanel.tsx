@@ -45,8 +45,8 @@ export function LeadNotesPanel({ leadId }: Props) {
   });
 
   const getAuthorName = (authorId: string) => {
-    const profile = profiles?.find(p => p.user_id === authorId);
-    return profile?.display_name || authorId.slice(0, 8);
+    const profile = profiles?.find(p => p.userId === authorId);
+    return profile?.displayName || authorId.slice(0, 8);
   };
 
   const getAuthorInitials = (authorId: string) => {
