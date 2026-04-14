@@ -7,7 +7,7 @@ import { LeadsTable } from '@/components/leads/LeadsTable';
 import { LeadDetailSheet } from '@/components/leads/LeadDetailSheet';
 import { AddLeadDialog } from '@/components/leads/AddLeadDialog';
 import { EditLeadDialog } from '@/components/leads/EditLeadDialog';
-import { useLeadsWithServices, type Lead } from '@/hooks/useLeads';
+import { useLeadsWithServices, LEAD_STAGES, type Lead, type LeadStage } from '@/hooks/useLeads';
 
 export default function LeadsPage() {
   const [tab, setTab] = useState('all');
@@ -15,19 +15,22 @@ export default function LeadsPage() {
   const [editLead, setEditLead] = useState<Lead | null>(null);
   const [viewLead, setViewLead] = useState<Lead | null>(null);
 
-  const statusFilter = tab === 'all' ? undefined : tab;
-  const { data: leads, isLoading } = useLeadsWithServices(statusFilter);
+  const stageFilter = tab === 'all' ? undefined : tab;
+  const { data: leads, isLoading } = useLeadsWithServices(undefined, stageFilter);
 
   const handleExport = () => {
     if (!leads || leads.length === 0) return;
-    const headers = ['Company', 'Contact', 'Email', 'Phone', 'Status', 'Source', 'Services', 'Created'];
+    const headers = ['Company', 'Contact', 'Email', 'Phone', 'Stage', 'Status', 'Source', 'Est. Value', 'Probability', 'Services', 'Created'];
     const rows = leads.map(l => [
       l.company_name,
       l.contact_name,
       l.contact_email || '',
       l.contact_phone || '',
+      l.stage,
       l.status,
       l.source || '',
+      l.estimated_value?.toString() || '',
+      l.probability_percent?.toString() || '0',
       (l.services || []).map(s => s.service_name).join('; '),
       l.created_at.slice(0, 10),
     ]);
@@ -47,7 +50,7 @@ export default function LeadsPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Leads Management</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {leads ? `${leads.length} leads` : 'Loading...'} · Track clients, services & renewals
+            {leads ? `${leads.length} leads` : 'Loading...'} · Pipeline tracking, services & forecasting
           </p>
         </div>
         <div className="flex gap-2">
@@ -63,10 +66,9 @@ export default function LeadsPage() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="potential">Potential</TabsTrigger>
-          <TabsTrigger value="active">Active</TabsTrigger>
-          <TabsTrigger value="inactive">Inactive</TabsTrigger>
-          <TabsTrigger value="lost">Lost</TabsTrigger>
+          {LEAD_STAGES.map(s => (
+            <TabsTrigger key={s.value} value={s.value}>{s.label}</TabsTrigger>
+          ))}
         </TabsList>
         <TabsContent value={tab} className="mt-4">
           <LeadsTable leads={leads} isLoading={isLoading} onView={setViewLead} onEdit={setEditLead} />
