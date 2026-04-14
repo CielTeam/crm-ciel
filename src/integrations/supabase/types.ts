@@ -145,6 +145,97 @@ export type Database = {
         }
         Relationships: []
       }
+      lead_activities: {
+        Row: {
+          activity_type: string
+          actor_id: string
+          changes: Json
+          created_at: string
+          id: string
+          lead_id: string
+          metadata: Json
+          title: string
+        }
+        Insert: {
+          activity_type: string
+          actor_id: string
+          changes?: Json
+          created_at?: string
+          id?: string
+          lead_id: string
+          metadata?: Json
+          title: string
+        }
+        Update: {
+          activity_type?: string
+          actor_id?: string
+          changes?: Json
+          created_at?: string
+          id?: string
+          lead_id?: string
+          metadata?: Json
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_activities_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_notes: {
+        Row: {
+          author_id: string
+          contact_date: string | null
+          content: string
+          created_at: string
+          deleted_at: string | null
+          duration_minutes: number | null
+          id: string
+          lead_id: string
+          next_step: string | null
+          note_type: string
+          outcome: string | null
+        }
+        Insert: {
+          author_id: string
+          contact_date?: string | null
+          content: string
+          created_at?: string
+          deleted_at?: string | null
+          duration_minutes?: number | null
+          id?: string
+          lead_id: string
+          next_step?: string | null
+          note_type?: string
+          outcome?: string | null
+        }
+        Update: {
+          author_id?: string
+          contact_date?: string | null
+          content?: string
+          created_at?: string
+          deleted_at?: string | null
+          duration_minutes?: number | null
+          id?: string
+          lead_id?: string
+          next_step?: string | null
+          note_type?: string
+          outcome?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_notes_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_services: {
         Row: {
           created_at: string
@@ -191,49 +282,127 @@ export type Database = {
       }
       leads: {
         Row: {
+          assigned_at: string | null
+          assigned_by: string | null
           assigned_to: string | null
+          city: string | null
           company_name: string
           contact_email: string | null
           contact_name: string
           contact_phone: string | null
+          converted_at: string | null
+          converted_to_id: string | null
+          converted_to_type: string | null
+          country: string | null
           created_at: string
           created_by: string
+          currency: string
           deleted_at: string | null
+          estimated_value: number | null
+          expected_close_date: string | null
           id: string
+          industry: string | null
+          last_contacted_at: string | null
+          lost_notes: string | null
+          lost_reason_code:
+            | Database["public"]["Enums"]["lead_lost_reason"]
+            | null
+          next_follow_up_at: string | null
+          normalized_company: string | null
+          normalized_email: string | null
+          normalized_phone: string | null
           notes: string | null
+          probability_percent: number
+          secondary_phone: string | null
           source: string | null
+          stage: Database["public"]["Enums"]["lead_stage"]
           status: string
+          tags: string[]
           updated_at: string
+          website: string | null
+          weighted_forecast: number | null
         }
         Insert: {
+          assigned_at?: string | null
+          assigned_by?: string | null
           assigned_to?: string | null
+          city?: string | null
           company_name: string
           contact_email?: string | null
           contact_name: string
           contact_phone?: string | null
+          converted_at?: string | null
+          converted_to_id?: string | null
+          converted_to_type?: string | null
+          country?: string | null
           created_at?: string
           created_by: string
+          currency?: string
           deleted_at?: string | null
+          estimated_value?: number | null
+          expected_close_date?: string | null
           id?: string
+          industry?: string | null
+          last_contacted_at?: string | null
+          lost_notes?: string | null
+          lost_reason_code?:
+            | Database["public"]["Enums"]["lead_lost_reason"]
+            | null
+          next_follow_up_at?: string | null
+          normalized_company?: string | null
+          normalized_email?: string | null
+          normalized_phone?: string | null
           notes?: string | null
+          probability_percent?: number
+          secondary_phone?: string | null
           source?: string | null
+          stage?: Database["public"]["Enums"]["lead_stage"]
           status?: string
+          tags?: string[]
           updated_at?: string
+          website?: string | null
+          weighted_forecast?: number | null
         }
         Update: {
+          assigned_at?: string | null
+          assigned_by?: string | null
           assigned_to?: string | null
+          city?: string | null
           company_name?: string
           contact_email?: string | null
           contact_name?: string
           contact_phone?: string | null
+          converted_at?: string | null
+          converted_to_id?: string | null
+          converted_to_type?: string | null
+          country?: string | null
           created_at?: string
           created_by?: string
+          currency?: string
           deleted_at?: string | null
+          estimated_value?: number | null
+          expected_close_date?: string | null
           id?: string
+          industry?: string | null
+          last_contacted_at?: string | null
+          lost_notes?: string | null
+          lost_reason_code?:
+            | Database["public"]["Enums"]["lead_lost_reason"]
+            | null
+          next_follow_up_at?: string | null
+          normalized_company?: string | null
+          normalized_email?: string | null
+          normalized_phone?: string | null
           notes?: string | null
+          probability_percent?: number
+          secondary_phone?: string | null
           source?: string | null
+          stage?: Database["public"]["Enums"]["lead_stage"]
           status?: string
+          tags?: string[]
           updated_at?: string
+          website?: string | null
+          weighted_forecast?: number | null
         }
         Relationships: []
       }
@@ -698,6 +867,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      has_leads_access_scoped: {
+        Args: { _lead_assigned_to: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -725,6 +898,24 @@ export type Database = {
         | "sales_lead"
         | "sales_employee"
         | "driver"
+      lead_lost_reason:
+        | "competitor"
+        | "price_issue"
+        | "no_response"
+        | "timing"
+        | "budget"
+        | "invalid"
+        | "duplicate"
+        | "deprioritized"
+        | "other"
+      lead_stage:
+        | "new"
+        | "contacted"
+        | "qualified"
+        | "proposal"
+        | "negotiation"
+        | "won"
+        | "lost"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -869,6 +1060,26 @@ export const Constants = {
         "sales_lead",
         "sales_employee",
         "driver",
+      ],
+      lead_lost_reason: [
+        "competitor",
+        "price_issue",
+        "no_response",
+        "timing",
+        "budget",
+        "invalid",
+        "duplicate",
+        "deprioritized",
+        "other",
+      ],
+      lead_stage: [
+        "new",
+        "contacted",
+        "qualified",
+        "proposal",
+        "negotiation",
+        "won",
+        "lost",
       ],
     },
   },
