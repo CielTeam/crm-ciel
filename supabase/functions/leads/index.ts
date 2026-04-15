@@ -631,6 +631,65 @@ Deno.serve(async (req) => {
       return json({ success: true });
     }
 
+    // ─── BULK STAGE CHANGE ───
+    if (action === 'bulk_change_stage') {
+      const { ids, stage, lost_reason_code, lost_notes: lostNotesVal } = payload;
+      if (!Array.isArray(ids) || ids.length === 0 || !stage) return json({ error: 'ids array and stage required' }, 400);
+      if (!VALID_STAGES.includes(stage)) return json({ error: 'Invalid stage' }, 400);
+      if (stage === 'lost' && !lost_reason_code) return json({ error: 'lost_reason_code required' }, 400);
+      if (stage === 'lost' && !VALID_LOST_REASONS.includes(lost_reason_code)) return json({ error: 'Invalid lost_reason_code' }, 400);
+      if (ids.length > 100) return json({ error: 'Max 100 leads per bulk action' }, 400);
+
+      const updateFields: Record<string, unknown> = { stage };
+      if (stage === 'lost') {
+        updateFields.lost_reason_code = lost_reason_code;
+        updateFields.lost_notes = sanitize(lostNotesVal, 2000) || null;
+      }
+
+      const { data, error } = await admin.from('leads').update(updateFields).in('id', ids).is('deleted_at', null).select();
+      if (error) throw error;
+
+      for (const lead of (data || [])) {
+        await logActivity(admin, lead.id, actorId, 'stage_change', `Bulk stage change to ${stage}`, { stage: { old: 'bulk', new: stage } });
+      }
+
+      return json({ updated: (data || []).length });
+    }
+
+    // ─── BULK ASSIGN OWNER ───
+    if (action === 'bulk_assign_owner') {
+      const { ids, assigned_to } = payload;
+      if (!Array.isArray(ids) || ids.length === 0) return json({ error: 'ids array required' }, 400);
+      if (ids.length > 100) return json({ error: 'Max 100 leads per bulk action' }, 400);
+
+      const { data, error } = await admin.from('leads').update({
+        assigned_to: assigned_to || null,
+        assigned_by: actorId,
+        assigned_at: new Date().toISOString(),
+      }).in('id', ids).is('deleted_at', null).select();
+      if (error) throw error;
+
+      for (const lead of (data || [])) {
+        await logActivity(admin, lead.id, actorId, 'owner_change', 'Bulk owner assignment', { assigned_to: { old: 'bulk', new: assigned_to || null } });
+      }
+
+      return json({ updated: (data || []).length });
+    }
+
+    // ─── BULK DELETE ───
+    if (action === 'bulk_delete') {
+      const { ids } = payload;
+      if (!Array.isArray(ids) || ids.length === 0) return json({ error: 'ids array required' }, 400);
+      if (ids.length > 100) return json({ error: 'Max 100 leads per bulk action' }, 400);
+
+      const { error } = await admin.from('leads').update({ deleted_at: new Date().toISOString() }).in('id', ids);
+      if (error) throw error;
+
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'lead.bulk_delete', target_type: 'lead', metadata: { ids } });
+
+      return json({ deleted: ids.length });
+    }
+
     return json({ error: 'Unknown action' }, 400);
   } catch (err) {
     console.error('leads error:', err);
