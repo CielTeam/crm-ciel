@@ -144,6 +144,7 @@ export function LeadsTable({ leads, isLoading, onView, onEdit, selectedIds, onTo
                   )}
                 </TableHead>
                 <TableHead className="w-8"></TableHead>
+                <TableHead>Company</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Stage</TableHead>
                 <TableHead>Owner</TableHead>
@@ -156,7 +157,7 @@ export function LeadsTable({ leads, isLoading, onView, onEdit, selectedIds, onTo
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No leads found</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No leads found</TableCell></TableRow>
               ) : filtered.map((lead) => {
                 const isExpanded = expandedIds.has(lead.id);
                 const services = lead.services || [];
