@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -79,9 +80,12 @@ interface Props {
   isLoading: boolean;
   onView: (lead: Lead) => void;
   onEdit: (lead: Lead) => void;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
 }
 
-export function LeadsTable({ leads, isLoading, onView, onEdit }: Props) {
+export function LeadsTable({ leads, isLoading, onView, onEdit, selectedIds, onToggleSelect, onToggleSelectAll }: Props) {
   const [search, setSearch] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [lostDialogLead, setLostDialogLead] = useState<Lead | null>(null);
@@ -131,6 +135,14 @@ export function LeadsTable({ leads, isLoading, onView, onEdit }: Props) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8">
+                  {onToggleSelectAll && (
+                    <Checkbox
+                      checked={filtered.length > 0 && selectedIds?.size === filtered.length}
+                      onCheckedChange={onToggleSelectAll}
+                    />
+                  )}
+                </TableHead>
                 <TableHead className="w-8"></TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Contact</TableHead>
@@ -145,7 +157,7 @@ export function LeadsTable({ leads, isLoading, onView, onEdit }: Props) {
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No leads found</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No leads found</TableCell></TableRow>
               ) : filtered.map((lead) => {
                 const isExpanded = expandedIds.has(lead.id);
                 const services = lead.services || [];
@@ -156,6 +168,15 @@ export function LeadsTable({ leads, isLoading, onView, onEdit }: Props) {
                 return (
                   <TooltipProvider key={lead.id}>
                     <TableRow className="group">
+                      <TableCell className="pr-0">
+                        {onToggleSelect && (
+                          <Checkbox
+                            checked={selectedIds?.has(lead.id) || false}
+                            onCheckedChange={() => onToggleSelect(lead.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        )}
+                      </TableCell>
                       <TableCell className="pr-0">
                         {services.length > 0 && (
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleExpand(lead.id)}>
@@ -231,7 +252,7 @@ export function LeadsTable({ leads, isLoading, onView, onEdit }: Props) {
                     </TableRow>
                     {isExpanded && services.length > 0 && (
                       <TableRow>
-                        <TableCell colSpan={10} className="p-0 bg-muted/20">
+                        <TableCell colSpan={11} className="p-0 bg-muted/20">
                           <div className="px-4 py-2"><ServiceSubTable services={services} /></div>
                         </TableCell>
                       </TableRow>
