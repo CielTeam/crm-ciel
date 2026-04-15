@@ -413,3 +413,44 @@ export function useDeleteService() {
     onError: (e: Error) => toast.error(e.message),
   });
 }
+
+// ─── Bulk Mutation Hooks ───
+
+export function useBulkChangeStage() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: { ids: string[]; stage: LeadStage; lost_reason_code?: string; lost_notes?: string }) => {
+      const token = await getToken();
+      return invokeLeads(token, { action: 'bulk_change_stage', ...payload });
+    },
+    onSuccess: () => { invalidateLeadQueries(qc); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useBulkAssignOwner() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: { ids: string[]; assigned_to: string | null }) => {
+      const token = await getToken();
+      return invokeLeads(token, { action: 'bulk_assign_owner', ...payload });
+    },
+    onSuccess: () => { invalidateLeadQueries(qc); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useBulkDelete() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: { ids: string[] }) => {
+      const token = await getToken();
+      return invokeLeads(token, { action: 'bulk_delete', ...payload });
+    },
+    onSuccess: () => { invalidateLeadQueries(qc); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}

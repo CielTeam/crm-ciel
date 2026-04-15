@@ -79,6 +79,9 @@ interface Props {
   isLoading: boolean;
   onView: (lead: Lead) => void;
   onEdit: (lead: Lead) => void;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
 }
 
 export function LeadsTable({ leads, isLoading, onView, onEdit }: Props) {
