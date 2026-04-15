@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -134,8 +135,15 @@ export function LeadsTable({ leads, isLoading, onView, onEdit, selectedIds, onTo
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8">
+                  {onToggleSelectAll && (
+                    <Checkbox
+                      checked={filtered.length > 0 && selectedIds?.size === filtered.length}
+                      onCheckedChange={onToggleSelectAll}
+                    />
+                  )}
+                </TableHead>
                 <TableHead className="w-8"></TableHead>
-                <TableHead>Company</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Stage</TableHead>
                 <TableHead>Owner</TableHead>
