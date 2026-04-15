@@ -252,7 +252,7 @@ export function LeadsTable({ leads, isLoading, onView, onEdit, selectedIds, onTo
                     </TableRow>
                     {isExpanded && services.length > 0 && (
                       <TableRow>
-                        <TableCell colSpan={10} className="p-0 bg-muted/20">
+                        <TableCell colSpan={11} className="p-0 bg-muted/20">
                           <div className="px-4 py-2"><ServiceSubTable services={services} /></div>
                         </TableCell>
                       </TableRow>
