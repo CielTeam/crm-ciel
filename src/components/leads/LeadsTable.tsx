@@ -84,7 +84,7 @@ interface Props {
   onToggleSelectAll?: () => void;
 }
 
-export function LeadsTable({ leads, isLoading, onView, onEdit }: Props) {
+export function LeadsTable({ leads, isLoading, onView, onEdit, selectedIds, onToggleSelect, onToggleSelectAll }: Props) {
   const [search, setSearch] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [lostDialogLead, setLostDialogLead] = useState<Lead | null>(null);
