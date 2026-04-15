@@ -178,6 +178,7 @@ export function LeadsTable({ leads, isLoading, onView, onEdit, selectedIds, onTo
                         )}
                       </TableCell>
                       <TableCell className="pr-0">
+                        {services.length > 0 && (
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleExpand(lead.id)}>
                             {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                           </Button>
