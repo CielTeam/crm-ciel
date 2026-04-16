@@ -690,6 +690,137 @@ Deno.serve(async (req) => {
       return json({ deleted: ids.length });
     }
 
+    // ─── CONVERT LEAD ───
+    if (action === 'convert') {
+      const { id, account_name, contact_first_name, contact_last_name, opportunity_name } = payload;
+      if (!id) return json({ error: 'id required' }, 400);
+
+      const { data: lead } = await admin.from('leads').select('*').eq('id', id).is('deleted_at', null).single();
+      if (!lead) return json({ error: 'Lead not found' }, 404);
+      if (lead.stage !== 'won') return json({ error: 'Only won leads can be converted' }, 400);
+      if (lead.converted_at) return json({ error: 'Lead already converted' }, 400);
+      if (scopedIds !== null && lead.assigned_to && !scopedIds.includes(lead.assigned_to)) {
+        return json({ error: 'Forbidden' }, 403);
+      }
+
+      const owner = lead.assigned_to || actorId;
+
+      // 1. Create Account
+      const acctName = sanitize(account_name || lead.company_name, 255);
+      const { data: account, error: acctErr } = await admin.from('accounts').insert({
+        name: acctName,
+        industry: lead.industry,
+        website: lead.website,
+        city: lead.city,
+        country: lead.country,
+        phone: lead.contact_phone,
+        email: lead.contact_email,
+        notes: lead.notes,
+        owner,
+        source_lead_id: id,
+        tags: lead.tags || [],
+        created_by: actorId,
+      }).select().single();
+      if (acctErr) throw acctErr;
+
+      // 2. Create Contact
+      const nameParts = (lead.contact_name || '').trim().split(/\s+/);
+      const firstName = sanitize(contact_first_name || nameParts[0] || '', 255);
+      const lastName = sanitize(contact_last_name || nameParts.slice(1).join(' ') || '', 255);
+      const { data: contact, error: ctErr } = await admin.from('contacts').insert({
+        account_id: account.id,
+        first_name: firstName || 'Unknown',
+        last_name: lastName || 'Unknown',
+        email: lead.contact_email,
+        phone: lead.contact_phone,
+        secondary_phone: lead.secondary_phone,
+        owner,
+        source_lead_id: id,
+        created_by: actorId,
+      }).select().single();
+      if (ctErr) throw ctErr;
+
+      // 3. Create Opportunity
+      const oppName = sanitize(opportunity_name || `${acctName} - Opportunity`, 255);
+      const { data: opportunity, error: oppErr } = await admin.from('opportunities').insert({
+        account_id: account.id,
+        contact_id: contact.id,
+        name: oppName,
+        stage: 'won',
+        estimated_value: lead.estimated_value,
+        currency: lead.currency || 'USD',
+        probability_percent: lead.probability_percent || 100,
+        expected_close_date: lead.expected_close_date,
+        won_at: new Date().toISOString(),
+        notes: lead.notes,
+        owner,
+        source_lead_id: id,
+        created_by: actorId,
+      }).select().single();
+      if (oppErr) throw oppErr;
+
+      // 4. Update lead with conversion metadata
+      await admin.from('leads').update({
+        converted_at: new Date().toISOString(),
+        converted_to_type: 'account',
+        converted_to_id: account.id,
+      }).eq('id', id);
+
+      // 5. Audit trail
+      await logActivity(admin, id, actorId, 'converted', `Lead converted to Account "${acctName}"`, {
+        converted_to_type: { old: null, new: 'account' },
+        account_id: { old: null, new: account.id },
+        contact_id: { old: null, new: contact.id },
+        opportunity_id: { old: null, new: opportunity.id },
+      });
+      await admin.from('audit_logs').insert({
+        actor_id: actorId, action: 'lead.convert', target_type: 'lead', target_id: id,
+        metadata: { account_id: account.id, contact_id: contact.id, opportunity_id: opportunity.id },
+      });
+
+      return json({ account, contact, opportunity });
+    }
+
+    // ─── UNCONVERT LEAD ───
+    if (action === 'unconvert') {
+      const { id } = payload;
+      if (!id) return json({ error: 'id required' }, 400);
+
+      const { data: lead } = await admin.from('leads').select('*').eq('id', id).is('deleted_at', null).single();
+      if (!lead) return json({ error: 'Lead not found' }, 404);
+      if (!lead.converted_at) return json({ error: 'Lead is not converted' }, 400);
+      if (scopedIds !== null && lead.assigned_to && !scopedIds.includes(lead.assigned_to)) {
+        return json({ error: 'Forbidden' }, 403);
+      }
+
+      const accountId = lead.converted_to_id;
+
+      // Soft-delete created entities
+      if (accountId) {
+        await admin.from('opportunities').update({ deleted_at: new Date().toISOString() }).eq('source_lead_id', id);
+        await admin.from('contacts').update({ deleted_at: new Date().toISOString() }).eq('source_lead_id', id);
+        await admin.from('accounts').update({ deleted_at: new Date().toISOString() }).eq('id', accountId);
+      }
+
+      // Clear conversion metadata
+      await admin.from('leads').update({
+        converted_at: null,
+        converted_to_type: null,
+        converted_to_id: null,
+      }).eq('id', id);
+
+      await logActivity(admin, id, actorId, 'unconverted', 'Lead conversion reversed', {
+        converted_to_type: { old: lead.converted_to_type, new: null },
+        converted_to_id: { old: lead.converted_to_id, new: null },
+      });
+      await admin.from('audit_logs').insert({
+        actor_id: actorId, action: 'lead.unconvert', target_type: 'lead', target_id: id,
+        metadata: { reversed_account_id: accountId },
+      });
+
+      return json({ success: true });
+    }
+
     return json({ error: 'Unknown action' }, 400);
   } catch (err) {
     console.error('leads error:', err);
