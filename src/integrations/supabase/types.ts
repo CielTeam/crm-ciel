@@ -14,6 +14,71 @@ export type Database = {
   }
   public: {
     Tables: {
+      accounts: {
+        Row: {
+          city: string | null
+          country: string | null
+          created_at: string
+          created_by: string
+          deleted_at: string | null
+          email: string | null
+          id: string
+          industry: string | null
+          name: string
+          notes: string | null
+          owner: string
+          phone: string | null
+          source_lead_id: string | null
+          tags: string[]
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          created_by: string
+          deleted_at?: string | null
+          email?: string | null
+          id?: string
+          industry?: string | null
+          name: string
+          notes?: string | null
+          owner: string
+          phone?: string | null
+          source_lead_id?: string | null
+          tags?: string[]
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          created_by?: string
+          deleted_at?: string | null
+          email?: string | null
+          id?: string
+          industry?: string | null
+          name?: string
+          notes?: string | null
+          owner?: string
+          phone?: string | null
+          source_lead_id?: string | null
+          tags?: string[]
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "accounts_source_lead_id_fkey"
+            columns: ["source_lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       attachments: {
         Row: {
           content_type: string
@@ -85,6 +150,75 @@ export type Database = {
           target_type?: string | null
         }
         Relationships: []
+      }
+      contacts: {
+        Row: {
+          account_id: string | null
+          created_at: string
+          created_by: string
+          deleted_at: string | null
+          email: string | null
+          first_name: string
+          id: string
+          job_title: string | null
+          last_name: string
+          notes: string | null
+          owner: string
+          phone: string | null
+          secondary_phone: string | null
+          source_lead_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_id?: string | null
+          created_at?: string
+          created_by: string
+          deleted_at?: string | null
+          email?: string | null
+          first_name: string
+          id?: string
+          job_title?: string | null
+          last_name: string
+          notes?: string | null
+          owner: string
+          phone?: string | null
+          secondary_phone?: string | null
+          source_lead_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string | null
+          created_at?: string
+          created_by?: string
+          deleted_at?: string | null
+          email?: string | null
+          first_name?: string
+          id?: string
+          job_title?: string | null
+          last_name?: string
+          notes?: string | null
+          owner?: string
+          phone?: string | null
+          secondary_phone?: string | null
+          source_lead_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_source_lead_id_fkey"
+            columns: ["source_lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       conversation_members: {
         Row: {
@@ -569,6 +703,91 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      opportunities: {
+        Row: {
+          account_id: string | null
+          contact_id: string | null
+          created_at: string
+          created_by: string
+          currency: string
+          deleted_at: string | null
+          estimated_value: number | null
+          expected_close_date: string | null
+          id: string
+          name: string
+          notes: string | null
+          owner: string
+          probability_percent: number
+          source_lead_id: string | null
+          stage: string
+          updated_at: string
+          weighted_forecast: number | null
+          won_at: string | null
+        }
+        Insert: {
+          account_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by: string
+          currency?: string
+          deleted_at?: string | null
+          estimated_value?: number | null
+          expected_close_date?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          owner: string
+          probability_percent?: number
+          source_lead_id?: string | null
+          stage?: string
+          updated_at?: string
+          weighted_forecast?: number | null
+          won_at?: string | null
+        }
+        Update: {
+          account_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string
+          currency?: string
+          deleted_at?: string | null
+          estimated_value?: number | null
+          expected_close_date?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          owner?: string
+          probability_percent?: number
+          source_lead_id?: string | null
+          stage?: string
+          updated_at?: string
+          weighted_forecast?: number | null
+          won_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunities_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opportunities_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opportunities_source_lead_id_fkey"
+            columns: ["source_lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {

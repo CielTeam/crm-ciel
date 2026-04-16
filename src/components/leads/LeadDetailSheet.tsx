@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, RefreshCw, Calendar, Mail, Phone, Building2, Globe, StickyNote, Package, AlertTriangle, TrendingUp, DollarSign, Target, Clock, ListTodo, FileText, Receipt } from 'lucide-react';
-import { type Lead, useLeadServices, useDeleteService, useUpdateService, LEAD_STAGES, computeLeadScore } from '@/hooks/useLeads';
+import { Plus, Trash2, RefreshCw, Calendar, Mail, Phone, Building2, Globe, StickyNote, Package, AlertTriangle, TrendingUp, DollarSign, Target, Clock, ListTodo, FileText, Receipt, ArrowRightLeft, Undo2 } from 'lucide-react';
+import { type Lead, useLeadServices, useDeleteService, useUpdateService, useUnconvertLead, LEAD_STAGES, computeLeadScore } from '@/hooks/useLeads';
 import { AddServiceDialog } from './AddServiceDialog';
+import { ConvertLeadDialog } from './ConvertLeadDialog';
 import { LeadActivityTimeline } from './LeadActivityTimeline';
 import { LeadNotesPanel } from './LeadNotesPanel';
 import { format, differenceInDays } from 'date-fns';
@@ -39,10 +40,12 @@ interface Props { open: boolean; onOpenChange: (v: boolean) => void; lead: Lead 
 
 export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
   const [addServiceOpen, setAddServiceOpen] = useState(false);
+  const [convertOpen, setConvertOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const { data: services, isLoading } = useLeadServices(lead?.id ?? null);
   const deleteService = useDeleteService();
   const updateService = useUpdateService();
+  const unconvert = useUnconvertLead();
   const { data: profiles } = useDirectoryData();
 
   if (!lead) return null;
@@ -51,6 +54,7 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
   const { score, band } = computeLeadScore(lead);
   const ownerProfile = profiles?.find(p => p.userId === lead.assigned_to);
   const isOverdue = lead.next_follow_up_at && new Date(lead.next_follow_up_at) < new Date();
+  const isConverted = !!lead.converted_at;
 
   const atRisk = (services || []).filter(s => {
     const d = differenceInDays(new Date(s.expiry_date), new Date());
@@ -76,6 +80,7 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
               <SheetTitle className="text-xl">{lead.company_name}</SheetTitle>
               <Badge variant="outline" className={stageConfig?.color || ''}>{stageConfig?.label || lead.stage}</Badge>
               <Badge variant="outline" className={`capitalize ${SCORE_COLORS[band]}`}>{band}</Badge>
+              {isConverted && <Badge className="bg-[hsl(var(--success))]/10 text-[hsl(var(--success))] border-[hsl(var(--success))]/30" variant="outline">Converted</Badge>}
             </div>
           </SheetHeader>
 
@@ -92,6 +97,33 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
 
               {/* Overview Tab */}
               <TabsContent value="overview" className="mt-4 space-y-5">
+                {/* Conversion Banner */}
+                {lead.stage === 'won' && !isConverted && (
+                  <Card className="border border-[hsl(var(--success))]/30 bg-[hsl(var(--success))]/5">
+                    <CardContent className="py-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Ready to convert</p>
+                        <p className="text-xs text-muted-foreground">Create an Account, Contact, and Opportunity from this won lead.</p>
+                      </div>
+                      <Button size="sm" onClick={() => setConvertOpen(true)} className="gap-1.5">
+                        <ArrowRightLeft className="h-3.5 w-3.5" />Convert Lead
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+                {isConverted && (
+                  <Card className="border border-muted">
+                    <CardContent className="py-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Converted on {format(new Date(lead.converted_at!), 'MMM d, yyyy')}</p>
+                        <p className="text-xs text-muted-foreground">Account, Contact, and Opportunity were created from this lead.</p>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => unconvert.mutate({ id: lead.id })} disabled={unconvert.isPending} className="gap-1.5 text-destructive hover:text-destructive">
+                        <Undo2 className="h-3.5 w-3.5" />{unconvert.isPending ? 'Reversing…' : 'Undo Conversion'}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
                 {/* Contact & Deal Summary */}
                 <div className="grid grid-cols-2 gap-4">
                   <Card className="border">
@@ -246,6 +278,7 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
         </SheetContent>
       </Sheet>
       <AddServiceDialog open={addServiceOpen} onOpenChange={setAddServiceOpen} leadId={lead.id} />
+      <ConvertLeadDialog open={convertOpen} onOpenChange={setConvertOpen} lead={lead} />
     </>
   );
 }
