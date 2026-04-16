@@ -1,8 +1,15 @@
+import { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Building2, Globe, Mail, MapPin, Phone, User } from 'lucide-react';
+import { Building2, Globe, Mail, MapPin, Phone, User, Pencil, Save, X } from 'lucide-react';
+import { useUpdateAccount } from '@/hooks/useAccountsContacts';
 import type { AccountWithContacts } from '@/hooks/useAccountsContacts';
+import { toast } from 'sonner';
 
 interface Props {
   account: AccountWithContacts | null;
@@ -24,41 +31,139 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
 }
 
 export function AccountDetailSheet({ account, open, onOpenChange }: Props) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    name: '', industry: '', email: '', phone: '', website: '', city: '', country: '', notes: '',
+  });
+  const updateAccount = useUpdateAccount();
+
+  useEffect(() => {
+    if (account) {
+      setForm({
+        name: account.name || '',
+        industry: account.industry || '',
+        email: account.email || '',
+        phone: account.phone || '',
+        website: account.website || '',
+        city: account.city || '',
+        country: account.country || '',
+        notes: account.notes || '',
+      });
+      setEditing(false);
+    }
+  }, [account]);
+
   if (!account) return null;
+
+  const handleSave = async () => {
+    try {
+      await updateAccount.mutateAsync({
+        id: account.id,
+        name: form.name,
+        industry: form.industry || null,
+        email: form.email || null,
+        phone: form.phone || null,
+        website: form.website || null,
+        city: form.city || null,
+        country: form.country || null,
+        notes: form.notes || null,
+      });
+      toast.success('Account updated');
+      setEditing(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update');
+    }
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="sm:max-w-lg overflow-y-auto">
         <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-primary" />
-            {account.name}
-          </SheetTitle>
+          <div className="flex items-center justify-between">
+            <SheetTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-primary" />
+              {editing ? 'Edit Account' : account.name}
+            </SheetTitle>
+            {!editing ? (
+              <Button variant="ghost" size="icon" onClick={() => setEditing(true)}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+            ) : (
+              <div className="flex gap-1">
+                <Button variant="ghost" size="icon" onClick={() => setEditing(false)} disabled={updateAccount.isPending}>
+                  <X className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={handleSave} disabled={updateAccount.isPending}>
+                  <Save className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
         </SheetHeader>
 
         <div className="mt-6 space-y-5">
-          {account.industry && <Badge variant="secondary">{account.industry}</Badge>}
-
-          <div className="space-y-3">
-            <InfoRow icon={Mail} label="Email" value={account.email} />
-            <InfoRow icon={Phone} label="Phone" value={account.phone} />
-            <InfoRow icon={Globe} label="Website" value={account.website} />
-            <InfoRow icon={MapPin} label="Location" value={[account.city, account.country].filter(Boolean).join(', ') || null} />
-          </div>
-
-          {account.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {account.tags.map((t) => (
-                <Badge key={t} variant="outline" className="text-xs">{t}</Badge>
-              ))}
+          {editing ? (
+            <div className="space-y-4">
+              <div>
+                <Label>Company Name *</Label>
+                <Input value={form.name} onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Industry</Label>
+                <Input value={form.industry} onChange={(e) => setForm(f => ({ ...f, industry: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input type="email" value={form.email} onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Phone</Label>
+                <Input value={form.phone} onChange={(e) => setForm(f => ({ ...f, phone: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Website</Label>
+                <Input value={form.website} onChange={(e) => setForm(f => ({ ...f, website: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>City</Label>
+                  <Input value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Country</Label>
+                  <Input value={form.country} onChange={(e) => setForm(f => ({ ...f, country: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <Label>Notes</Label>
+                <Textarea value={form.notes} onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))} rows={3} />
+              </div>
             </div>
-          )}
+          ) : (
+            <>
+              {account.industry && <Badge variant="secondary">{account.industry}</Badge>}
+              <div className="space-y-3">
+                <InfoRow icon={Mail} label="Email" value={account.email} />
+                <InfoRow icon={Phone} label="Phone" value={account.phone} />
+                <InfoRow icon={Globe} label="Website" value={account.website} />
+                <InfoRow icon={MapPin} label="Location" value={[account.city, account.country].filter(Boolean).join(', ') || null} />
+              </div>
 
-          {account.notes && (
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">Notes</p>
-              <p className="text-sm text-foreground whitespace-pre-wrap">{account.notes}</p>
-            </div>
+              {account.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {account.tags.map((t) => (
+                    <Badge key={t} variant="outline" className="text-xs">{t}</Badge>
+                  ))}
+                </div>
+              )}
+
+              {account.notes && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Notes</p>
+                  <p className="text-sm text-foreground whitespace-pre-wrap">{account.notes}</p>
+                </div>
+              )}
+            </>
           )}
 
           <Separator />

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -83,4 +83,45 @@ export function useAccountsWithContacts() {
   }));
 
   return { data: merged, contacts: contacts ?? [], isLoading: accLoading || conLoading };
+}
+
+export function useUpdateAccount() {
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+
+  return useMutation({
+    mutationFn: async (payload: { id: string } & Partial<Omit<Account, 'id' | 'owner' | 'created_by' | 'created_at' | 'updated_at' | 'source_lead_id'>>) => {
+      const { data, error } = await supabase.functions.invoke('accounts', {
+        body: { action: 'update_account', ...payload },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data.account as Account;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
+  });
+}
+
+export function useUpdateContact() {
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+
+  return useMutation({
+    mutationFn: async (payload: { id: string } & Partial<Omit<Contact, 'id' | 'owner' | 'created_by' | 'created_at' | 'updated_at' | 'source_lead_id' | 'account_id'>>) => {
+      const { data, error } = await supabase.functions.invoke('accounts', {
+        body: { action: 'update_contact', ...payload },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data.contact as Contact;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
+  });
 }
