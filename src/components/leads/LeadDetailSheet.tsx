@@ -278,6 +278,7 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
         </SheetContent>
       </Sheet>
       <AddServiceDialog open={addServiceOpen} onOpenChange={setAddServiceOpen} leadId={lead.id} />
+      <ConvertLeadDialog open={convertOpen} onOpenChange={setConvertOpen} lead={lead} />
     </>
   );
 }
