@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, RefreshCw, Calendar, Mail, Phone, Building2, Globe, StickyNote, Package, AlertTriangle, TrendingUp, DollarSign, Target, Clock, ListTodo, FileText, Receipt } from 'lucide-react';
-import { type Lead, useLeadServices, useDeleteService, useUpdateService, LEAD_STAGES, computeLeadScore } from '@/hooks/useLeads';
+import { Plus, Trash2, RefreshCw, Calendar, Mail, Phone, Building2, Globe, StickyNote, Package, AlertTriangle, TrendingUp, DollarSign, Target, Clock, ListTodo, FileText, Receipt, ArrowRightLeft, Undo2 } from 'lucide-react';
+import { type Lead, useLeadServices, useDeleteService, useUpdateService, useUnconvertLead, LEAD_STAGES, computeLeadScore } from '@/hooks/useLeads';
 import { AddServiceDialog } from './AddServiceDialog';
+import { ConvertLeadDialog } from './ConvertLeadDialog';
 import { LeadActivityTimeline } from './LeadActivityTimeline';
 import { LeadNotesPanel } from './LeadNotesPanel';
 import { format, differenceInDays } from 'date-fns';
@@ -39,10 +40,12 @@ interface Props { open: boolean; onOpenChange: (v: boolean) => void; lead: Lead 
 
 export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
   const [addServiceOpen, setAddServiceOpen] = useState(false);
+  const [convertOpen, setConvertOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const { data: services, isLoading } = useLeadServices(lead?.id ?? null);
   const deleteService = useDeleteService();
   const updateService = useUpdateService();
+  const unconvert = useUnconvertLead();
   const { data: profiles } = useDirectoryData();
 
   if (!lead) return null;
@@ -51,6 +54,7 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
   const { score, band } = computeLeadScore(lead);
   const ownerProfile = profiles?.find(p => p.userId === lead.assigned_to);
   const isOverdue = lead.next_follow_up_at && new Date(lead.next_follow_up_at) < new Date();
+  const isConverted = !!lead.converted_at;
 
   const atRisk = (services || []).filter(s => {
     const d = differenceInDays(new Date(s.expiry_date), new Date());
