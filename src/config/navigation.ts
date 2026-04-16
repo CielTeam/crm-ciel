@@ -10,6 +10,7 @@ import {
   Shield,
   Activity,
   Target,
+  Building2,
 } from 'lucide-react';
 import type { NavGroup } from '@/types/navigation';
 import type { AppRole } from '@/types/roles';
@@ -40,6 +41,12 @@ export const NAV_GROUPS: NavGroup[] = [
         title: 'Leads',
         path: '/leads',
         icon: Target,
+        allowedRoles: LEADS_ROLES,
+      },
+      {
+        title: 'Accounts',
+        path: '/accounts',
+        icon: Building2,
         allowedRoles: LEADS_ROLES,
       },
       { title: 'Settings', path: '/settings', icon: Settings },

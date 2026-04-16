@@ -24,6 +24,7 @@ import SettingsPage from "./pages/SettingsPage";
 import AdminConsolePage from "./pages/AdminConsolePage";
 import AuditLogsPage from "./pages/AuditLogsPage";
 import LeadsPage from "./pages/LeadsPage";
+import AccountsContactsPage from "./pages/AccountsContactsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -100,6 +101,14 @@ const App = () => (
                   element={
                     <ProtectedRoute allowedRoles={[...LEADS_ROLES]}>
                       <LeadsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/accounts"
+                  element={
+                    <ProtectedRoute allowedRoles={[...LEADS_ROLES]}>
+                      <AccountsContactsPage />
                     </ProtectedRoute>
                   }
                 />
