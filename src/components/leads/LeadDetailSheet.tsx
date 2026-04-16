@@ -80,6 +80,7 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
               <SheetTitle className="text-xl">{lead.company_name}</SheetTitle>
               <Badge variant="outline" className={stageConfig?.color || ''}>{stageConfig?.label || lead.stage}</Badge>
               <Badge variant="outline" className={`capitalize ${SCORE_COLORS[band]}`}>{band}</Badge>
+              {isConverted && <Badge className="bg-[hsl(var(--success))]/10 text-[hsl(var(--success))] border-[hsl(var(--success))]/30" variant="outline">Converted</Badge>}
             </div>
           </SheetHeader>
 
@@ -96,6 +97,33 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
 
               {/* Overview Tab */}
               <TabsContent value="overview" className="mt-4 space-y-5">
+                {/* Conversion Banner */}
+                {lead.stage === 'won' && !isConverted && (
+                  <Card className="border border-[hsl(var(--success))]/30 bg-[hsl(var(--success))]/5">
+                    <CardContent className="py-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Ready to convert</p>
+                        <p className="text-xs text-muted-foreground">Create an Account, Contact, and Opportunity from this won lead.</p>
+                      </div>
+                      <Button size="sm" onClick={() => setConvertOpen(true)} className="gap-1.5">
+                        <ArrowRightLeft className="h-3.5 w-3.5" />Convert Lead
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+                {isConverted && (
+                  <Card className="border border-muted">
+                    <CardContent className="py-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Converted on {format(new Date(lead.converted_at!), 'MMM d, yyyy')}</p>
+                        <p className="text-xs text-muted-foreground">Account, Contact, and Opportunity were created from this lead.</p>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => unconvert.mutate({ id: lead.id })} disabled={unconvert.isPending} className="gap-1.5 text-destructive hover:text-destructive">
+                        <Undo2 className="h-3.5 w-3.5" />{unconvert.isPending ? 'Reversing…' : 'Undo Conversion'}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
                 {/* Contact & Deal Summary */}
                 <div className="grid grid-cols-2 gap-4">
                   <Card className="border">
