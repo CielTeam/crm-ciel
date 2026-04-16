@@ -454,3 +454,31 @@ export function useBulkDelete() {
     onError: (e: Error) => toast.error(e.message),
   });
 }
+
+// ─── Conversion Hooks ───
+
+export function useConvertLead() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: { id: string; account_name?: string; contact_first_name?: string; contact_last_name?: string; opportunity_name?: string }) => {
+      const token = await getToken();
+      return invokeLeads(token, { action: 'convert', ...payload });
+    },
+    onSuccess: () => { invalidateLeadQueries(qc); toast.success('Lead converted successfully'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useUnconvertLead() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: { id: string }) => {
+      const token = await getToken();
+      return invokeLeads(token, { action: 'unconvert', ...payload });
+    },
+    onSuccess: () => { invalidateLeadQueries(qc); toast.success('Conversion reversed'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
