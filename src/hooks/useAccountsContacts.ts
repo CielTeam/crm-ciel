@@ -87,13 +87,14 @@ export function useAccountsWithContacts() {
 
 export function useUpdateAccount() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
+  const { getToken } = useAuth();
 
   return useMutation({
     mutationFn: async (payload: { id: string } & Partial<Omit<Account, 'id' | 'owner' | 'created_by' | 'created_at' | 'updated_at' | 'source_lead_id'>>) => {
+      const token = await getToken();
       const { data, error } = await supabase.functions.invoke('accounts', {
         body: { action: 'update_account', ...payload },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
