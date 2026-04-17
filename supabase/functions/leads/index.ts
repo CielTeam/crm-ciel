@@ -74,6 +74,39 @@ const ALLOWED_ROLES = ['chairman', 'vice_president', 'head_of_operations'];
 const VALID_STAGES = ['new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost'] as const;
 const VALID_LOST_REASONS = ['competitor', 'price_issue', 'no_response', 'timing', 'budget', 'invalid', 'duplicate', 'deprioritized', 'other'] as const;
 
+// ─── Discipline rules: enforce data quality before allowing certain stage transitions ───
+type DisciplineCheck = { ok: true } | { ok: false; field: string; message: string };
+function checkStageDiscipline(stage: string, lead: {
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  estimated_value?: number | null;
+  expected_close_date?: string | null;
+  lost_reason_code?: string | null;
+}): DisciplineCheck {
+  if (stage === 'qualified') {
+    if (!lead.contact_email && !lead.contact_phone) {
+      return { ok: false, field: 'contact', message: 'Qualified leads need a contact email or phone.' };
+    }
+    if (!lead.estimated_value || Number(lead.estimated_value) <= 0) {
+      return { ok: false, field: 'estimated_value', message: 'Qualified leads need an estimated value greater than 0.' };
+    }
+  }
+  if (stage === 'won') {
+    if (!lead.estimated_value || Number(lead.estimated_value) <= 0) {
+      return { ok: false, field: 'estimated_value', message: 'Won leads need an estimated value greater than 0.' };
+    }
+    if (!lead.expected_close_date) {
+      return { ok: false, field: 'expected_close_date', message: 'Won leads need an expected close date.' };
+    }
+  }
+  if (stage === 'lost') {
+    if (!lead.lost_reason_code) {
+      return { ok: false, field: 'lost_reason_code', message: 'Lost leads need a lost-reason code.' };
+    }
+  }
+  return { ok: true };
+}
+
 function json(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
