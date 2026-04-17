@@ -11,6 +11,7 @@ import {
   Activity,
   Target,
   Building2,
+  Briefcase,
 } from 'lucide-react';
 import type { NavGroup } from '@/types/navigation';
 import type { AppRole } from '@/types/roles';
@@ -47,6 +48,12 @@ export const NAV_GROUPS: NavGroup[] = [
         title: 'Accounts',
         path: '/accounts',
         icon: Building2,
+        allowedRoles: LEADS_ROLES,
+      },
+      {
+        title: 'Opportunities',
+        path: '/opportunities',
+        icon: Briefcase,
         allowedRoles: LEADS_ROLES,
       },
       { title: 'Settings', path: '/settings', icon: Settings },

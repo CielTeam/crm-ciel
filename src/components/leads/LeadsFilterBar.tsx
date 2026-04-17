@@ -13,6 +13,7 @@ import { LEAD_STAGES, type LeadStage } from '@/hooks/useLeads';
 import { useDirectoryData } from '@/hooks/useDirectoryData';
 import { CountryCombobox } from '@/components/shared/CountryCombobox';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { SavedViewsMenu } from './SavedViewsMenu';
 
 export interface LeadFilters {
   search?: string;
@@ -405,6 +406,8 @@ export function LeadsFilterBar({ filters, onChange }: Props) {
             <span>Expiring</span>
           </label>
         </div>
+
+        <SavedViewsMenu currentFilters={filters} onApplyFilters={onChange} />
 
         {activeCount > 0 && (
           <Button variant="ghost" size="sm" onClick={clearAll} className="h-9 ml-auto">
