@@ -219,16 +219,86 @@ Deno.serve(async (req) => {
       return json({ leads: filterLeadsByScope(data || [], scopedIds) });
     }
 
-    // ─── LIST WITH SERVICES ───
+    // ─── LIST WITH SERVICES (with advanced filters) ───
     if (action === 'list_with_services') {
+      const f = (payload.filters || {}) as Record<string, unknown>;
       let query = admin.from('leads').select('*').is('deleted_at', null).order('created_at', { ascending: false });
+
+      // Legacy single-value filters (back-compat)
       if (payload.status) query = query.eq('status', payload.status);
       if (payload.stage) query = query.eq('stage', payload.stage);
+
+      // Multi-stage
+      if (Array.isArray(f.stages) && f.stages.length > 0) {
+        query = query.in('stage', f.stages as string[]);
+      }
+      // Owner
+      if (typeof f.assigned_to === 'string' && f.assigned_to) {
+        if (f.assigned_to === '__unassigned__') query = query.is('assigned_to', null);
+        else query = query.eq('assigned_to', f.assigned_to);
+      }
+      // Source / industry
+      if (typeof f.source === 'string' && f.source) query = query.eq('source', f.source);
+      if (typeof f.industry === 'string' && f.industry) query = query.eq('industry', f.industry);
+      // Country (ISO code)
+      if (typeof f.country_code === 'string' && f.country_code) query = query.eq('country_code', f.country_code);
+      // City (ilike)
+      if (typeof f.city === 'string' && f.city) query = query.ilike('city', `%${f.city}%`);
+      // Score band
+      if (Array.isArray(f.score_bands) && f.score_bands.length > 0) {
+        query = query.in('score_band', f.score_bands as string[]);
+      }
+      // Tags (overlaps)
+      if (Array.isArray(f.tags) && f.tags.length > 0) {
+        query = query.overlaps('tags', f.tags as string[]);
+      }
+      // Numeric ranges
+      if (typeof f.value_min === 'number') query = query.gte('estimated_value', f.value_min);
+      if (typeof f.value_max === 'number') query = query.lte('estimated_value', f.value_max);
+      if (typeof f.probability_min === 'number') query = query.gte('probability_percent', f.probability_min);
+      if (typeof f.probability_max === 'number') query = query.lte('probability_percent', f.probability_max);
+      // Date ranges
+      if (typeof f.created_from === 'string') query = query.gte('created_at', f.created_from);
+      if (typeof f.created_to === 'string') query = query.lte('created_at', f.created_to);
+      if (typeof f.close_from === 'string') query = query.gte('expected_close_date', f.close_from);
+      if (typeof f.close_to === 'string') query = query.lte('expected_close_date', f.close_to);
+      if (typeof f.last_contact_from === 'string') query = query.gte('last_contacted_at', f.last_contact_from);
+      if (typeof f.last_contact_to === 'string') query = query.lte('last_contacted_at', f.last_contact_to);
+      // Quick toggles
+      const nowIso = new Date().toISOString();
+      if (f.overdue_followups === true) {
+        query = query.lt('next_follow_up_at', nowIso).not('next_follow_up_at', 'is', null);
+      }
+      if (f.no_activity_14d === true) {
+        const cutoff = new Date(Date.now() - 14 * 86400000).toISOString();
+        query = query.or(`last_contacted_at.lt.${cutoff},last_contacted_at.is.null`);
+      }
+      if (f.converted === true) query = query.not('converted_at', 'is', null);
+      if (f.converted === false) query = query.is('converted_at', null);
+      // Text search across company / contact / email
+      if (typeof f.search === 'string' && f.search.trim()) {
+        const s = f.search.trim().replace(/[,()]/g, '');
+        query = query.or(`company_name.ilike.%${s}%,contact_name.ilike.%${s}%,contact_email.ilike.%${s}%`);
+      }
+
       const { data: leads, error } = await query;
       if (error) throw error;
 
-      const filteredLeads = filterLeadsByScope(leads || [], scopedIds);
-      const leadIds = filteredLeads.map((l: Record<string, unknown>) => l.id as string);
+      let filteredLeads = filterLeadsByScope(leads || [], scopedIds);
+
+      // Post-filter: expiring services (needs join)
+      let leadIds = filteredLeads.map((l: Record<string, unknown>) => l.id as string);
+      if (f.expiring_services === true && leadIds.length > 0) {
+        const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+        const today = new Date().toISOString().slice(0, 10);
+        const { data: expSvc } = await admin.from('lead_services').select('lead_id')
+          .in('lead_id', leadIds).is('deleted_at', null).eq('status', 'active')
+          .lte('expiry_date', in30).gte('expiry_date', today);
+        const expiringIds = new Set((expSvc || []).map((s: { lead_id: string }) => s.lead_id));
+        filteredLeads = filteredLeads.filter(l => expiringIds.has(l.id as string));
+        leadIds = filteredLeads.map((l: Record<string, unknown>) => l.id as string);
+      }
+
       let services: Record<string, unknown>[] = [];
       if (leadIds.length > 0) {
         const { data: svcData } = await admin.from('lead_services').select('*')
