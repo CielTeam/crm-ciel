@@ -567,6 +567,18 @@ Deno.serve(async (req) => {
       if (stage === 'lost' && !lost_reason_code) return json({ error: 'lost_reason_code required when marking as lost' }, 400);
       if (stage === 'lost' && !VALID_LOST_REASONS.includes(lost_reason_code)) return json({ error: 'Invalid lost_reason_code' }, 400);
 
+      // Discipline rules — gate qualified / won / lost transitions
+      const disciplineCheck = checkStageDiscipline(stage, {
+        contact_email: current.contact_email,
+        contact_phone: current.contact_phone,
+        estimated_value: current.estimated_value,
+        expected_close_date: current.expected_close_date,
+        lost_reason_code: stage === 'lost' ? lost_reason_code : current.lost_reason_code,
+      });
+      if (!disciplineCheck.ok) {
+        return json({ error: 'discipline_violation', field: disciplineCheck.field, message: disciplineCheck.message }, 400);
+      }
+
       const updateFields: Record<string, unknown> = { stage };
       if (stage === 'lost') {
         updateFields.lost_reason_code = lost_reason_code;
