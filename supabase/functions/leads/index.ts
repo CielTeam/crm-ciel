@@ -674,6 +674,7 @@ Deno.serve(async (req) => {
 
       await logActivity(admin, payload.lead_id, actorId, 'service_added', `Service "${service_name}" added`, {}, { service_id: data.id });
 
+      await recomputeAndSaveScore(admin, payload.lead_id);
       return json({ service: data }, 201);
     }
 
@@ -783,6 +784,9 @@ Deno.serve(async (req) => {
         website: lead.website,
         city: lead.city,
         country: lead.country,
+        country_code: lead.country_code,
+        country_name: lead.country_name,
+        state_province: lead.state_province,
         phone: lead.contact_phone,
         email: lead.contact_email,
         notes: lead.notes,
