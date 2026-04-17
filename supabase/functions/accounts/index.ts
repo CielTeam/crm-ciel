@@ -72,6 +72,10 @@ const corsHeaders = {
 };
 
 const ALLOWED_ROLES = ['chairman', 'vice_president', 'head_of_operations'];
+const VALID_ACCOUNT_STATUS = ['active', 'inactive', 'pending'];
+const VALID_ACCOUNT_TYPE = ['prospect', 'customer', 'partner'];
+const VALID_ACCOUNT_HEALTH = ['healthy', 'at_risk', 'critical'];
+const VALID_NOTE_TYPES = ['general', 'call_log', 'email_log', 'meeting_log', 'follow_up'];
 
 function json(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -84,6 +88,25 @@ function sanitize(val: unknown, maxLen: number): string {
 
 function isValidCountryCode(v: unknown): v is string {
   return typeof v === 'string' && /^[A-Z]{2}$/.test(v);
+}
+
+async function logActivity(
+  admin: ReturnType<typeof createClient>,
+  accountId: string,
+  actorId: string,
+  activityType: string,
+  title: string,
+  changes: Record<string, { old: unknown; new: unknown }> = {},
+  metadata: Record<string, unknown> = {}
+) {
+  await admin.from('account_activities').insert({
+    account_id: accountId,
+    actor_id: actorId,
+    activity_type: activityType,
+    title,
+    changes,
+    metadata,
+  });
 }
 
 // ─── Edge Function ───
@@ -115,6 +138,10 @@ Deno.serve(async (req) => {
       const name = sanitize(payload.name, 200);
       if (!name) return json({ error: 'Name is required' }, 400);
 
+      const accountStatus = VALID_ACCOUNT_STATUS.includes(payload.account_status) ? payload.account_status : 'active';
+      const accountType = VALID_ACCOUNT_TYPE.includes(payload.account_type) ? payload.account_type : 'prospect';
+      const accountHealth = VALID_ACCOUNT_HEALTH.includes(payload.account_health) ? payload.account_health : 'healthy';
+
       const insertData: Record<string, unknown> = {
         name,
         industry: sanitize(payload.industry, 100) || null,
@@ -130,11 +157,15 @@ Deno.serve(async (req) => {
         tags: Array.isArray(payload.tags) ? payload.tags.map((t: string) => sanitize(t, 50)).filter(Boolean) : [],
         owner: payload.owner || actorId,
         created_by: actorId,
+        account_status: accountStatus,
+        account_type: accountType,
+        account_health: accountHealth,
       };
 
       const { data, error } = await admin.from('accounts').insert(insertData).select().single();
       if (error) throw error;
 
+      await logActivity(admin, data.id, actorId, 'created', `Account "${name}" created`);
       await admin.from('audit_logs').insert({
         actor_id: actorId,
         action: 'account.created',
@@ -154,9 +185,9 @@ Deno.serve(async (req) => {
       const { error } = await admin.from('accounts').update({ deleted_at: new Date().toISOString() }).eq('id', id);
       if (error) throw error;
 
-      // Soft-delete linked contacts as well
       await admin.from('contacts').update({ deleted_at: new Date().toISOString() }).eq('account_id', id);
 
+      await logActivity(admin, id, actorId, 'deleted', 'Account archived');
       await admin.from('audit_logs').insert({
         actor_id: actorId,
         action: 'account.deleted',
@@ -189,6 +220,9 @@ Deno.serve(async (req) => {
       const { data, error } = await admin.from('contacts').insert(insertData).select().single();
       if (error) throw error;
 
+      if (data.account_id) {
+        await logActivity(admin, data.account_id, actorId, 'contact_added', `Contact "${first_name} ${last_name}" added`, {}, { contact_id: data.id });
+      }
       await admin.from('audit_logs').insert({
         actor_id: actorId,
         action: 'contact.created',
@@ -205,9 +239,13 @@ Deno.serve(async (req) => {
       const { id } = payload;
       if (!id) return json({ error: 'Missing contact id' }, 400);
 
+      const { data: existing } = await admin.from('contacts').select('account_id, first_name, last_name').eq('id', id).single();
       const { error } = await admin.from('contacts').update({ deleted_at: new Date().toISOString() }).eq('id', id);
       if (error) throw error;
 
+      if (existing?.account_id) {
+        await logActivity(admin, existing.account_id as string, actorId, 'contact_removed', `Contact "${existing.first_name} ${existing.last_name}" removed`);
+      }
       await admin.from('audit_logs').insert({
         actor_id: actorId,
         action: 'contact.deleted',
@@ -227,28 +265,64 @@ Deno.serve(async (req) => {
       if (fetchErr || !existing) return json({ error: 'Account not found' }, 404);
 
       const updates: Record<string, unknown> = {};
-      const allowedFields = ['name', 'industry', 'email', 'phone', 'website', 'city', 'country', 'country_code', 'country_name', 'state_province', 'notes', 'tags'];
+      const changes: Record<string, { old: unknown; new: unknown }> = {};
+      const allowedFields = [
+        'name', 'industry', 'email', 'phone', 'website', 'city', 'country',
+        'country_code', 'country_name', 'state_province', 'notes', 'tags',
+        'account_status', 'account_type', 'account_health',
+      ];
 
       for (const key of allowedFields) {
-        if (key in fields) {
-          if (key === 'tags') {
-            updates[key] = Array.isArray(fields[key]) ? (fields[key] as string[]).map((t: string) => sanitize(t, 50)) : [];
-          } else if (key === 'name') {
-            const val = sanitize(fields[key], 200);
-            if (!val) return json({ error: 'Name is required' }, 400);
-            updates[key] = val;
-          } else if (key === 'country_code') {
-            updates[key] = fields[key] === null ? null : (isValidCountryCode(fields[key]) ? fields[key] : null);
-          } else {
-            updates[key] = fields[key] === null ? null : sanitize(fields[key], 500);
-          }
+        if (!(key in fields)) continue;
+        let newVal: unknown;
+        if (key === 'tags') {
+          newVal = Array.isArray(fields[key]) ? (fields[key] as string[]).map((t: string) => sanitize(t, 50)) : [];
+        } else if (key === 'name') {
+          const val = sanitize(fields[key], 200);
+          if (!val) return json({ error: 'Name is required' }, 400);
+          newVal = val;
+        } else if (key === 'country_code') {
+          newVal = fields[key] === null ? null : (isValidCountryCode(fields[key]) ? fields[key] : null);
+        } else if (key === 'account_status') {
+          if (!VALID_ACCOUNT_STATUS.includes(fields[key])) return json({ error: 'Invalid account_status' }, 400);
+          newVal = fields[key];
+        } else if (key === 'account_type') {
+          if (!VALID_ACCOUNT_TYPE.includes(fields[key])) return json({ error: 'Invalid account_type' }, 400);
+          newVal = fields[key];
+        } else if (key === 'account_health') {
+          if (!VALID_ACCOUNT_HEALTH.includes(fields[key])) return json({ error: 'Invalid account_health' }, 400);
+          newVal = fields[key];
+        } else {
+          newVal = fields[key] === null ? null : sanitize(fields[key], 500);
+        }
+
+        const oldVal = (existing as Record<string, unknown>)[key];
+        if (JSON.stringify(newVal) !== JSON.stringify(oldVal)) {
+          updates[key] = newVal;
+          changes[key] = { old: oldVal, new: newVal };
         }
       }
 
-      if (Object.keys(updates).length === 0) return json({ error: 'No valid fields to update' }, 400);
+      if (Object.keys(updates).length === 0) return json({ account: existing });
 
       const { data, error } = await admin.from('accounts').update(updates).eq('id', id).select().single();
       if (error) throw error;
+
+      // Special activity entries for lifecycle field changes
+      const lifecycleFields = ['account_status', 'account_type', 'account_health'];
+      for (const f of lifecycleFields) {
+        if (changes[f]) {
+          await logActivity(admin, id, actorId, `${f}_change`, `${f.replace('account_', '').replace('_', ' ')} changed`, { [f]: changes[f] });
+        }
+      }
+      // General update activity for other field changes
+      const otherChanges: Record<string, { old: unknown; new: unknown }> = {};
+      for (const k of Object.keys(changes)) {
+        if (!lifecycleFields.includes(k)) otherChanges[k] = changes[k];
+      }
+      if (Object.keys(otherChanges).length > 0) {
+        await logActivity(admin, id, actorId, 'updated', 'Account details updated', otherChanges);
+      }
 
       await admin.from('audit_logs').insert({
         actor_id: actorId,
@@ -300,6 +374,55 @@ Deno.serve(async (req) => {
       });
 
       return json({ contact: data });
+    }
+
+    // ─── ADD NOTE (account) ───
+    if (action === 'add_note') {
+      const { account_id, note_type, content, outcome, next_step, contact_date, duration_minutes } = payload;
+      if (!account_id || !content) return json({ error: 'account_id and content required' }, 400);
+      const type = VALID_NOTE_TYPES.includes(note_type) ? note_type : 'general';
+
+      // Verify account exists
+      const { data: acct } = await admin.from('accounts').select('id, name').eq('id', account_id).is('deleted_at', null).single();
+      if (!acct) return json({ error: 'Account not found' }, 404);
+
+      const { data, error } = await admin.from('account_notes').insert({
+        account_id,
+        author_id: actorId,
+        note_type: type,
+        content: sanitize(content, 5000),
+        outcome: sanitize(outcome, 500) || null,
+        next_step: sanitize(next_step, 500) || null,
+        contact_date: contact_date || null,
+        duration_minutes: duration_minutes ? Number(duration_minutes) : null,
+      }).select().single();
+      if (error) throw error;
+
+      await logActivity(admin, account_id, actorId, 'note_added', `${type.replace('_', ' ')} added`, {}, { note_id: data.id, note_type: type });
+
+      return json({ note: data }, 201);
+    }
+
+    // ─── LIST NOTES (account) ───
+    if (action === 'list_notes') {
+      const { account_id } = payload;
+      if (!account_id) return json({ error: 'account_id required' }, 400);
+      const { data, error } = await admin.from('account_notes').select('*')
+        .eq('account_id', account_id).is('deleted_at', null)
+        .order('created_at', { ascending: false }).limit(100);
+      if (error) throw error;
+      return json({ notes: data || [] });
+    }
+
+    // ─── LIST ACTIVITIES (account) ───
+    if (action === 'list_activities') {
+      const { account_id } = payload;
+      if (!account_id) return json({ error: 'account_id required' }, 400);
+      const { data, error } = await admin.from('account_activities').select('*')
+        .eq('account_id', account_id)
+        .order('created_at', { ascending: false }).limit(100);
+      if (error) throw error;
+      return json({ activities: data || [] });
     }
 
     return json({ error: `Unknown action: ${action}` }, 400);
