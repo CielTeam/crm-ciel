@@ -174,13 +174,22 @@ async function invokeLeads(token: string, body: Record<string, unknown>) {
 
 // ─── Query Hooks ───
 
-export function useLeadsWithServices(statusFilter?: string, stageFilter?: string) {
+export function useLeadsWithServices(
+  statusFilter?: string,
+  stageFilter?: string,
+  filters?: Record<string, unknown>,
+) {
   const { user, getToken } = useAuth();
   return useQuery({
-    queryKey: ['leads-with-services', user?.id, statusFilter, stageFilter],
+    queryKey: ['leads-with-services', user?.id, statusFilter, stageFilter, filters],
     queryFn: async () => {
       const token = await getToken();
-      const data = await invokeLeads(token, { action: 'list_with_services', status: statusFilter, stage: stageFilter });
+      const data = await invokeLeads(token, {
+        action: 'list_with_services',
+        status: statusFilter,
+        stage: stageFilter,
+        filters: filters || {},
+      });
       return (data.leads || []) as Lead[];
     },
     enabled: !!user?.id,
