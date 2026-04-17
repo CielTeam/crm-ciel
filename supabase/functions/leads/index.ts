@@ -535,6 +535,21 @@ Deno.serve(async (req) => {
 
       if (Object.keys(fields).length === 0) return json({ lead: current });
 
+      // Discipline check if the stage is being moved via update
+      if ('stage' in fields) {
+        const merged = { ...current, ...fields };
+        const disciplineCheck = checkStageDiscipline(fields.stage as string, {
+          contact_email: merged.contact_email,
+          contact_phone: merged.contact_phone,
+          estimated_value: merged.estimated_value,
+          expected_close_date: merged.expected_close_date,
+          lost_reason_code: merged.lost_reason_code,
+        });
+        if (!disciplineCheck.ok) {
+          return json({ error: 'discipline_violation', field: disciplineCheck.field, message: disciplineCheck.message }, 400);
+        }
+      }
+
       const { data, error } = await admin.from('leads').update(fields).eq('id', id).is('deleted_at', null).select().single();
       if (error) throw error;
 
