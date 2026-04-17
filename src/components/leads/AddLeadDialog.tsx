@@ -95,7 +95,10 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
           website: form.website || null,
           secondary_phone: form.secondary_phone || null,
           city: form.city || null,
-          country: form.country || null,
+          country: form.country_code ? getCountryName(form.country_code) : (form.country || null),
+          country_code: form.country_code || null,
+          country_name: form.country_code ? getCountryName(form.country_code) : null,
+          state_province: form.state_province || null,
         } as Partial<Lead>, {
           onSuccess: (data) => resolve(data),
           onError: (err) => reject(err),
@@ -159,11 +162,16 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
               </div>
               <div className="grid grid-cols-3 gap-3 mt-2">
                 <div><Label className="text-xs">Website</Label><Input value={form.website} onChange={(e) => setForm(f => ({ ...f, website: e.target.value }))} placeholder="https://..." /></div>
-                <div><Label className="text-xs">Country</Label><Input value={form.country} onChange={(e) => setForm(f => ({ ...f, country: e.target.value }))} /></div>
-                <div><Label className="text-xs">City</Label><Input value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} /></div>
+                <div><Label className="text-xs">Country *</Label>
+                  <CountryCombobox value={form.country_code || null} onChange={(code) => setForm(f => ({ ...f, country_code: code || '' }))} required />
+                </div>
+                <div><Label className="text-xs">State / Province</Label><Input value={form.state_province} onChange={(e) => setForm(f => ({ ...f, state_province: e.target.value }))} /></div>
               </div>
               <div className="grid grid-cols-2 gap-3 mt-2">
+                <div><Label className="text-xs">City</Label><Input value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} /></div>
                 <div><Label className="text-xs">Source</Label><Input value={form.source} onChange={(e) => setForm(f => ({ ...f, source: e.target.value }))} placeholder="e.g. Referral, Website" /></div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 mt-2">
                 <div><Label className="text-xs">Status</Label>
                   <Select value={form.status} onValueChange={(v) => setForm(f => ({ ...f, status: v }))}>
                     <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
