@@ -895,6 +895,25 @@ Deno.serve(async (req) => {
       return json({ success: true });
     }
 
+    // ─── RECOMPUTE SCORE (single or backfill) ───
+    if (action === 'recompute_score') {
+      const { id, all } = payload;
+      if (id) {
+        const scored = await recomputeAndSaveScore(admin, id);
+        return json({ score: scored?.score ?? 0, band: scored?.band ?? 'cold' });
+      }
+      if (all) {
+        const { data: leads } = await admin.from('leads').select('id').is('deleted_at', null).limit(500);
+        let updated = 0;
+        for (const l of leads || []) {
+          await recomputeAndSaveScore(admin, l.id as string);
+          updated++;
+        }
+        return json({ updated });
+      }
+      return json({ error: 'id or all=true required' }, 400);
+    }
+
     return json({ error: 'Unknown action' }, 400);
   } catch (err) {
     console.error('leads error:', err);
