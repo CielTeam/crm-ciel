@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useLeadNotes, useAddNote, type LeadNote } from '@/hooks/useLeads';
+import { useState, useEffect } from 'react';
+import { useLeadNotes, useAddNote } from '@/hooks/useLeads';
 import { useDirectoryData } from '@/hooks/useDirectoryData';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
@@ -28,9 +28,13 @@ const OUTCOME_OPTIONS = [
 
 interface Props {
   leadId: string;
+  /** When set, automatically open the form pre-filled with this note_type. */
+  prefillNoteType?: string | null;
+  /** Called after the prefill has been applied so parent can clear its trigger. */
+  onPrefillConsumed?: () => void;
 }
 
-export function LeadNotesPanel({ leadId }: Props) {
+export function LeadNotesPanel({ leadId, prefillNoteType, onPrefillConsumed }: Props) {
   const { data: notes, isLoading } = useLeadNotes(leadId);
   const { data: profiles } = useDirectoryData();
   const addNote = useAddNote();
@@ -43,6 +47,15 @@ export function LeadNotesPanel({ leadId }: Props) {
     contact_date: '',
     duration_minutes: '',
   });
+
+  // React to external prefill trigger (Quick Action bar)
+  useEffect(() => {
+    if (prefillNoteType) {
+      setForm(f => ({ ...f, note_type: prefillNoteType }));
+      setShowForm(true);
+      onPrefillConsumed?.();
+    }
+  }, [prefillNoteType, onPrefillConsumed]);
 
   const getAuthorName = (authorId: string) => {
     const profile = profiles?.find(p => p.userId === authorId);
@@ -73,11 +86,9 @@ export function LeadNotesPanel({ leadId }: Props) {
   };
 
   const showExtras = ['call_log', 'email_log', 'meeting_log'].includes(form.note_type);
-  const noteTypeConfig = NOTE_TYPES.find(n => n.value === form.note_type);
 
   return (
     <div className="space-y-4">
-      {/* Add Note Button / Form */}
       {!showForm ? (
         <Button variant="outline" size="sm" onClick={() => setShowForm(true)}>
           <Plus className="h-3.5 w-3.5 mr-1" /> Add Note
