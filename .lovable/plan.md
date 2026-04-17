@@ -1,82 +1,87 @@
 
 
-User approved Phase 2 already. Next is Phase 3 per the original plan. Phase 3 has three sub-parts (Lead Cockpit, Discipline Rules, Account Lifecycle). Also need to add Saved Views which was part of Phase 2 but deferred — I'll fold it in or note it.
+Phase 3 is complete (Lead Cockpit, Discipline Rules, Account Lifecycle with tabbed cockpit + Notes/Activity). The original 4-phase plan defined Phase 4 as the final wrap-up. Plus we have Phase 2 leftover (Saved Views) still deferred.
 
-Actually re-reading: Phase 2 was "Filtering + Saved Views". Filtering is done; Saved Views was deferred. I should either (a) finish Saved Views first, or (b) move to Phase 3. The user said "next phase" — meaning Phase 3. I'll skip Saved Views (can be a follow-up) and execute Phase 3 as originally scoped.
+# Phase 4 — Conversion Continuity, Opportunities, Saved Views & Polish
 
-Phase 3 plan:
+This is the final phase. It closes the Lead → Account → Opportunity loop, finishes the Phase 2 deferral, and adds the operational polish needed to call the upgrade enterprise-grade.
 
-# Phase 3 — Lead Cockpit + Discipline Rules + Account Lifecycle
+## 4A. Opportunities (first-class)
 
-## 3A. Lead Detail Cockpit (UI refactor)
+The `opportunities` table already exists but isn't wired up. Promote it to a real module.
 
-Refactor `LeadDetailSheet.tsx` to a **2-column layout**:
-- **Left (main, ~70%)**: existing tabs (Overview, Activity, Notes, Tasks, Files, Quotes)
-- **Right (sticky, ~30%)**: new `LeadCockpitPanel.tsx` showing:
-  - Owner (avatar + name)
-  - Stage badge + score badge (from DB)
-  - Next follow-up (with overdue highlight)
-  - Last contacted
-  - Estimated value + weighted forecast
-  - Open tasks count (placeholder = 0 until tasks linked)
-  - Services summary (count + at-risk count)
-  - **Risk flag chips**: No activity 14d, Overdue follow-up, Duplicate detected, Missing next step
+**Edge function** `supabase/functions/opportunities/index.ts` (new):
+- `list` (scoped via `has_leads_access_scoped` on `owner`)
+- `create_opportunity`, `update_opportunity`, `delete_opportunity` (soft delete)
+- `change_stage` (stages: `prospecting | qualification | proposal | negotiation | won | lost`)
+- Auto-recompute `weighted_forecast = estimated_value * probability_percent / 100`
+- Audit logging on every mutation
 
-**Quick action bar** (top of sheet, above tabs):
-- Buttons: Log Call, Log Meeting, Add Note, Add Task, Schedule Follow-up, Add Service, Convert/Reopen/Mark Lost
-- "Log Call" / "Log Meeting" / "Add Note" → open `LeadNotesPanel` pre-filled with appropriate `note_type`
-- "Schedule Follow-up" → small inline date picker that PATCHes `next_follow_up_at`
-- Convert / Mark Lost / Reopen wired to existing dialogs
+**Convert flow upgrade** — `ConvertLeadDialog.tsx` + `leads/index.ts` `convert_lead` action:
+- When converting a won lead, also create an `opportunities` row linked to the new account/contact (`source_lead_id`, `account_id`, `contact_id`, copied value/probability/close date)
+- Lead's `converted_to_id` already covers the account; opportunity is the third leg
 
-## 3B. Discipline Rules (server-enforced)
+**UI**:
+- New page `src/pages/OpportunitiesPage.tsx` — table view with stage, value, weighted forecast, owner, expected close, account link
+- Add "Opportunities" tab content in `AccountDetailSheet` (currently placeholder) — list opportunities filtered by `account_id`
+- Sidebar nav entry under CRM section
+- New components: `AddOpportunityDialog.tsx`, `OpportunityDetailSheet.tsx`
 
-Edit `supabase/functions/leads/index.ts` `change_stage` and `update` actions:
-- Moving to `qualified` → require `(contact_email OR contact_phone) AND estimated_value > 0`
-- Moving to `won` → require `estimated_value > 0 AND expected_close_date IS NOT NULL`
-- Moving to `lost` → require `lost_reason_code IS NOT NULL` (already partially enforced via `mark_lost` flow; reinforce here)
-- Return `400` with `{ error: "discipline_violation", field: "...", message: "..." }`
-- Client surfaces actionable toasts in `LeadsKanbanView` drag handler and `EditLeadDialog`/stage selector
+## 4B. Saved Views (Phase 2 leftover)
 
-## 3C. Account Lifecycle
+**Migration**: `lead_saved_views` table
+- `id`, `name`, `owner_id`, `filters jsonb`, `is_shared bool`, `is_default bool`, `created_at`
+- RLS: SELECT own + shared; INSERT/UPDATE/DELETE own only via edge function
 
-**DB migration** on `accounts`:
-- `account_status text default 'active'` — active | inactive | pending
-- `account_type text default 'prospect'` — prospect | customer | partner
-- `account_health text default 'healthy'` — healthy | at_risk | critical
+**Edge function** extension to `leads/index.ts`: `list_saved_views`, `save_view`, `delete_saved_view`, `set_default_view`
 
-**New tables**:
-- `account_notes` (id, account_id, author_id, note_type, content, outcome, next_step, contact_date, duration_minutes, created_at, deleted_at)
-- `account_activities` (id, account_id, actor_id, activity_type, title, changes jsonb, metadata jsonb, created_at)
-- RLS: SELECT via `has_leads_access_scoped(jwt_sub, accounts.owner)`; service role full access
+**UI** — extend `LeadsFilterBar.tsx`:
+- "Views" dropdown next to filters: list user's saved + shared views
+- "Save current view" → name + share toggle
+- "Set as default" → auto-applies on page load if no URL filters present
+- Star icon for default, share icon for team-visible
 
-**Edge function `accounts/index.ts`** — new actions:
-- `add_note`, `list_notes`, `list_activities`
-- Auto-log activities on `update_account`, `create_account`, `delete_account`, status/type/health changes
+## 4C. Account/Contact Polish
 
-**`AccountDetailSheet` → tabbed cockpit**:
-- Tabs: Details (current view), Contacts, Notes, Activity, Opportunities (placeholder), Documents (wire to existing `attachments` with `entity_type='account'`)
-- Status / Type / Health selectors in Details tab
-- Right-side flag chips: no owner, no activity > 30d, no contacts linked
+- Surface `account_health` and `account_status` as colored badges on the `AccountsContactsPage` table
+- Add filter bar on Accounts page (mirror of Leads): owner, country, industry, status, type, health, search — URL-synced via the same pattern as `LeadsFilterBar`
+- New `AccountsFilterBar.tsx` component
+- Wire the existing `attachments` system into a "Documents" tab on `AccountDetailSheet` using `entity_type='account'` (component already exists: `FileAttachmentList` + `FileUploadButton`)
 
-**New components**:
-- `AccountNotesPanel.tsx` (mirror of `LeadNotesPanel`)
-- `AccountActivityTimeline.tsx` (mirror of `LeadActivityTimeline`)
-- `AddAccountNoteDialog.tsx`
+## 4D. Filter-aware Export & Final Polish
 
-**Hooks** in `useAccountsContacts.ts`:
-- `useAccountNotes(accountId)`, `useAddAccountNote()`, `useAccountActivities(accountId)`
+- CSV export on Leads page respects current filter state (currently exports all visible). Filename includes a short filter summary, e.g. `leads_qualified_LB_2026-04-17.csv`
+- Add same CSV export to Accounts page
+- Add a "Recompute scores" admin button on Leads page (the `useRecomputeAllLeadScores` hook already exists from Phase 1, just needs a UI affordance gated to admin role)
 
 ## File Impact
 
-**New (5)**: `LeadCockpitPanel.tsx`, `AccountNotesPanel.tsx`, `AccountActivityTimeline.tsx`, `AddAccountNoteDialog.tsx`, migration SQL
+**New (~8)**:
+- `supabase/functions/opportunities/index.ts`
+- `src/pages/OpportunitiesPage.tsx`, `src/hooks/useOpportunities.ts`
+- `src/components/opportunities/AddOpportunityDialog.tsx`, `OpportunityDetailSheet.tsx`
+- `src/components/accounts/AccountsFilterBar.tsx`
+- `src/components/leads/SavedViewsMenu.tsx`
+- 1 migration (`lead_saved_views` table + RLS)
 
-**Edited (6)**: `LeadDetailSheet.tsx`, `AccountDetailSheet.tsx`, `useLeads.ts` (deduplicate score helpers, add followup mutation), `useAccountsContacts.ts`, `supabase/functions/leads/index.ts` (discipline), `supabase/functions/accounts/index.ts` (notes/activities + lifecycle fields)
+**Edited (~9)**:
+- `supabase/functions/leads/index.ts` (saved views actions + convert_lead opportunity insert)
+- `src/components/leads/ConvertLeadDialog.tsx`, `LeadsFilterBar.tsx`, `LeadsPage.tsx` (CSV export)
+- `src/components/accounts/AccountDetailSheet.tsx` (Opportunities + Documents tabs)
+- `src/pages/AccountsContactsPage.tsx` (filter bar + badges + CSV)
+- `src/hooks/useAccountsContacts.ts` (filter param), `src/hooks/useLeads.ts` (saved views hooks)
+- `src/App.tsx` + `src/config/navigation.ts` (Opportunities route + nav)
 
-**Migrations (1)**: account lifecycle cols + `account_notes` + `account_activities` tables with RLS
+**Migration (1)**: `lead_saved_views` with RLS
 
-## Out of scope (deferred)
+## Execution order in the next turn
 
-- Saved Views (Phase 2 leftover) — can pick up after Phase 3 or in Phase 4
-- Real "open tasks count" on cockpit — needs lead↔task linking; will show 0 placeholder
-- Opportunities tab content — placeholder only
+1. Migration (saved views) → wait for approval
+2. Opportunities edge function + hooks + page + dialogs
+3. Wire ConvertLeadDialog to also create opportunity
+4. Saved Views UI on LeadsFilterBar
+5. AccountsFilterBar + status/health badges + Documents tab
+6. Filter-aware CSV exports + admin recompute button
+
+After this phase the system has: structured geography, full Account CRUD with lifecycle + notes/activity, server-side filters with shareable URLs and saved presets, lead cockpit with risk flags, discipline-enforced stage transitions, and the full Lead → Account → Opportunity continuity loop.
 
