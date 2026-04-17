@@ -478,6 +478,9 @@ Deno.serve(async (req) => {
         ...(stage === 'lost' ? { lost_reason_code: { old: current.lost_reason_code, new: lost_reason_code } } : {}),
       });
 
+      const scored = await recomputeAndSaveScore(admin, id);
+      if (scored) Object.assign(data, scored);
+
       return json({ lead: data });
     }
 
