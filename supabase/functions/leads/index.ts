@@ -360,6 +360,9 @@ Deno.serve(async (req) => {
         secondary_phone: sanitize(payload.secondary_phone, 50) || null,
         city: sanitize(payload.city, 255) || null,
         country: sanitize(payload.country, 255) || null,
+        country_code: isValidCountryCode(payload.country_code) ? payload.country_code : null,
+        country_name: sanitize(payload.country_name, 255) || null,
+        state_province: sanitize(payload.state_province, 255) || null,
         tags: Array.isArray(payload.tags) ? payload.tags.map((t: unknown) => sanitize(t, 100)).filter(Boolean) : [],
         assigned_by: payload.assigned_to ? actorId : null,
         assigned_at: payload.assigned_to ? new Date().toISOString() : null,
@@ -370,8 +373,9 @@ Deno.serve(async (req) => {
 
       await logActivity(admin, data.id, actorId, 'created', `Lead "${company_name}" created`);
       await admin.from('audit_logs').insert({ actor_id: actorId, action: 'lead.create', target_type: 'lead', target_id: data.id, metadata: { company_name } });
-      
-      return json({ lead: data }, 201);
+
+      const scored = await recomputeAndSaveScore(admin, data.id);
+      return json({ lead: { ...data, ...(scored || {}) } }, 201);
     }
 
     // ─── UPDATE ───
