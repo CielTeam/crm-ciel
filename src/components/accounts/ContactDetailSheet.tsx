@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Briefcase, Mail, Phone, User, Pencil, Save, X } from 'lucide-react';
-import { useUpdateContact } from '@/hooks/useAccountsContacts';
+import { Briefcase, Mail, Phone, User, Pencil, Save, X, Trash2 } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { useUpdateContact, useDeleteContact } from '@/hooks/useAccountsContacts';
 import type { Contact } from '@/hooks/useAccountsContacts';
 import { toast } from 'sonner';
 
@@ -70,9 +71,34 @@ export function ContactDetailSheet({ contact, accountName, open, onOpenChange }:
               {editing ? 'Edit Contact' : `${contact.first_name} ${contact.last_name}`}
             </SheetTitle>
             {!editing ? (
-              <Button variant="ghost" size="icon" onClick={() => setEditing(true)}>
-                <Pencil className="h-4 w-4" />
-              </Button>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="icon" onClick={() => setEditing(true)}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="icon" className="text-destructive">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete contact?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will archive {contact.first_name} {contact.last_name}. You can restore from the database if needed.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={async () => { try { await deleteContact.mutateAsync(contact.id); onOpenChange(false); } catch { /* */ } }}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             ) : (
               <div className="flex gap-1">
                 <Button variant="ghost" size="icon" onClick={() => setEditing(false)} disabled={updateContact.isPending}>
