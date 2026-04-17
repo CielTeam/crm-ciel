@@ -92,7 +92,7 @@ const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 type AttachmentAction = 'upload' | 'list' | 'list_by_entity_ids' | 'delete';
-type EntityType = 'task' | 'comment' | 'message';
+type EntityType = 'task' | 'comment' | 'message' | 'account';
 
 interface AttachmentRequest {
   action?: AttachmentAction;
@@ -204,7 +204,7 @@ Deno.serve(async (req) => {
 
       const { file_name, file_base64, entity_type, entity_id } = body;
       if (!file_name || !file_base64 || !entity_type || !entity_id) return jsonResponse({ error: 'file_name, file_base64, entity_type, and entity_id are required' }, 400);
-      if (!['task', 'comment', 'message'].includes(entity_type)) return jsonResponse({ error: 'entity_type must be task, comment, or message' }, 400);
+      if (!['task', 'comment', 'message', 'account'].includes(entity_type)) return jsonResponse({ error: 'entity_type must be task, comment, message, or account' }, 400);
 
       const ext = getExtension(file_name);
       if (!ALLOWED_EXTENSIONS.includes(ext)) return jsonResponse({ error: 'Only images (jpg, png, gif, webp), PDF, and ZIP files are allowed' }, 400);
@@ -222,6 +222,9 @@ Deno.serve(async (req) => {
         if (!(await validateCommentAccess(admin, entity_id, actorId))) return jsonResponse({ error: 'Forbidden' }, 403);
       } else if (entity_type === 'message') {
         if (!(await validateMessageAccess(admin, entity_id, actorId))) return jsonResponse({ error: 'Forbidden' }, 403);
+      } else if (entity_type === 'account') {
+        const { data: acct } = await admin.from('accounts').select('id').eq('id', entity_id).is('deleted_at', null).maybeSingle();
+        if (!acct) return jsonResponse({ error: 'Forbidden' }, 403);
       }
 
       const timestamp = Date.now();
@@ -266,6 +269,9 @@ Deno.serve(async (req) => {
         if (!(await validateCommentAccess(admin, entity_id, actorId))) return jsonResponse({ error: 'Forbidden' }, 403);
       } else if (entity_type === 'message') {
         if (!(await validateMessageAccess(admin, entity_id, actorId))) return jsonResponse({ error: 'Forbidden' }, 403);
+      } else if (entity_type === 'account') {
+        const { data: acct } = await admin.from('accounts').select('id').eq('id', entity_id).is('deleted_at', null).maybeSingle();
+        if (!acct) return jsonResponse({ error: 'Forbidden' }, 403);
       }
 
       const { data, error } = await admin.from('attachments').select('*').eq('entity_type', entity_type).eq('entity_id', entity_id).is('deleted_at', null).order('created_at', { ascending: true });
