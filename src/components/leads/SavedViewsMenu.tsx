@@ -28,7 +28,7 @@ export function SavedViewsMenu({ currentFilters, onApplyFilters }: Props) {
   const handleSave = () => {
     if (!name.trim()) return;
     saveView.mutate(
-      { name: name.trim(), filters: currentFilters, is_shared: shared },
+      { name: name.trim(), filters: currentFilters as unknown as Record<string, unknown>, is_shared: shared },
       { onSuccess: () => { setSaveOpen(false); setName(''); setShared(false); } }
     );
   };
