@@ -6,9 +6,11 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Building2, Globe, Mail, MapPin, Phone, User, Pencil, Save, X } from 'lucide-react';
-import { useUpdateAccount } from '@/hooks/useAccountsContacts';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Building2, Globe, Mail, MapPin, Phone, User, Pencil, Save, X, Trash2 } from 'lucide-react';
+import { useUpdateAccount, useDeleteAccount } from '@/hooks/useAccountsContacts';
 import type { AccountWithContacts } from '@/hooks/useAccountsContacts';
+import { CountryCombobox } from '@/components/shared/CountryCombobox';
 import { toast } from 'sonner';
 
 interface Props {
@@ -33,9 +35,12 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
 export function AccountDetailSheet({ account, open, onOpenChange }: Props) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
-    name: '', industry: '', email: '', phone: '', website: '', city: '', country: '', notes: '',
+    name: '', industry: '', email: '', phone: '', website: '', city: '',
+    country_code: null as string | null, country_name: '' as string,
+    state_province: '', notes: '',
   });
   const updateAccount = useUpdateAccount();
+  const deleteAccount = useDeleteAccount();
 
   useEffect(() => {
     if (account) {
@@ -46,7 +51,9 @@ export function AccountDetailSheet({ account, open, onOpenChange }: Props) {
         phone: account.phone || '',
         website: account.website || '',
         city: account.city || '',
-        country: account.country || '',
+        country_code: account.country_code || null,
+        country_name: account.country_name || account.country || '',
+        state_province: account.state_province || '',
         notes: account.notes || '',
       });
       setEditing(false);
@@ -65,7 +72,10 @@ export function AccountDetailSheet({ account, open, onOpenChange }: Props) {
         phone: form.phone || null,
         website: form.website || null,
         city: form.city || null,
-        country: form.country || null,
+        country: form.country_name || null,
+        country_code: form.country_code,
+        country_name: form.country_name || null,
+        state_province: form.state_province || null,
         notes: form.notes || null,
       });
       toast.success('Account updated');
@@ -74,6 +84,15 @@ export function AccountDetailSheet({ account, open, onOpenChange }: Props) {
       toast.error(err instanceof Error ? err.message : 'Failed to update');
     }
   };
+
+  const handleDelete = async () => {
+    try {
+      await deleteAccount.mutateAsync(account.id);
+      onOpenChange(false);
+    } catch { /* toast handled */ }
+  };
+
+  const locationDisplay = [account.city, account.state_province, account.country_name || account.country].filter(Boolean).join(', ') || null;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -85,9 +104,32 @@ export function AccountDetailSheet({ account, open, onOpenChange }: Props) {
               {editing ? 'Edit Account' : account.name}
             </SheetTitle>
             {!editing ? (
-              <Button variant="ghost" size="icon" onClick={() => setEditing(true)}>
-                <Pencil className="h-4 w-4" />
-              </Button>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="icon" onClick={() => setEditing(true)}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="icon" className="text-destructive">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete account?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will archive “{account.name}” and its {account.contacts.length} linked contact(s). You can restore from the database if needed.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             ) : (
               <div className="flex gap-1">
                 <Button variant="ghost" size="icon" onClick={() => setEditing(false)} disabled={updateAccount.isPending}>
@@ -124,14 +166,21 @@ export function AccountDetailSheet({ account, open, onOpenChange }: Props) {
                 <Label>Website</Label>
                 <Input value={form.website} onChange={(e) => setForm(f => ({ ...f, website: e.target.value }))} />
               </div>
+              <div>
+                <Label>Country</Label>
+                <CountryCombobox
+                  value={form.country_code}
+                  onChange={(code, name) => setForm(f => ({ ...f, country_code: code, country_name: name || '' }))}
+                />
+              </div>
               <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>State / Province</Label>
+                  <Input value={form.state_province} onChange={(e) => setForm(f => ({ ...f, state_province: e.target.value }))} />
+                </div>
                 <div>
                   <Label>City</Label>
                   <Input value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} />
-                </div>
-                <div>
-                  <Label>Country</Label>
-                  <Input value={form.country} onChange={(e) => setForm(f => ({ ...f, country: e.target.value }))} />
                 </div>
               </div>
               <div>
@@ -146,7 +195,7 @@ export function AccountDetailSheet({ account, open, onOpenChange }: Props) {
                 <InfoRow icon={Mail} label="Email" value={account.email} />
                 <InfoRow icon={Phone} label="Phone" value={account.phone} />
                 <InfoRow icon={Globe} label="Website" value={account.website} />
-                <InfoRow icon={MapPin} label="Location" value={[account.city, account.country].filter(Boolean).join(', ') || null} />
+                <InfoRow icon={MapPin} label="Location" value={locationDisplay} />
               </div>
 
               {account.tags.length > 0 && (

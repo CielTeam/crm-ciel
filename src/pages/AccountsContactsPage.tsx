@@ -3,12 +3,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building2, Search, User, Users } from 'lucide-react';
+import { Building2, Plus, Search, User, UserPlus, Users } from 'lucide-react';
 import { useAccountsWithContacts, type AccountWithContacts, type Contact } from '@/hooks/useAccountsContacts';
 import { AccountDetailSheet } from '@/components/accounts/AccountDetailSheet';
 import { ContactDetailSheet } from '@/components/accounts/ContactDetailSheet';
+import { AddAccountDialog } from '@/components/accounts/AddAccountDialog';
+import { AddContactDialog } from '@/components/accounts/AddContactDialog';
 
 export default function AccountsContactsPage() {
   const { data: accounts, contacts, isLoading } = useAccountsWithContacts();
@@ -16,6 +19,8 @@ export default function AccountsContactsPage() {
   const [tab, setTab] = useState('accounts');
   const [selectedAccount, setSelectedAccount] = useState<AccountWithContacts | null>(null);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [addAccountOpen, setAddAccountOpen] = useState(false);
+  const [addContactOpen, setAddContactOpen] = useState(false);
 
   const q = search.toLowerCase();
 
@@ -40,7 +45,7 @@ export default function AccountsContactsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Accounts & Contacts</h1>
-          <p className="text-sm text-muted-foreground">Browse converted entities from won leads</p>
+          <p className="text-sm text-muted-foreground">Browse and manage converted entities from won leads</p>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <Card className="px-3 py-1.5 flex items-center gap-2">
@@ -56,14 +61,24 @@ export default function AccountsContactsPage() {
         </div>
       </div>
 
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by name, email, industry..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+        <div className="relative max-w-md flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by name, email, industry..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setAddContactOpen(true)}>
+            <UserPlus className="h-4 w-4 mr-1.5" /> New Contact
+          </Button>
+          <Button size="sm" onClick={() => setAddAccountOpen(true)}>
+            <Plus className="h-4 w-4 mr-1.5" /> New Account
+          </Button>
+        </div>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -101,7 +116,7 @@ export default function AccountsContactsPage() {
                       <TableCell className="font-medium">{a.name}</TableCell>
                       <TableCell>{a.industry ? <Badge variant="outline" className="text-xs">{a.industry}</Badge> : '—'}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">{a.email || '—'}</TableCell>
-                      <TableCell className="text-sm">{[a.city, a.country].filter(Boolean).join(', ') || '—'}</TableCell>
+                      <TableCell className="text-sm">{[a.city, a.state_province, a.country_name || a.country].filter(Boolean).join(', ') || '—'}</TableCell>
                       <TableCell className="text-right">{a.contacts.length}</TableCell>
                     </TableRow>
                   ))}
@@ -147,6 +162,8 @@ export default function AccountsContactsPage() {
 
       <AccountDetailSheet account={selectedAccount} open={!!selectedAccount} onOpenChange={(o) => !o && setSelectedAccount(null)} />
       <ContactDetailSheet contact={selectedContact} accountName={selectedContact?.account_id ? accountNameMap[selectedContact.account_id] : undefined} open={!!selectedContact} onOpenChange={(o) => !o && setSelectedContact(null)} />
+      <AddAccountDialog open={addAccountOpen} onOpenChange={setAddAccountOpen} />
+      <AddContactDialog open={addContactOpen} onOpenChange={setAddContactOpen} accounts={accounts} />
     </div>
   );
 }
