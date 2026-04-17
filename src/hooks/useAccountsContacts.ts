@@ -235,3 +235,57 @@ export function useRecomputeAllLeadScores() {
     onError: (e: Error) => toast.error(e.message),
   });
 }
+
+// =================== Account Notes & Activities ===================
+
+export function useAccountNotes(accountId: string | null | undefined) {
+  const { user, getToken } = useAuth();
+  return useQuery({
+    queryKey: ['account-notes', accountId],
+    queryFn: async () => {
+      const token = await getToken();
+      const data = await invokeAccounts(token, { action: 'list_notes', account_id: accountId });
+      return (data.notes ?? []) as AccountNote[];
+    },
+    enabled: !!user && !!accountId,
+  });
+}
+
+export function useAddAccountNote() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: {
+      account_id: string;
+      note_type: string;
+      content: string;
+      outcome?: string;
+      next_step?: string;
+      contact_date?: string;
+      duration_minutes?: number;
+    }) => {
+      const token = await getToken();
+      const data = await invokeAccounts(token, { action: 'add_note', ...payload });
+      return data.note as AccountNote;
+    },
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['account-notes', vars.account_id] });
+      qc.invalidateQueries({ queryKey: ['account-activities', vars.account_id] });
+      toast.success('Note added');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useAccountActivities(accountId: string | null | undefined) {
+  const { user, getToken } = useAuth();
+  return useQuery({
+    queryKey: ['account-activities', accountId],
+    queryFn: async () => {
+      const token = await getToken();
+      const data = await invokeAccounts(token, { action: 'list_activities', account_id: accountId });
+      return (data.activities ?? []) as AccountActivity[];
+    },
+    enabled: !!user && !!accountId,
+  });
+}
