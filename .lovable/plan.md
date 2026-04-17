@@ -1,161 +1,82 @@
 
 
-# Enterprise Upgrade — Phased Plan
+User approved Phase 2 already. Next is Phase 3 per the original plan. Phase 3 has three sub-parts (Lead Cockpit, Discipline Rules, Account Lifecycle). Also need to add Saved Views which was part of Phase 2 but deferred — I'll fold it in or note it.
 
-The request spans 10 areas. Doing it all in one shot would produce an unreviewable mega-change and risk regressions in a working system. I'm proposing a **4-phase rollout**, executed one phase per turn so you can review and ship each safely. Each phase ends in a fully working, deployable state.
+Actually re-reading: Phase 2 was "Filtering + Saved Views". Filtering is done; Saved Views was deferred. I should either (a) finish Saved Views first, or (b) move to Phase 3. The user said "next phase" — meaning Phase 3. I'll skip Saved Views (can be a follow-up) and execute Phase 3 as originally scoped.
 
----
+Phase 3 plan:
 
-## Phase 1 — Foundations (Country/Region + Account CRUD + Scoring Backend)
+# Phase 3 — Lead Cockpit + Discipline Rules + Account Lifecycle
 
-These are blocking dependencies for everything else.
+## 3A. Lead Detail Cockpit (UI refactor)
 
-### 1A. Country / Region (Critical First)
-**DB migration**
-- `leads`: add `country_code text`, `country_name text`, `state_province text`
-- `accounts`: add `country_code text`, `country_name text`, `state_province text`
-- Backfill: best-effort match existing `country` text → ISO code via lookup table; preserve original in `country_name` if no match
-- Keep legacy `country` column (don't drop) for safety; mark deprecated in code
+Refactor `LeadDetailSheet.tsx` to a **2-column layout**:
+- **Left (main, ~70%)**: existing tabs (Overview, Activity, Notes, Tasks, Files, Quotes)
+- **Right (sticky, ~30%)**: new `LeadCockpitPanel.tsx` showing:
+  - Owner (avatar + name)
+  - Stage badge + score badge (from DB)
+  - Next follow-up (with overdue highlight)
+  - Last contacted
+  - Estimated value + weighted forecast
+  - Open tasks count (placeholder = 0 until tasks linked)
+  - Services summary (count + at-risk count)
+  - **Risk flag chips**: No activity 14d, Overdue follow-up, Duplicate detected, Missing next step
 
-**New shared module** `src/lib/countries.ts`
-- Full ISO 3166-1 list (alpha-2 + name)
-- `PINNED_COUNTRIES`: LB, AE, SA, QA, KW, OM, BH, JO, EG, TR, FR, GB
+**Quick action bar** (top of sheet, above tabs):
+- Buttons: Log Call, Log Meeting, Add Note, Add Task, Schedule Follow-up, Add Service, Convert/Reopen/Mark Lost
+- "Log Call" / "Log Meeting" / "Add Note" → open `LeadNotesPanel` pre-filled with appropriate `note_type`
+- "Schedule Follow-up" → small inline date picker that PATCHes `next_follow_up_at`
+- Convert / Mark Lost / Reopen wired to existing dialogs
 
-**New component** `src/components/shared/CountryCombobox.tsx`
-- shadcn `Command` + `Popover` searchable combobox
-- Pinned section on top, divider, then alphabetical
-- Stores `country_code`, displays `country_name`
+## 3B. Discipline Rules (server-enforced)
 
-**Wire-in**
-- `AddLeadDialog`, `EditLeadDialog`: replace country input → combobox; add State/Province text field above City
-- `leads` edge function `create`/`update`: accept + validate `country_code` (2-letter), persist `country_name`, `state_province`
-- `convert` action: copy `country_code`, `country_name`, `state_province`, `city` from lead → account
-- Validation: country required when creating company-type leads
+Edit `supabase/functions/leads/index.ts` `change_stage` and `update` actions:
+- Moving to `qualified` → require `(contact_email OR contact_phone) AND estimated_value > 0`
+- Moving to `won` → require `estimated_value > 0 AND expected_close_date IS NOT NULL`
+- Moving to `lost` → require `lost_reason_code IS NOT NULL` (already partially enforced via `mark_lost` flow; reinforce here)
+- Return `400` with `{ error: "discipline_violation", field: "...", message: "..." }`
+- Client surfaces actionable toasts in `LeadsKanbanView` drag handler and `EditLeadDialog`/stage selector
 
-### 1B. Account / Contact Full CRUD
-**Edge function `accounts/index.ts`** — add actions:
-- `create_account`, `delete_account` (soft-delete)
-- `create_contact`, `delete_contact` (soft-delete)
-- All with RBAC (chairman/VP/head_of_operations) + audit logs
+## 3C. Account Lifecycle
 
-**UI**
-- `AddAccountDialog`, `AddContactDialog` (with country combobox)
-- "New Account" / "New Contact" buttons on `AccountsContactsPage`
-- Delete from detail sheets with confirmation
-
-### 1C. Lead Scoring → Backend (authoritative)
-**DB migration**
-- `leads`: add `score int default 0`, `score_band text default 'cold'`, `score_updated_at timestamptz`
-
-**Edge function** — port `computeLeadScore` logic to Deno, recompute server-side on:
-- `create`, `update`, `change_stage`, `add_note`, `add_service`
-- Add `recompute_score` action for backfill
-
-**Client** — read `lead.score` / `lead.score_band` from DB; mark client-side `computeLeadScore` deprecated (keep as fallback for un-migrated rows, remove in Phase 4)
-
----
-
-## Phase 2 — Advanced Filtering + Saved Views
-
-**New component** `src/components/leads/LeadsFilterBar.tsx` — sticky bar above table with:
-- Owner, Stage (multi), Source, Industry, Country, City
-- Date ranges: Created, Expected Close, Last Contacted
-- Numeric ranges: Value, Probability
-- Score band, Tags
-- Quick toggles: Overdue follow-ups, No activity > 14d, Expiring services, Converted/Not
-
-**State**: Single `LeadFilters` object; debounced (300ms); URL-synced via `useSearchParams`
-
-**Edge function** — extend `list_with_services` to accept full filter payload, do filtering server-side (avoid the 1000-row client cap)
-
-**Saved Views**
-- New table `lead_saved_views` (id, user_id, name, filters jsonb, sort jsonb, columns jsonb, is_shared bool, role_default text nullable)
-- RLS: read own + shared; write own
-- UI: "Saved views" dropdown next to filter bar; Save/Update/Delete/Share controls
-
-**Mirror filter bar on Accounts page** (subset relevant to accounts)
-
----
-
-## Phase 3 — Lead Cockpit + Account Lifecycle + Discipline Rules
-
-### 3A. Lead Detail Cockpit
-- Reorganize `LeadDetailSheet` to **2-column layout**: main tabs (left) + sticky right summary panel
-- Right panel: owner, stage, next follow-up, last contact, value, weighted forecast, score, open tasks count, services summary, **risk flags chips** (no activity / overdue / duplicate detected)
-- Quick action bar (top): Log Call, Log Meeting, Add Note, Add Task, Schedule Follow-up, Add Service, Convert/Reopen/Mark Lost
-- Each "log" action opens a pre-filled `LeadNotesPanel` entry with the right `note_type`
-
-### 3B. Discipline Rules (server-enforced in edge function)
-- Cannot move to `qualified` without `contact_email OR contact_phone` AND `estimated_value > 0`
-- Cannot mark `lost` without `lost_reason_code`
-- Cannot mark `won` without `estimated_value > 0` AND `expected_close_date`
-- Return structured 400 errors → client surfaces actionable toasts
-
-### 3C. Account Lifecycle
 **DB migration** on `accounts`:
-- `account_status text default 'active'` (active/inactive/pending)
-- `account_type text default 'prospect'` (prospect/customer/partner)
-- `account_health text default 'healthy'` (healthy/at_risk/critical)
+- `account_status text default 'active'` — active | inactive | pending
+- `account_type text default 'prospect'` — prospect | customer | partner
+- `account_health text default 'healthy'` — healthy | at_risk | critical
 
 **New tables**:
-- `account_notes` (mirror of `lead_notes`)
-- `account_activities` (mirror of `lead_activities`)
-- RLS via `has_leads_access_scoped(_, owner)`
+- `account_notes` (id, account_id, author_id, note_type, content, outcome, next_step, contact_date, duration_minutes, created_at, deleted_at)
+- `account_activities` (id, account_id, actor_id, activity_type, title, changes jsonb, metadata jsonb, created_at)
+- RLS: SELECT via `has_leads_access_scoped(jwt_sub, accounts.owner)`; service role full access
 
-**Edge function `accounts`**: add `add_note`, `list_notes`, `list_activities`
+**Edge function `accounts/index.ts`** — new actions:
+- `add_note`, `list_notes`, `list_activities`
+- Auto-log activities on `update_account`, `create_account`, `delete_account`, status/type/health changes
 
-**`AccountDetailSheet` → tabbed cockpit**: Details, Contacts, Notes, Activity, Opportunities (placeholder), Documents (wire to existing `attachments` table with `entity_type='account'`)
+**`AccountDetailSheet` → tabbed cockpit**:
+- Tabs: Details (current view), Contacts, Notes, Activity, Opportunities (placeholder), Documents (wire to existing `attachments` with `entity_type='account'`)
+- Status / Type / Health selectors in Details tab
+- Right-side flag chips: no owner, no activity > 30d, no contacts linked
 
-**Account flags chips**: no owner, no activity > X days, no contacts linked
+**New components**:
+- `AccountNotesPanel.tsx` (mirror of `LeadNotesPanel`)
+- `AccountActivityTimeline.tsx` (mirror of `LeadActivityTimeline`)
+- `AddAccountNoteDialog.tsx`
 
----
+**Hooks** in `useAccountsContacts.ts`:
+- `useAccountNotes(accountId)`, `useAddAccountNote()`, `useAccountActivities(accountId)`
 
-## Phase 4 — Duplicates + UX Polish + Performance
+## File Impact
 
-### 4A. Duplicate Center
-- New page `/leads/duplicates` (or modal from leads page)
-- Lists detected duplicate clusters (uses existing `normalized_company/email/phone` columns)
-- Confidence score (exact email = high, fuzzy company = medium)
-- Side-by-side merge UI: pick winner per field
-- New edge function action `merge_leads`: moves notes + activities + services to winner, soft-deletes loser, logs in audit_logs
+**New (5)**: `LeadCockpitPanel.tsx`, `AccountNotesPanel.tsx`, `AccountActivityTimeline.tsx`, `AddAccountNoteDialog.tsx`, migration SQL
 
-### 4B. UX Polish (Leads + Accounts tables)
-- Column chooser dropdown (persisted to localStorage)
-- Density toggle (compact/comfortable)
-- Export current filtered view (uses Phase 2 filter state, not all rows)
-- Better empty states with "Create first lead" CTA
-- Inline badges with tooltips
-- Sticky filter bar (CSS)
+**Edited (6)**: `LeadDetailSheet.tsx`, `AccountDetailSheet.tsx`, `useLeads.ts` (deduplicate score helpers, add followup mutation), `useAccountsContacts.ts`, `supabase/functions/leads/index.ts` (discipline), `supabase/functions/accounts/index.ts` (notes/activities + lifecycle fields)
 
-### 4C. Performance
-- Server-side pagination for `list_with_services` (page + pageSize params)
-- Optimistic updates on stage change & owner assign
-- Remove deprecated client-side `computeLeadScore`
+**Migrations (1)**: account lifecycle cols + `account_notes` + `account_activities` tables with RLS
 
----
+## Out of scope (deferred)
 
-## What's NOT in scope (intentionally deferred)
-
-- Opportunities pipeline UI (you previously chose Accounts first; flag for future phase)
-- "At Risk" auto-flag based on multiple failed follow-ups (needs follow-up outcome tracking — small future addition)
-- Email/phone integration (mailto/tel links — trivial polish, can roll into Phase 4 if time)
-
----
-
-## File Impact Summary
-
-| Phase | New files | Edited files | DB migrations |
-|---|---|---|---|
-| 1 | `lib/countries.ts`, `CountryCombobox.tsx`, `AddAccountDialog.tsx`, `AddContactDialog.tsx` | `leads/index.ts`, `accounts/index.ts`, `useLeads.ts`, `useAccountsContacts.ts`, Add/Edit lead dialogs | leads+accounts geo cols, leads score cols |
-| 2 | `LeadsFilterBar.tsx`, `AccountsFilterBar.tsx`, `useSavedViews.ts`, `SavedViewsMenu.tsx` | `LeadsPage.tsx`, `AccountsContactsPage.tsx`, `leads/index.ts` | `lead_saved_views` table |
-| 3 | `LeadCockpitPanel.tsx`, `AccountNotesPanel.tsx`, `AccountActivityTimeline.tsx`, `AddAccountNoteDialog.tsx` | `LeadDetailSheet.tsx`, `AccountDetailSheet.tsx`, `leads/index.ts`, `accounts/index.ts` | account lifecycle cols, `account_notes`, `account_activities` |
-| 4 | `DuplicateCenter.tsx`, `MergeLeadsDialog.tsx`, `ColumnChooser.tsx` | `LeadsTable.tsx`, `LeadsPage.tsx`, `leads/index.ts` | none |
-
----
-
-## Confirmation needed before I start
-
-I will execute **Phase 1 only** in the next turn. Reply "go" (or just approve) and I'll start with the country migration, then Account CRUD, then scoring backend — all in one phase, fully working. After review you can greenlight Phase 2.
-
-If you want a different ordering (e.g., do filters before scoring) or want to drop/add scope, tell me now.
+- Saved Views (Phase 2 leftover) — can pick up after Phase 3 or in Phase 4
+- Real "open tasks count" on cockpit — needs lead↔task linking; will show 0 placeholder
+- Opportunities tab content — placeholder only
 
