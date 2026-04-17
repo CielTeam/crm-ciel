@@ -1044,6 +1044,59 @@ Deno.serve(async (req) => {
       return json({ error: 'id or all=true required' }, 400);
     }
 
+    // ─── SAVED VIEWS ───
+    if (action === 'list_saved_views') {
+      const { data, error } = await admin.from('lead_saved_views')
+        .select('*')
+        .or(`owner_id.eq.${actorId},is_shared.eq.true`)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return json({ views: data || [] });
+    }
+
+    if (action === 'save_view') {
+      const name = sanitize(payload.name, 100);
+      if (!name) return json({ error: 'name required' }, 400);
+      const filters = (typeof payload.filters === 'object' && payload.filters !== null) ? payload.filters : {};
+      const isShared = payload.is_shared === true;
+      const { data, error } = await admin.from('lead_saved_views').insert({
+        owner_id: actorId,
+        name,
+        filters,
+        is_shared: isShared,
+      }).select().single();
+      if (error) throw error;
+      await admin.from('audit_logs').insert({
+        actor_id: actorId, action: 'lead_saved_view.create', target_type: 'lead_saved_view', target_id: data.id,
+        metadata: { name, is_shared: isShared },
+      });
+      return json({ view: data });
+    }
+
+    if (action === 'delete_saved_view') {
+      const { id } = payload;
+      if (!id) return json({ error: 'id required' }, 400);
+      const { data: existing } = await admin.from('lead_saved_views').select('owner_id').eq('id', id).single();
+      if (!existing) return json({ error: 'Not found' }, 404);
+      if (existing.owner_id !== actorId) return json({ error: 'Forbidden' }, 403);
+      await admin.from('lead_saved_views').delete().eq('id', id);
+      return json({ success: true });
+    }
+
+    if (action === 'set_default_view') {
+      const { id } = payload;
+      if (!id) return json({ error: 'id required' }, 400);
+      const { data: existing } = await admin.from('lead_saved_views').select('owner_id, is_default').eq('id', id).single();
+      if (!existing) return json({ error: 'Not found' }, 404);
+      if (existing.owner_id !== actorId) return json({ error: 'Forbidden' }, 403);
+      // Toggle: clear all other defaults for this owner, then set this one
+      await admin.from('lead_saved_views').update({ is_default: false }).eq('owner_id', actorId);
+      if (!existing.is_default) {
+        await admin.from('lead_saved_views').update({ is_default: true }).eq('id', id);
+      }
+      return json({ success: true });
+    }
+
     return json({ error: 'Unknown action' }, 400);
   } catch (err) {
     console.error('leads error:', err);

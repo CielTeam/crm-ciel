@@ -519,3 +519,68 @@ export function useUnconvertLead() {
     onError: (e: Error) => toast.error(e.message),
   });
 }
+
+// ─── Saved Views ───
+
+export interface SavedView {
+  id: string;
+  owner_id: string;
+  name: string;
+  filters: Record<string, unknown>;
+  is_shared: boolean;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export function useSavedViews() {
+  const { user, getToken } = useAuth();
+  return useQuery({
+    queryKey: ['lead-saved-views', user?.id],
+    queryFn: async () => {
+      const token = await getToken();
+      const data = await invokeLeads(token, { action: 'list_saved_views' });
+      return (data.views || []) as SavedView[];
+    },
+    enabled: !!user?.id,
+  });
+}
+
+export function useSaveView() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: { name: string; filters: Record<string, unknown>; is_shared?: boolean }) => {
+      const token = await getToken();
+      return invokeLeads(token, { action: 'save_view', ...payload });
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['lead-saved-views'] }); toast.success('View saved'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useDeleteSavedView() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const token = await getToken();
+      return invokeLeads(token, { action: 'delete_saved_view', id });
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['lead-saved-views'] }); toast.success('View deleted'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useSetDefaultView() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: { id: string }) => {
+      const token = await getToken();
+      return invokeLeads(token, { action: 'set_default_view', ...payload });
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['lead-saved-views'] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
