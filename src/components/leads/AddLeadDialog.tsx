@@ -34,6 +34,7 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
     estimated_value: '', currency: 'USD', probability_percent: '0',
     expected_close_date: '', next_follow_up_at: '',
     industry: '', website: '', secondary_phone: '', city: '', country: '',
+    country_code: '' as string, state_province: '',
   });
   const [solutions, setSolutions] = useState<SolutionRow[]>([]);
   const [duplicates, setDuplicates] = useState<Record<string, unknown>[]>([]);
