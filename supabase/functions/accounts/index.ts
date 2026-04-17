@@ -133,6 +133,42 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action, ...payload } = body;
 
+    // ─── LIST ACCOUNTS (server-side filtering, scoped) ───
+    if (action === 'list_accounts') {
+      const f = (payload.filters || {}) as Record<string, unknown>;
+      let query = admin.from('accounts').select('*').is('deleted_at', null);
+
+      // Scope: chairman/VP see all; head_of_operations sees own + team
+      const isGlobal = roles.some((r: string) => r === 'chairman' || r === 'vice_president');
+      if (!isGlobal) {
+        // Get team member ids for head_of_operations
+        const { data: tm } = await admin.from('team_members').select('team_id').eq('user_id', actorId);
+        const teamIds = (tm || []).map((t: { team_id: string }) => t.team_id);
+        let allowedOwners: string[] = [actorId];
+        if (teamIds.length > 0) {
+          const { data: peers } = await admin.from('team_members').select('user_id').in('team_id', teamIds);
+          allowedOwners = Array.from(new Set([actorId, ...(peers || []).map((p: { user_id: string }) => p.user_id)]));
+        }
+        query = query.in('owner', allowedOwners);
+      }
+
+      if (typeof f.search === 'string' && f.search.trim()) {
+        const s = sanitize(f.search, 100);
+        query = query.or(`name.ilike.%${s}%,email.ilike.%${s}%,industry.ilike.%${s}%`);
+      }
+      if (typeof f.owner === 'string' && f.owner) query = query.eq('owner', f.owner);
+      if (typeof f.country_code === 'string' && isValidCountryCode(f.country_code)) query = query.eq('country_code', f.country_code);
+      if (typeof f.industry === 'string' && f.industry.trim()) query = query.ilike('industry', `%${sanitize(f.industry, 100)}%`);
+      if (typeof f.status === 'string' && VALID_ACCOUNT_STATUS.includes(f.status)) query = query.eq('account_status', f.status);
+      if (typeof f.type === 'string' && VALID_ACCOUNT_TYPE.includes(f.type)) query = query.eq('account_type', f.type);
+      if (typeof f.health === 'string' && VALID_ACCOUNT_HEALTH.includes(f.health)) query = query.eq('account_health', f.health);
+
+      query = query.order('created_at', { ascending: false }).limit(500);
+      const { data, error } = await query;
+      if (error) throw error;
+      return json({ accounts: data || [] });
+    }
+
     // ─── CREATE ACCOUNT ───
     if (action === 'create_account') {
       const name = sanitize(payload.name, 200);

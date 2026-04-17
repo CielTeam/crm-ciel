@@ -1,36 +1,65 @@
 import { useState, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building2, Plus, Search, User, UserPlus, Users } from 'lucide-react';
+import { Building2, Plus, User, UserPlus, Users } from 'lucide-react';
 import { useAccountsWithContacts, type AccountWithContacts, type Contact } from '@/hooks/useAccountsContacts';
 import { AccountDetailSheet } from '@/components/accounts/AccountDetailSheet';
 import { ContactDetailSheet } from '@/components/accounts/ContactDetailSheet';
 import { AddAccountDialog } from '@/components/accounts/AddAccountDialog';
 import { AddContactDialog } from '@/components/accounts/AddContactDialog';
+import { AccountsFilterBar, type AccountFilters } from '@/components/accounts/AccountsFilterBar';
+import { cn } from '@/lib/utils';
+
+const STATUS_STYLES: Record<string, string> = {
+  active: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
+  inactive: 'bg-muted text-muted-foreground border-border',
+  pending: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30',
+};
+const TYPE_STYLES: Record<string, string> = {
+  prospect: 'bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30',
+  customer: 'bg-primary/15 text-primary border-primary/30',
+  partner: 'bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-500/30',
+};
+const HEALTH_STYLES: Record<string, string> = {
+  healthy: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
+  at_risk: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30',
+  critical: 'bg-destructive/15 text-destructive border-destructive/30',
+};
+
+function LifecycleBadge({ value, kind }: { value?: string | null; kind: 'status' | 'type' | 'health' }) {
+  if (!value) return <span className="text-muted-foreground text-xs">—</span>;
+  const map = kind === 'status' ? STATUS_STYLES : kind === 'type' ? TYPE_STYLES : HEALTH_STYLES;
+  return (
+    <Badge variant="outline" className={cn('text-xs capitalize', map[value] || '')}>
+      {value.replace('_', ' ')}
+    </Badge>
+  );
+}
 
 export default function AccountsContactsPage() {
-  const { data: accounts, contacts, isLoading } = useAccountsWithContacts();
-  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<AccountFilters>({});
+  const { data: accounts, contacts, isLoading } = useAccountsWithContacts(filters);
   const [tab, setTab] = useState('accounts');
   const [selectedAccount, setSelectedAccount] = useState<AccountWithContacts | null>(null);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [addContactOpen, setAddContactOpen] = useState(false);
 
-  const q = search.toLowerCase();
-
-  const filteredAccounts = useMemo(
-    () => accounts.filter((a) => a.name.toLowerCase().includes(q) || a.industry?.toLowerCase().includes(q) || a.email?.toLowerCase().includes(q)),
-    [accounts, q],
-  );
-
+  // Server filters apply to accounts list. Apply search to contacts client-side.
+  const q = (filters.search || '').toLowerCase();
   const filteredContacts = useMemo(
-    () => contacts.filter((c) => `${c.first_name} ${c.last_name}`.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q) || c.job_title?.toLowerCase().includes(q)),
+    () =>
+      contacts.filter(
+        (c) =>
+          !q ||
+          `${c.first_name} ${c.last_name}`.toLowerCase().includes(q) ||
+          c.email?.toLowerCase().includes(q) ||
+          c.job_title?.toLowerCase().includes(q),
+      ),
     [contacts, q],
   );
 
@@ -61,17 +90,11 @@ export default function AccountsContactsPage() {
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
-        <div className="relative max-w-md flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by name, email, industry..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+      <div className="flex flex-col lg:flex-row gap-3 lg:items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <AccountsFilterBar filters={filters} onChange={setFilters} />
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0">
           <Button variant="outline" size="sm" onClick={() => setAddContactOpen(true)}>
             <UserPlus className="h-4 w-4 mr-1.5" /> New Contact
           </Button>
@@ -85,7 +108,7 @@ export default function AccountsContactsPage() {
         <TabsList>
           <TabsTrigger value="accounts">
             <Building2 className="h-4 w-4 mr-1.5" />
-            Accounts ({filteredAccounts.length})
+            Accounts ({accounts.length})
           </TabsTrigger>
           <TabsTrigger value="contacts">
             <User className="h-4 w-4 mr-1.5" />
@@ -96,7 +119,7 @@ export default function AccountsContactsPage() {
         <TabsContent value="accounts" className="mt-4">
           {isLoading ? (
             <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-          ) : filteredAccounts.length === 0 ? (
+          ) : accounts.length === 0 ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">No accounts found.</CardContent></Card>
           ) : (
             <Card>
@@ -105,17 +128,21 @@ export default function AccountsContactsPage() {
                   <TableRow>
                     <TableHead>Company</TableHead>
                     <TableHead>Industry</TableHead>
-                    <TableHead>Email</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Health</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead className="text-right">Contacts</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredAccounts.map((a) => (
+                  {accounts.map((a) => (
                     <TableRow key={a.id} className="cursor-pointer" onClick={() => setSelectedAccount(a)}>
                       <TableCell className="font-medium">{a.name}</TableCell>
-                      <TableCell>{a.industry ? <Badge variant="outline" className="text-xs">{a.industry}</Badge> : '—'}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{a.email || '—'}</TableCell>
+                      <TableCell>{a.industry ? <Badge variant="outline" className="text-xs">{a.industry}</Badge> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
+                      <TableCell><LifecycleBadge value={a.account_status} kind="status" /></TableCell>
+                      <TableCell><LifecycleBadge value={a.account_type} kind="type" /></TableCell>
+                      <TableCell><LifecycleBadge value={a.account_health} kind="health" /></TableCell>
                       <TableCell className="text-sm">{[a.city, a.state_province, a.country_name || a.country].filter(Boolean).join(', ') || '—'}</TableCell>
                       <TableCell className="text-right">{a.contacts.length}</TableCell>
                     </TableRow>

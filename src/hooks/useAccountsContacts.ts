@@ -72,11 +72,32 @@ export interface AccountWithContacts extends Account {
   contacts: Contact[];
 }
 
-export function useAccounts() {
-  const { user } = useAuth();
+export interface AccountListFilters {
+  search?: string;
+  owner?: string;
+  country_code?: string;
+  industry?: string;
+  status?: string;
+  type?: string;
+  health?: string;
+}
+
+function hasActiveFilters(f?: AccountListFilters): boolean {
+  if (!f) return false;
+  return Boolean(f.search || f.owner || f.country_code || f.industry || f.status || f.type || f.health);
+}
+
+export function useAccounts(filters?: AccountListFilters) {
+  const { user, getToken } = useAuth();
+  const useServer = hasActiveFilters(filters);
   return useQuery({
-    queryKey: ['accounts'],
+    queryKey: ['accounts', filters || {}],
     queryFn: async () => {
+      if (useServer) {
+        const token = await getToken();
+        const data = await invokeAccounts(token, { action: 'list_accounts', filters });
+        return (data.accounts ?? []) as Account[];
+      }
       const { data, error } = await supabase
         .from('accounts')
         .select('*')
@@ -106,8 +127,8 @@ export function useContacts() {
   });
 }
 
-export function useAccountsWithContacts() {
-  const { data: accounts, isLoading: accLoading } = useAccounts();
+export function useAccountsWithContacts(filters?: AccountListFilters) {
+  const { data: accounts, isLoading: accLoading } = useAccounts(filters);
   const { data: contacts, isLoading: conLoading } = useContacts();
 
   const merged: AccountWithContacts[] = (accounts ?? []).map((a) => ({
