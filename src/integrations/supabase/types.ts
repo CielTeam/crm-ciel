@@ -14,8 +14,102 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_activities: {
+        Row: {
+          account_id: string
+          activity_type: string
+          actor_id: string
+          changes: Json
+          created_at: string
+          id: string
+          metadata: Json
+          title: string
+        }
+        Insert: {
+          account_id: string
+          activity_type: string
+          actor_id: string
+          changes?: Json
+          created_at?: string
+          id?: string
+          metadata?: Json
+          title: string
+        }
+        Update: {
+          account_id?: string
+          activity_type?: string
+          actor_id?: string
+          changes?: Json
+          created_at?: string
+          id?: string
+          metadata?: Json
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_activities_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      account_notes: {
+        Row: {
+          account_id: string
+          author_id: string
+          contact_date: string | null
+          content: string
+          created_at: string
+          deleted_at: string | null
+          duration_minutes: number | null
+          id: string
+          next_step: string | null
+          note_type: string
+          outcome: string | null
+        }
+        Insert: {
+          account_id: string
+          author_id: string
+          contact_date?: string | null
+          content: string
+          created_at?: string
+          deleted_at?: string | null
+          duration_minutes?: number | null
+          id?: string
+          next_step?: string | null
+          note_type?: string
+          outcome?: string | null
+        }
+        Update: {
+          account_id?: string
+          author_id?: string
+          contact_date?: string | null
+          content?: string
+          created_at?: string
+          deleted_at?: string | null
+          duration_minutes?: number | null
+          id?: string
+          next_step?: string | null
+          note_type?: string
+          outcome?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_notes_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       accounts: {
         Row: {
+          account_health: string
+          account_status: string
+          account_type: string
           city: string | null
           country: string | null
           country_code: string | null
@@ -37,6 +131,9 @@ export type Database = {
           website: string | null
         }
         Insert: {
+          account_health?: string
+          account_status?: string
+          account_type?: string
           city?: string | null
           country?: string | null
           country_code?: string | null
@@ -58,6 +155,9 @@ export type Database = {
           website?: string | null
         }
         Update: {
+          account_health?: string
+          account_status?: string
+          account_type?: string
           city?: string | null
           country?: string | null
           country_code?: string | null
