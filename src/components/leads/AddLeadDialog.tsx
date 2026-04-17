@@ -10,6 +10,8 @@ import { Plus, X, AlertTriangle, Building2, User, TrendingUp } from 'lucide-reac
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { CountryCombobox } from '@/components/shared/CountryCombobox';
+import { getCountryName } from '@/lib/countries';
 
 const SERVICE_TYPES = ['SSL Certificate', 'Digital Certificate', 'Digital Signature', 'ACME', 'Domain Registration', 'Web Hosting', 'Email Security', 'Code Signing', 'Custom'];
 
