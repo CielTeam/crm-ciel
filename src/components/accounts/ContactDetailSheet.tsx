@@ -24,6 +24,7 @@ export function ContactDetailSheet({ contact, accountName, open, onOpenChange }:
     first_name: '', last_name: '', email: '', phone: '', secondary_phone: '', job_title: '', notes: '',
   });
   const updateContact = useUpdateContact();
+  const deleteContact = useDeleteContact();
 
   useEffect(() => {
     if (contact) {
