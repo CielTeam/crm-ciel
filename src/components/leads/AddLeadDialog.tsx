@@ -67,7 +67,7 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
   const validSolutions = solutions.filter(s => s.service_name.trim() && s.expiry_date);
 
   const resetForm = () => {
-    setForm({ company_name: '', contact_name: '', contact_email: '', contact_phone: '', status: 'potential', source: '', notes: '', stage: 'new', estimated_value: '', currency: 'USD', probability_percent: '0', expected_close_date: '', next_follow_up_at: '', industry: '', website: '', secondary_phone: '', city: '', country: '' });
+    setForm({ company_name: '', contact_name: '', contact_email: '', contact_phone: '', status: 'potential', source: '', notes: '', stage: 'new', estimated_value: '', currency: 'USD', probability_percent: '0', expected_close_date: '', next_follow_up_at: '', industry: '', website: '', secondary_phone: '', city: '', country: '', country_code: '', state_province: '' });
     setSolutions([]);
     setDuplicates([]);
   };
