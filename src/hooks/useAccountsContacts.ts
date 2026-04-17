@@ -22,6 +22,33 @@ export interface Account {
   created_by: string;
   created_at: string;
   updated_at: string;
+  account_status: string;
+  account_type: string;
+  account_health: string;
+}
+
+export interface AccountNote {
+  id: string;
+  account_id: string;
+  author_id: string;
+  note_type: string;
+  content: string;
+  outcome: string | null;
+  next_step: string | null;
+  contact_date: string | null;
+  duration_minutes: number | null;
+  created_at: string;
+}
+
+export interface AccountActivity {
+  id: string;
+  account_id: string;
+  actor_id: string;
+  activity_type: string;
+  title: string;
+  changes: Record<string, { old: unknown; new: unknown }>;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface Contact {
