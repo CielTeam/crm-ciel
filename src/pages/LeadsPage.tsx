@@ -88,6 +88,8 @@ export default function LeadsPage() {
 
       <LeadStatsCards />
 
+      <LeadsFilterBar filters={filters} onChange={setFilters} />
+
       {selectedIds.size > 0 && leads && (
         <LeadsBulkActions
           selectedIds={selectedIds}
