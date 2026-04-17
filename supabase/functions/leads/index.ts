@@ -579,6 +579,7 @@ Deno.serve(async (req) => {
 
       await logActivity(admin, lead_id, actorId, 'note_added', `${type.replace('_', ' ')} added`, {}, { note_id: data.id, note_type: type });
 
+      await recomputeAndSaveScore(admin, lead_id);
       return json({ note: data }, 201);
     }
 
