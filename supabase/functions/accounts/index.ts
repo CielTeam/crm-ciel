@@ -169,6 +169,28 @@ Deno.serve(async (req) => {
       return json({ accounts: data || [] });
     }
 
+    // ─── LIST CONTACTS (server-side, scoped — mirrors list_accounts scope) ───
+    if (action === 'list_contacts') {
+      let query = admin.from('contacts').select('*').is('deleted_at', null);
+
+      const isGlobal = roles.some((r: string) => r === 'chairman' || r === 'vice_president');
+      if (!isGlobal) {
+        const { data: tm } = await admin.from('team_members').select('team_id').eq('user_id', actorId);
+        const teamIds = (tm || []).map((t: { team_id: string }) => t.team_id);
+        let allowedOwners: string[] = [actorId];
+        if (teamIds.length > 0) {
+          const { data: peers } = await admin.from('team_members').select('user_id').in('team_id', teamIds);
+          allowedOwners = Array.from(new Set([actorId, ...(peers || []).map((p: { user_id: string }) => p.user_id)]));
+        }
+        query = query.in('owner', allowedOwners);
+      }
+
+      query = query.order('created_at', { ascending: false }).limit(1000);
+      const { data, error } = await query;
+      if (error) throw error;
+      return json({ contacts: data || [] });
+    }
+
     // ─── CREATE ACCOUNT ───
     if (action === 'create_account') {
       const name = sanitize(payload.name, 200);

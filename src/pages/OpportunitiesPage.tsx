@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Briefcase, Plus, Search, TrendingUp, DollarSign } from 'lucide-react';
+import { Briefcase, Plus, Search, TrendingUp, DollarSign, Download } from 'lucide-react';
 import { useOpportunities, OPPORTUNITY_STAGES, type Opportunity } from '@/hooks/useOpportunities';
 import { useAccounts } from '@/hooks/useAccountsContacts';
 import { OpportunityDetailSheet } from '@/components/opportunities/OpportunityDetailSheet';
 import { AddOpportunityDialog } from '@/components/opportunities/AddOpportunityDialog';
+import { rowsToCsv, downloadCsv, buildFilterSummary, buildExportFilename } from '@/lib/csv';
 
 export default function OpportunitiesPage() {
   const { data: opportunities, isLoading } = useOpportunities();
@@ -41,6 +42,24 @@ export default function OpportunitiesPage() {
     };
   }, [opportunities]);
 
+  const handleExport = () => {
+    if (filtered.length === 0) return;
+    const headers = ['Name', 'Account', 'Stage', 'Value', 'Currency', 'Weighted forecast', 'Probability %', 'Close date', 'Created'];
+    const rows = filtered.map(o => [
+      o.name,
+      o.account_id ? accountMap[o.account_id] || '' : '',
+      o.stage,
+      o.estimated_value ?? '',
+      o.currency,
+      o.weighted_forecast ?? '',
+      o.probability_percent,
+      o.expected_close_date || '',
+      o.created_at.slice(0, 10),
+    ]);
+    const summary = buildFilterSummary([search]);
+    downloadCsv(rowsToCsv(headers, rows), buildExportFilename('opportunities', summary));
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -48,9 +67,14 @@ export default function OpportunitiesPage() {
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Opportunities</h1>
           <p className="text-sm text-muted-foreground">Sales pipeline tracking</p>
         </div>
-        <Button onClick={() => setAddOpen(true)}>
-          <Plus className="h-4 w-4 mr-1.5" /> New Opportunity
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExport} disabled={filtered.length === 0}>
+            <Download className="h-4 w-4 mr-1.5" /> Export
+          </Button>
+          <Button onClick={() => setAddOpen(true)}>
+            <Plus className="h-4 w-4 mr-1.5" /> New Opportunity
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

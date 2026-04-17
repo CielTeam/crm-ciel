@@ -16,6 +16,7 @@ import { ConvertLeadDialog } from './ConvertLeadDialog';
 import { LeadActivityTimeline } from './LeadActivityTimeline';
 import { LeadNotesPanel } from './LeadNotesPanel';
 import { LeadCockpitPanel } from './LeadCockpitPanel';
+import { DocumentsTab } from '@/components/shared/DocumentsTab';
 import { format, differenceInDays } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
@@ -262,11 +263,7 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
                 </TabsContent>
 
                 <TabsContent value="files" className="mt-4">
-                  <div className="text-center py-12 text-muted-foreground">
-                    <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                    <p className="text-sm font-medium">Files & Documents</p>
-                    <p className="text-xs mt-1">Attached files will appear here in a future update.</p>
-                  </div>
+                  <DocumentsTab entityType="lead" entityId={lead.id} />
                 </TabsContent>
 
                 <TabsContent value="quotes" className="mt-4">

@@ -5,13 +5,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building2, Plus, User, UserPlus, Users } from 'lucide-react';
+import { Building2, Plus, User, UserPlus, Users, Download } from 'lucide-react';
 import { useAccountsWithContacts, type AccountWithContacts, type Contact } from '@/hooks/useAccountsContacts';
 import { AccountDetailSheet } from '@/components/accounts/AccountDetailSheet';
 import { ContactDetailSheet } from '@/components/accounts/ContactDetailSheet';
 import { AddAccountDialog } from '@/components/accounts/AddAccountDialog';
 import { AddContactDialog } from '@/components/accounts/AddContactDialog';
 import { AccountsFilterBar, type AccountFilters } from '@/components/accounts/AccountsFilterBar';
+import { rowsToCsv, downloadCsv, buildFilterSummary, buildExportFilename } from '@/lib/csv';
 import { cn } from '@/lib/utils';
 
 const STATUS_STYLES: Record<string, string> = {
@@ -69,6 +70,33 @@ export default function AccountsContactsPage() {
     return m;
   }, [accounts]);
 
+  const handleExport = () => {
+    if (tab === 'contacts') {
+      if (filteredContacts.length === 0) return;
+      const headers = ['First name', 'Last name', 'Email', 'Phone', 'Job title', 'Account', 'Created'];
+      const rows = filteredContacts.map(c => [
+        c.first_name, c.last_name, c.email || '', c.phone || '', c.job_title || '',
+        c.account_id ? accountNameMap[c.account_id] || '' : '',
+        c.created_at.slice(0, 10),
+      ]);
+      const summary = buildFilterSummary([filters.search]);
+      downloadCsv(rowsToCsv(headers, rows), buildExportFilename('contacts', summary));
+      return;
+    }
+    if (accounts.length === 0) return;
+    const headers = ['Name', 'Industry', 'Status', 'Type', 'Health', 'Email', 'Phone', 'Website', 'City', 'Country', 'Contacts', 'Created'];
+    const rows = accounts.map(a => [
+      a.name, a.industry || '', a.account_status, a.account_type, a.account_health,
+      a.email || '', a.phone || '', a.website || '', a.city || '',
+      a.country_name || a.country || '', String(a.contacts.length), a.created_at.slice(0, 10),
+    ]);
+    const summary = buildFilterSummary([
+      filters.status, filters.type, filters.health, filters.country_code,
+      filters.industry, filters.search,
+    ]);
+    downloadCsv(rowsToCsv(headers, rows), buildExportFilename('accounts', summary));
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -95,6 +123,9 @@ export default function AccountsContactsPage() {
           <AccountsFilterBar filters={filters} onChange={setFilters} />
         </div>
         <div className="flex gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={accounts.length === 0}>
+            <Download className="h-4 w-4 mr-1.5" /> Export
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setAddContactOpen(true)}>
             <UserPlus className="h-4 w-4 mr-1.5" /> New Contact
           </Button>

@@ -11,10 +11,17 @@ import { LeadDetailSheet } from '@/components/leads/LeadDetailSheet';
 import { AddLeadDialog } from '@/components/leads/AddLeadDialog';
 import { EditLeadDialog } from '@/components/leads/EditLeadDialog';
 import { LeadsFilterBar, type LeadFilters } from '@/components/leads/LeadsFilterBar';
+import { RecomputeScoresButton } from '@/components/leads/RecomputeScoresButton';
 import { useLeadsWithServices, LEAD_STAGES, type Lead } from '@/hooks/useLeads';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { useAuth } from '@/contexts/AuthContext';
+import { ADMIN_ROLES } from '@/types/roles';
+import { rowsToCsv, downloadCsv, buildFilterSummary, buildExportFilename } from '@/lib/csv';
 
 export default function LeadsPage() {
+  const { roles } = useAuth();
+  const isAdmin = roles.some(r => ADMIN_ROLES.includes(r));
+
   const [tab, setTab] = useState('all');
   const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'analytics'>('table');
   const [addOpen, setAddOpen] = useState(false);
@@ -48,14 +55,18 @@ export default function LeadsPage() {
       l.probability_percent?.toString() || '0',
       (l.services || []).map(s => s.service_name).join('; '), l.created_at.slice(0, 10),
     ]);
-    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `leads-export-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const csv = rowsToCsv(headers, rows);
+    const summary = buildFilterSummary([
+      stageFilter,
+      filters.score_bands?.join('-'),
+      filters.country_code,
+      filters.source,
+      filters.industry,
+      filters.search,
+      filters.converted === true && 'converted',
+      filters.converted === false && 'open',
+    ]);
+    downloadCsv(csv, buildExportFilename('leads', summary));
   };
 
   return (
@@ -79,6 +90,7 @@ export default function LeadsPage() {
               <BarChart3 className="h-4 w-4" />
             </ToggleGroupItem>
           </ToggleGroup>
+          {isAdmin && <RecomputeScoresButton leadCount={leads?.length || 0} />}
           <Button variant="outline" onClick={handleExport} disabled={!leads || leads.length === 0}>
             <Download className="h-4 w-4 mr-2" />Export
           </Button>

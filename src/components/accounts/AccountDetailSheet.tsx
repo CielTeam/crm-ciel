@@ -9,12 +9,13 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Building2, Globe, Mail, MapPin, Phone, User, Pencil, Save, X, Trash2, Phone as PhoneIcon, Users, StickyNote, AlertTriangle } from 'lucide-react';
+import { Building2, Globe, Mail, MapPin, Phone, User, Pencil, Save, X, Trash2, Phone as PhoneIcon, Users, StickyNote, AlertTriangle, FileText } from 'lucide-react';
 import { useUpdateAccount, useDeleteAccount, useAccountActivities } from '@/hooks/useAccountsContacts';
 import type { AccountWithContacts } from '@/hooks/useAccountsContacts';
 import { CountryCombobox } from '@/components/shared/CountryCombobox';
 import { AccountNotesPanel } from './AccountNotesPanel';
 import { AccountActivityTimeline } from './AccountActivityTimeline';
+import { DocumentsTab } from '@/components/shared/DocumentsTab';
 import { toast } from 'sonner';
 
 interface Props {
@@ -252,10 +253,11 @@ export function AccountDetailSheet({ account, open, onOpenChange }: Props) {
         )}
 
         <Tabs value={tab} onValueChange={setTab} className="mt-5">
-          <TabsList className="grid grid-cols-4 w-full">
+          <TabsList className="grid grid-cols-5 w-full">
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="contacts">Contacts ({account.contacts.length})</TabsTrigger>
             <TabsTrigger value="notes">Notes</TabsTrigger>
+            <TabsTrigger value="documents"><FileText className="h-3.5 w-3.5 mr-1" />Docs</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
           </TabsList>
 
@@ -410,6 +412,10 @@ export function AccountDetailSheet({ account, open, onOpenChange }: Props) {
               prefillNoteType={prefillNoteType}
               onPrefillConsumed={() => setPrefillNoteType(null)}
             />
+          </TabsContent>
+
+          <TabsContent value="documents" className="mt-4">
+            <DocumentsTab entityType="account" entityId={account.id} />
           </TabsContent>
 
           <TabsContent value="activity" className="mt-4">

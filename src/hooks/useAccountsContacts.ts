@@ -89,39 +89,28 @@ function hasActiveFilters(f?: AccountListFilters): boolean {
 
 export function useAccounts(filters?: AccountListFilters) {
   const { user, getToken } = useAuth();
-  const useServer = hasActiveFilters(filters);
+  // Always go through the edge function so the Auth0 JWT (sub claim) is forwarded
+  // to PostgREST via the service role. Direct supabase.from() calls would lack
+  // the x-auth0-sub header and fail RLS (returning empty results).
   return useQuery({
     queryKey: ['accounts', filters || {}],
     queryFn: async () => {
-      if (useServer) {
-        const token = await getToken();
-        const data = await invokeAccounts(token, { action: 'list_accounts', filters });
-        return (data.accounts ?? []) as Account[];
-      }
-      const { data, error } = await supabase
-        .from('accounts')
-        .select('*')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return (data ?? []) as Account[];
+      const token = await getToken();
+      const data = await invokeAccounts(token, { action: 'list_accounts', filters: filters || {} });
+      return (data.accounts ?? []) as Account[];
     },
     enabled: !!user,
   });
 }
 
 export function useContacts() {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
   return useQuery({
     queryKey: ['contacts'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('*')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return (data ?? []) as Contact[];
+      const token = await getToken();
+      const data = await invokeAccounts(token, { action: 'list_contacts' });
+      return (data.contacts ?? []) as Contact[];
     },
     enabled: !!user,
   });
