@@ -18,6 +18,8 @@ export type Database = {
         Row: {
           city: string | null
           country: string | null
+          country_code: string | null
+          country_name: string | null
           created_at: string
           created_by: string
           deleted_at: string | null
@@ -29,6 +31,7 @@ export type Database = {
           owner: string
           phone: string | null
           source_lead_id: string | null
+          state_province: string | null
           tags: string[]
           updated_at: string
           website: string | null
@@ -36,6 +39,8 @@ export type Database = {
         Insert: {
           city?: string | null
           country?: string | null
+          country_code?: string | null
+          country_name?: string | null
           created_at?: string
           created_by: string
           deleted_at?: string | null
@@ -47,6 +52,7 @@ export type Database = {
           owner: string
           phone?: string | null
           source_lead_id?: string | null
+          state_province?: string | null
           tags?: string[]
           updated_at?: string
           website?: string | null
@@ -54,6 +60,8 @@ export type Database = {
         Update: {
           city?: string | null
           country?: string | null
+          country_code?: string | null
+          country_name?: string | null
           created_at?: string
           created_by?: string
           deleted_at?: string | null
@@ -65,6 +73,7 @@ export type Database = {
           owner?: string
           phone?: string | null
           source_lead_id?: string | null
+          state_province?: string | null
           tags?: string[]
           updated_at?: string
           website?: string | null
@@ -428,6 +437,8 @@ export type Database = {
           converted_to_id: string | null
           converted_to_type: string | null
           country: string | null
+          country_code: string | null
+          country_name: string | null
           created_at: string
           created_by: string
           currency: string
@@ -447,9 +458,13 @@ export type Database = {
           normalized_phone: string | null
           notes: string | null
           probability_percent: number
+          score: number
+          score_band: string
+          score_updated_at: string | null
           secondary_phone: string | null
           source: string | null
           stage: Database["public"]["Enums"]["lead_stage"]
+          state_province: string | null
           status: string
           tags: string[]
           updated_at: string
@@ -469,6 +484,8 @@ export type Database = {
           converted_to_id?: string | null
           converted_to_type?: string | null
           country?: string | null
+          country_code?: string | null
+          country_name?: string | null
           created_at?: string
           created_by: string
           currency?: string
@@ -488,9 +505,13 @@ export type Database = {
           normalized_phone?: string | null
           notes?: string | null
           probability_percent?: number
+          score?: number
+          score_band?: string
+          score_updated_at?: string | null
           secondary_phone?: string | null
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
+          state_province?: string | null
           status?: string
           tags?: string[]
           updated_at?: string
@@ -510,6 +531,8 @@ export type Database = {
           converted_to_id?: string | null
           converted_to_type?: string | null
           country?: string | null
+          country_code?: string | null
+          country_name?: string | null
           created_at?: string
           created_by?: string
           currency?: string
@@ -529,9 +552,13 @@ export type Database = {
           normalized_phone?: string | null
           notes?: string | null
           probability_percent?: number
+          score?: number
+          score_band?: string
+          score_updated_at?: string | null
           secondary_phone?: string | null
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
+          state_province?: string | null
           status?: string
           tags?: string[]
           updated_at?: string

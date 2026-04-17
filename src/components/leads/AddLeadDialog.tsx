@@ -10,6 +10,8 @@ import { Plus, X, AlertTriangle, Building2, User, TrendingUp } from 'lucide-reac
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { CountryCombobox } from '@/components/shared/CountryCombobox';
+import { getCountryName } from '@/lib/countries';
 
 const SERVICE_TYPES = ['SSL Certificate', 'Digital Certificate', 'Digital Signature', 'ACME', 'Domain Registration', 'Web Hosting', 'Email Security', 'Code Signing', 'Custom'];
 
@@ -32,6 +34,7 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
     estimated_value: '', currency: 'USD', probability_percent: '0',
     expected_close_date: '', next_follow_up_at: '',
     industry: '', website: '', secondary_phone: '', city: '', country: '',
+    country_code: '' as string, state_province: '',
   });
   const [solutions, setSolutions] = useState<SolutionRow[]>([]);
   const [duplicates, setDuplicates] = useState<Record<string, unknown>[]>([]);
@@ -64,7 +67,7 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
   const validSolutions = solutions.filter(s => s.service_name.trim() && s.expiry_date);
 
   const resetForm = () => {
-    setForm({ company_name: '', contact_name: '', contact_email: '', contact_phone: '', status: 'potential', source: '', notes: '', stage: 'new', estimated_value: '', currency: 'USD', probability_percent: '0', expected_close_date: '', next_follow_up_at: '', industry: '', website: '', secondary_phone: '', city: '', country: '' });
+    setForm({ company_name: '', contact_name: '', contact_email: '', contact_phone: '', status: 'potential', source: '', notes: '', stage: 'new', estimated_value: '', currency: 'USD', probability_percent: '0', expected_close_date: '', next_follow_up_at: '', industry: '', website: '', secondary_phone: '', city: '', country: '', country_code: '', state_province: '' });
     setSolutions([]);
     setDuplicates([]);
   };
@@ -92,7 +95,10 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
           website: form.website || null,
           secondary_phone: form.secondary_phone || null,
           city: form.city || null,
-          country: form.country || null,
+          country: form.country_code ? getCountryName(form.country_code) : (form.country || null),
+          country_code: form.country_code || null,
+          country_name: form.country_code ? getCountryName(form.country_code) : null,
+          state_province: form.state_province || null,
         } as Partial<Lead>, {
           onSuccess: (data) => resolve(data),
           onError: (err) => reject(err),
@@ -156,11 +162,16 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
               </div>
               <div className="grid grid-cols-3 gap-3 mt-2">
                 <div><Label className="text-xs">Website</Label><Input value={form.website} onChange={(e) => setForm(f => ({ ...f, website: e.target.value }))} placeholder="https://..." /></div>
-                <div><Label className="text-xs">Country</Label><Input value={form.country} onChange={(e) => setForm(f => ({ ...f, country: e.target.value }))} /></div>
-                <div><Label className="text-xs">City</Label><Input value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} /></div>
+                <div><Label className="text-xs">Country *</Label>
+                  <CountryCombobox value={form.country_code || null} onChange={(code) => setForm(f => ({ ...f, country_code: code || '' }))} required />
+                </div>
+                <div><Label className="text-xs">State / Province</Label><Input value={form.state_province} onChange={(e) => setForm(f => ({ ...f, state_province: e.target.value }))} /></div>
               </div>
               <div className="grid grid-cols-2 gap-3 mt-2">
+                <div><Label className="text-xs">City</Label><Input value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} /></div>
                 <div><Label className="text-xs">Source</Label><Input value={form.source} onChange={(e) => setForm(f => ({ ...f, source: e.target.value }))} placeholder="e.g. Referral, Website" /></div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 mt-2">
                 <div><Label className="text-xs">Status</Label>
                   <Select value={form.status} onValueChange={(v) => setForm(f => ({ ...f, status: v }))}>
                     <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>

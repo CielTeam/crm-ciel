@@ -70,6 +70,9 @@ export interface Lead {
   secondary_phone: string | null;
   city: string | null;
   country: string | null;
+  country_code: string | null;
+  country_name: string | null;
+  state_province: string | null;
   tags: string[];
   lost_reason_code: LeadLostReason | null;
   lost_notes: string | null;
@@ -78,6 +81,9 @@ export interface Lead {
   converted_at: string | null;
   converted_to_type: string | null;
   converted_to_id: string | null;
+  score: number;
+  score_band: 'hot' | 'warm' | 'cold';
+  score_updated_at: string | null;
   services?: LeadService[];
 }
 

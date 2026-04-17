@@ -82,6 +82,10 @@ function sanitize(val: unknown, maxLen: number): string {
   return val.replace(/<[^>]*>/g, '').trim().substring(0, maxLen);
 }
 
+function isValidCountryCode(v: unknown): v is string {
+  return typeof v === 'string' && /^[A-Z]{2}$/.test(v);
+}
+
 // ─── Edge Function ───
 
 Deno.serve(async (req) => {
@@ -106,6 +110,114 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action, ...payload } = body;
 
+    // ─── CREATE ACCOUNT ───
+    if (action === 'create_account') {
+      const name = sanitize(payload.name, 200);
+      if (!name) return json({ error: 'Name is required' }, 400);
+
+      const insertData: Record<string, unknown> = {
+        name,
+        industry: sanitize(payload.industry, 100) || null,
+        email: sanitize(payload.email, 255) || null,
+        phone: sanitize(payload.phone, 50) || null,
+        website: sanitize(payload.website, 500) || null,
+        city: sanitize(payload.city, 255) || null,
+        country: sanitize(payload.country, 255) || null,
+        country_code: isValidCountryCode(payload.country_code) ? payload.country_code : null,
+        country_name: sanitize(payload.country_name, 255) || null,
+        state_province: sanitize(payload.state_province, 255) || null,
+        notes: sanitize(payload.notes, 5000) || null,
+        tags: Array.isArray(payload.tags) ? payload.tags.map((t: string) => sanitize(t, 50)).filter(Boolean) : [],
+        owner: payload.owner || actorId,
+        created_by: actorId,
+      };
+
+      const { data, error } = await admin.from('accounts').insert(insertData).select().single();
+      if (error) throw error;
+
+      await admin.from('audit_logs').insert({
+        actor_id: actorId,
+        action: 'account.created',
+        target_type: 'account',
+        target_id: data.id,
+        metadata: { name },
+      });
+
+      return json({ account: data }, 201);
+    }
+
+    // ─── DELETE ACCOUNT (soft) ───
+    if (action === 'delete_account') {
+      const { id } = payload;
+      if (!id) return json({ error: 'Missing account id' }, 400);
+
+      const { error } = await admin.from('accounts').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+      if (error) throw error;
+
+      // Soft-delete linked contacts as well
+      await admin.from('contacts').update({ deleted_at: new Date().toISOString() }).eq('account_id', id);
+
+      await admin.from('audit_logs').insert({
+        actor_id: actorId,
+        action: 'account.deleted',
+        target_type: 'account',
+        target_id: id,
+      });
+
+      return json({ success: true });
+    }
+
+    // ─── CREATE CONTACT ───
+    if (action === 'create_contact') {
+      const first_name = sanitize(payload.first_name, 100);
+      const last_name = sanitize(payload.last_name, 100);
+      if (!first_name || !last_name) return json({ error: 'First and last name are required' }, 400);
+
+      const insertData: Record<string, unknown> = {
+        first_name,
+        last_name,
+        email: sanitize(payload.email, 255) || null,
+        phone: sanitize(payload.phone, 50) || null,
+        secondary_phone: sanitize(payload.secondary_phone, 50) || null,
+        job_title: sanitize(payload.job_title, 100) || null,
+        notes: sanitize(payload.notes, 5000) || null,
+        account_id: payload.account_id || null,
+        owner: payload.owner || actorId,
+        created_by: actorId,
+      };
+
+      const { data, error } = await admin.from('contacts').insert(insertData).select().single();
+      if (error) throw error;
+
+      await admin.from('audit_logs').insert({
+        actor_id: actorId,
+        action: 'contact.created',
+        target_type: 'contact',
+        target_id: data.id,
+        metadata: { name: `${first_name} ${last_name}` },
+      });
+
+      return json({ contact: data }, 201);
+    }
+
+    // ─── DELETE CONTACT (soft) ───
+    if (action === 'delete_contact') {
+      const { id } = payload;
+      if (!id) return json({ error: 'Missing contact id' }, 400);
+
+      const { error } = await admin.from('contacts').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+      if (error) throw error;
+
+      await admin.from('audit_logs').insert({
+        actor_id: actorId,
+        action: 'contact.deleted',
+        target_type: 'contact',
+        target_id: id,
+      });
+
+      return json({ success: true });
+    }
+
     // ─── UPDATE ACCOUNT ───
     if (action === 'update_account') {
       const { id, ...fields } = payload;
@@ -115,7 +227,7 @@ Deno.serve(async (req) => {
       if (fetchErr || !existing) return json({ error: 'Account not found' }, 404);
 
       const updates: Record<string, unknown> = {};
-      const allowedFields = ['name', 'industry', 'email', 'phone', 'website', 'city', 'country', 'notes', 'tags'];
+      const allowedFields = ['name', 'industry', 'email', 'phone', 'website', 'city', 'country', 'country_code', 'country_name', 'state_province', 'notes', 'tags'];
 
       for (const key of allowedFields) {
         if (key in fields) {
@@ -125,6 +237,8 @@ Deno.serve(async (req) => {
             const val = sanitize(fields[key], 200);
             if (!val) return json({ error: 'Name is required' }, 400);
             updates[key] = val;
+          } else if (key === 'country_code') {
+            updates[key] = fields[key] === null ? null : (isValidCountryCode(fields[key]) ? fields[key] : null);
           } else {
             updates[key] = fields[key] === null ? null : sanitize(fields[key], 500);
           }
@@ -156,7 +270,7 @@ Deno.serve(async (req) => {
       if (fetchErr || !existing) return json({ error: 'Contact not found' }, 404);
 
       const updates: Record<string, unknown> = {};
-      const allowedFields = ['first_name', 'last_name', 'email', 'phone', 'secondary_phone', 'job_title', 'notes'];
+      const allowedFields = ['first_name', 'last_name', 'email', 'phone', 'secondary_phone', 'job_title', 'notes', 'account_id'];
 
       for (const key of allowedFields) {
         if (key in fields) {
@@ -164,6 +278,8 @@ Deno.serve(async (req) => {
             const val = sanitize(fields[key], 100);
             if (!val) return json({ error: `${key} is required` }, 400);
             updates[key] = val;
+          } else if (key === 'account_id') {
+            updates[key] = fields[key] || null;
           } else {
             updates[key] = fields[key] === null ? null : sanitize(fields[key], 500);
           }

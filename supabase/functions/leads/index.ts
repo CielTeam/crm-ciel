@@ -83,6 +83,59 @@ function sanitize(val: unknown, maxLen: number): string {
   return val.replace(/<[^>]*>/g, '').trim().substring(0, maxLen);
 }
 
+function isValidCountryCode(v: unknown): v is string {
+  return typeof v === 'string' && /^[A-Z]{2}$/.test(v);
+}
+
+// ─── Lead Scoring (authoritative, server-side) ───
+// Mirrors the legacy client-side computeLeadScore but is the source of truth.
+interface ScoringInput {
+  stage?: string | null;
+  estimated_value?: number | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  website?: string | null;
+  industry?: string | null;
+  last_contacted_at?: string | null;
+  probability_percent?: number | null;
+  services_count?: number;
+}
+function computeScore(lead: ScoringInput): { score: number; band: 'hot' | 'warm' | 'cold' } {
+  let score = 0;
+  const stageOrder = ['new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won'];
+  const stageIdx = stageOrder.indexOf(lead.stage || '');
+  if (stageIdx >= 0) score += stageIdx * 10;
+  if (lead.stage === 'won') score += 20;
+  if (lead.estimated_value && lead.estimated_value > 0) score += 15;
+  if (lead.estimated_value && lead.estimated_value > 10000) score += 10;
+  if (lead.contact_email) score += 5;
+  if (lead.contact_phone) score += 5;
+  if (lead.website) score += 3;
+  if (lead.industry) score += 2;
+  if (lead.last_contacted_at) {
+    const daysSince = (Date.now() - new Date(lead.last_contacted_at).getTime()) / 86400000;
+    if (daysSince < 3) score += 15;
+    else if (daysSince < 7) score += 10;
+    else if (daysSince < 14) score += 5;
+  }
+  if (lead.services_count && lead.services_count > 0) score += Math.min(lead.services_count * 3, 15);
+  score += Math.floor((lead.probability_percent || 0) / 10);
+  const band = score >= 60 ? 'hot' : score >= 30 ? 'warm' : 'cold';
+  return { score: Math.min(100, score), band };
+}
+
+async function recomputeAndSaveScore(
+  admin: ReturnType<typeof createClient>,
+  leadId: string,
+): Promise<{ score: number; band: string } | null> {
+  const { data: lead } = await admin.from('leads').select('stage,estimated_value,contact_email,contact_phone,website,industry,last_contacted_at,probability_percent').eq('id', leadId).single();
+  if (!lead) return null;
+  const { count } = await admin.from('lead_services').select('id', { count: 'exact', head: true }).eq('lead_id', leadId).is('deleted_at', null);
+  const { score, band } = computeScore({ ...lead, services_count: count || 0 } as ScoringInput);
+  await admin.from('leads').update({ score, score_band: band, score_updated_at: new Date().toISOString() }).eq('id', leadId);
+  return { score, band };
+}
+
 // Get team-scoped user IDs for head_of_operations
 async function getScopedUserIds(admin: ReturnType<typeof createClient>, actorId: string): Promise<string[] | null> {
   // null = global access (chairman/VP), string[] = scoped to these user IDs
@@ -307,6 +360,9 @@ Deno.serve(async (req) => {
         secondary_phone: sanitize(payload.secondary_phone, 50) || null,
         city: sanitize(payload.city, 255) || null,
         country: sanitize(payload.country, 255) || null,
+        country_code: isValidCountryCode(payload.country_code) ? payload.country_code : null,
+        country_name: sanitize(payload.country_name, 255) || null,
+        state_province: sanitize(payload.state_province, 255) || null,
         tags: Array.isArray(payload.tags) ? payload.tags.map((t: unknown) => sanitize(t, 100)).filter(Boolean) : [],
         assigned_by: payload.assigned_to ? actorId : null,
         assigned_at: payload.assigned_to ? new Date().toISOString() : null,
@@ -317,8 +373,9 @@ Deno.serve(async (req) => {
 
       await logActivity(admin, data.id, actorId, 'created', `Lead "${company_name}" created`);
       await admin.from('audit_logs').insert({ actor_id: actorId, action: 'lead.create', target_type: 'lead', target_id: data.id, metadata: { company_name } });
-      
-      return json({ lead: data }, 201);
+
+      const scored = await recomputeAndSaveScore(admin, data.id);
+      return json({ lead: { ...data, ...(scored || {}) } }, 201);
     }
 
     // ─── UPDATE ───
@@ -362,8 +419,11 @@ Deno.serve(async (req) => {
       if (updates.secondary_phone !== undefined) trackField('secondary_phone', sanitize(updates.secondary_phone, 50) || null, current.secondary_phone);
       if (updates.city !== undefined) trackField('city', sanitize(updates.city, 255) || null, current.city);
       if (updates.country !== undefined) trackField('country', sanitize(updates.country, 255) || null, current.country);
+      if (updates.country_code !== undefined) trackField('country_code', isValidCountryCode(updates.country_code) ? updates.country_code : null, current.country_code);
+      if (updates.country_name !== undefined) trackField('country_name', sanitize(updates.country_name, 255) || null, current.country_name);
+      if (updates.state_province !== undefined) trackField('state_province', sanitize(updates.state_province, 255) || null, current.state_province);
       if (updates.tags !== undefined) trackField('tags', Array.isArray(updates.tags) ? updates.tags.map((t: unknown) => sanitize(t, 100)).filter(Boolean) : [], current.tags);
-      
+
       if (updates.assigned_to !== undefined && updates.assigned_to !== current.assigned_to) {
         trackField('assigned_to', updates.assigned_to || null, current.assigned_to);
         fields.assigned_by = actorId;
@@ -379,6 +439,12 @@ Deno.serve(async (req) => {
         await logActivity(admin, id, actorId, 'updated', 'Lead updated', changes);
       }
       await admin.from('audit_logs').insert({ actor_id: actorId, action: 'lead.update', target_type: 'lead', target_id: id, metadata: changes });
+
+      const scoringKeys = ['stage', 'estimated_value', 'contact_email', 'contact_phone', 'website', 'industry', 'probability_percent', 'last_contacted_at'];
+      if (scoringKeys.some(k => k in fields)) {
+        const scored = await recomputeAndSaveScore(admin, id);
+        if (scored) Object.assign(data, scored);
+      }
 
       return json({ lead: data });
     }
@@ -411,6 +477,9 @@ Deno.serve(async (req) => {
         stage: { old: current.stage, new: stage },
         ...(stage === 'lost' ? { lost_reason_code: { old: current.lost_reason_code, new: lost_reason_code } } : {}),
       });
+
+      const scored = await recomputeAndSaveScore(admin, id);
+      if (scored) Object.assign(data, scored);
 
       return json({ lead: data });
     }
@@ -510,6 +579,7 @@ Deno.serve(async (req) => {
 
       await logActivity(admin, lead_id, actorId, 'note_added', `${type.replace('_', ' ')} added`, {}, { note_id: data.id, note_type: type });
 
+      await recomputeAndSaveScore(admin, lead_id);
       return json({ note: data }, 201);
     }
 
@@ -604,6 +674,7 @@ Deno.serve(async (req) => {
 
       await logActivity(admin, payload.lead_id, actorId, 'service_added', `Service "${service_name}" added`, {}, { service_id: data.id });
 
+      await recomputeAndSaveScore(admin, payload.lead_id);
       return json({ service: data }, 201);
     }
 
@@ -713,6 +784,9 @@ Deno.serve(async (req) => {
         website: lead.website,
         city: lead.city,
         country: lead.country,
+        country_code: lead.country_code,
+        country_name: lead.country_name,
+        state_province: lead.state_province,
         phone: lead.contact_phone,
         email: lead.contact_email,
         notes: lead.notes,
@@ -819,6 +893,25 @@ Deno.serve(async (req) => {
       });
 
       return json({ success: true });
+    }
+
+    // ─── RECOMPUTE SCORE (single or backfill) ───
+    if (action === 'recompute_score') {
+      const { id, all } = payload;
+      if (id) {
+        const scored = await recomputeAndSaveScore(admin, id);
+        return json({ score: scored?.score ?? 0, band: scored?.band ?? 'cold' });
+      }
+      if (all) {
+        const { data: leads } = await admin.from('leads').select('id').is('deleted_at', null).limit(500);
+        let updated = 0;
+        for (const l of leads || []) {
+          await recomputeAndSaveScore(admin, l.id as string);
+          updated++;
+        }
+        return json({ updated });
+      }
+      return json({ error: 'id or all=true required' }, 400);
     }
 
     return json({ error: 'Unknown action' }, 400);
