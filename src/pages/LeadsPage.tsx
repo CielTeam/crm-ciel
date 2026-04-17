@@ -10,6 +10,7 @@ import { LeadsBulkActions } from '@/components/leads/LeadsBulkActions';
 import { LeadDetailSheet } from '@/components/leads/LeadDetailSheet';
 import { AddLeadDialog } from '@/components/leads/AddLeadDialog';
 import { EditLeadDialog } from '@/components/leads/EditLeadDialog';
+import { LeadsFilterBar, type LeadFilters } from '@/components/leads/LeadsFilterBar';
 import { useLeadsWithServices, LEAD_STAGES, type Lead } from '@/hooks/useLeads';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
@@ -20,9 +21,10 @@ export default function LeadsPage() {
   const [editLead, setEditLead] = useState<Lead | null>(null);
   const [viewLead, setViewLead] = useState<Lead | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [filters, setFilters] = useState<LeadFilters>({});
 
   const stageFilter = tab === 'all' ? undefined : tab;
-  const { data: leads, isLoading } = useLeadsWithServices(undefined, stageFilter);
+  const { data: leads, isLoading } = useLeadsWithServices(undefined, stageFilter, filters as Record<string, unknown>);
 
   const handleToggleSelect = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -85,6 +87,8 @@ export default function LeadsPage() {
       </div>
 
       <LeadStatsCards />
+
+      <LeadsFilterBar filters={filters} onChange={setFilters} />
 
       {selectedIds.size > 0 && leads && (
         <LeadsBulkActions
