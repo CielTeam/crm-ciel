@@ -168,7 +168,31 @@ async function invokeLeads(token: string, body: Record<string, unknown>) {
     body,
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (error) throw error;
+  // supabase-js wraps non-2xx responses into `error`; surface structured server messages
+  if (error) {
+    let serverMsg: string | null = null;
+    let serverCode: string | null = null;
+    let serverField: string | null = null;
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.json === 'function') {
+      try {
+        const body = await ctx.json();
+        serverMsg = body?.message || body?.error || null;
+        serverCode = body?.error || null;
+        serverField = body?.field || null;
+      } catch { /* ignore */ }
+    }
+    const enriched = new Error(serverMsg || error.message || 'Request failed') as Error & { code?: string; field?: string };
+    if (serverCode) enriched.code = serverCode;
+    if (serverField) enriched.field = serverField;
+    throw enriched;
+  }
+  if (data?.error) {
+    const enriched = new Error(data.message || data.error) as Error & { code?: string; field?: string };
+    enriched.code = data.error;
+    if (data.field) enriched.field = data.field;
+    throw enriched;
+  }
   return data;
 }
 
