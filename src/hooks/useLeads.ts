@@ -128,37 +128,35 @@ export interface LeadStats {
   won: number;
 }
 
-// ─── Provisional UI-only lead scoring ───
-// WARNING: This is for display purposes only in Phase 1.
-// Do NOT use for reporting, automation, or exports.
-// Will move to backend/database in a later phase.
+// ─── Lead scoring (legacy fallback) ───
+// Backend now computes & persists `lead.score` and `lead.score_band` authoritatively.
+// This client function is kept ONLY as a fallback for un-migrated rows where score_band is missing.
+// Prefer `lead.score_band` directly. This export will be removed after Phase 4 cleanup.
 export function computeLeadScore(lead: Lead): { score: number; band: 'hot' | 'warm' | 'cold' } {
+  // Prefer authoritative DB value if present
+  if (lead.score_band && (lead.score ?? 0) > 0) {
+    return { score: lead.score ?? 0, band: lead.score_band };
+  }
+  // Fallback heuristic — kept identical to backend logic
   let score = 0;
-  // Stage progress
   const stageOrder: LeadStage[] = ['new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won'];
   const stageIdx = stageOrder.indexOf(lead.stage);
   if (stageIdx >= 0) score += stageIdx * 10;
   if (lead.stage === 'won') score += 20;
-  // Value presence
   if (lead.estimated_value && lead.estimated_value > 0) score += 15;
   if (lead.estimated_value && lead.estimated_value > 10000) score += 10;
-  // Contact completeness
   if (lead.contact_email) score += 5;
   if (lead.contact_phone) score += 5;
   if (lead.website) score += 3;
   if (lead.industry) score += 2;
-  // Activity recency
   if (lead.last_contacted_at) {
     const daysSince = (Date.now() - new Date(lead.last_contacted_at).getTime()) / 86400000;
     if (daysSince < 3) score += 15;
     else if (daysSince < 7) score += 10;
     else if (daysSince < 14) score += 5;
   }
-  // Services count
   if (lead.services && lead.services.length > 0) score += Math.min(lead.services.length * 3, 15);
-  // Probability
   score += Math.floor(lead.probability_percent / 10);
-
   const band = score >= 60 ? 'hot' : score >= 30 ? 'warm' : 'cold';
   return { score: Math.min(100, score), band };
 }

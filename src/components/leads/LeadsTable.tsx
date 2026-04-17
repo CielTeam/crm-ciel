@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal, Pencil, Trash2, Eye, Search, ChevronDown, ChevronRight, Clock, AlertTriangle } from 'lucide-react';
-import { type Lead, type LeadService, type LeadStage, useDeleteLead, useChangeStage, LEAD_STAGES, computeLeadScore } from '@/hooks/useLeads';
+import { type Lead, type LeadService, type LeadStage, useDeleteLead, useChangeStage, LEAD_STAGES } from '@/hooks/useLeads';
 import { format, differenceInDays } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -162,7 +162,7 @@ export function LeadsTable({ leads, isLoading, onView, onEdit, selectedIds, onTo
                 const isExpanded = expandedIds.has(lead.id);
                 const services = lead.services || [];
                 const stageConfig = LEAD_STAGES.find(s => s.value === lead.stage);
-                const { band } = computeLeadScore(lead);
+                const band = (lead.score_band || 'cold') as 'hot' | 'warm' | 'cold';
                 const isOverdue = lead.next_follow_up_at && new Date(lead.next_follow_up_at) < new Date();
 
                 return (

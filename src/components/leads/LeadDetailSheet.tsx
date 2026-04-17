@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Plus, Trash2, RefreshCw, Calendar, Mail, Phone, Building2, Globe, StickyNote, Package, AlertTriangle, TrendingUp, DollarSign, Target, Clock, ListTodo, FileText, Receipt, ArrowRightLeft, Undo2 } from 'lucide-react';
-import { type Lead, useLeadServices, useDeleteService, useUpdateService, useUnconvertLead, LEAD_STAGES, computeLeadScore } from '@/hooks/useLeads';
+import { type Lead, useLeadServices, useDeleteService, useUpdateService, useUnconvertLead, LEAD_STAGES } from '@/hooks/useLeads';
 import { AddServiceDialog } from './AddServiceDialog';
 import { ConvertLeadDialog } from './ConvertLeadDialog';
 import { LeadActivityTimeline } from './LeadActivityTimeline';
@@ -51,7 +51,8 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
   if (!lead) return null;
 
   const stageConfig = LEAD_STAGES.find(s => s.value === lead.stage);
-  const { score, band } = computeLeadScore(lead);
+  const score = lead.score ?? 0;
+  const band = (lead.score_band || 'cold') as 'hot' | 'warm' | 'cold';
   const ownerProfile = profiles?.find(p => p.userId === lead.assigned_to);
   const isOverdue = lead.next_follow_up_at && new Date(lead.next_follow_up_at) < new Date();
   const isConverted = !!lead.converted_at;
