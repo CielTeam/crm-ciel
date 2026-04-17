@@ -419,8 +419,11 @@ Deno.serve(async (req) => {
       if (updates.secondary_phone !== undefined) trackField('secondary_phone', sanitize(updates.secondary_phone, 50) || null, current.secondary_phone);
       if (updates.city !== undefined) trackField('city', sanitize(updates.city, 255) || null, current.city);
       if (updates.country !== undefined) trackField('country', sanitize(updates.country, 255) || null, current.country);
+      if (updates.country_code !== undefined) trackField('country_code', isValidCountryCode(updates.country_code) ? updates.country_code : null, current.country_code);
+      if (updates.country_name !== undefined) trackField('country_name', sanitize(updates.country_name, 255) || null, current.country_name);
+      if (updates.state_province !== undefined) trackField('state_province', sanitize(updates.state_province, 255) || null, current.state_province);
       if (updates.tags !== undefined) trackField('tags', Array.isArray(updates.tags) ? updates.tags.map((t: unknown) => sanitize(t, 100)).filter(Boolean) : [], current.tags);
-      
+
       if (updates.assigned_to !== undefined && updates.assigned_to !== current.assigned_to) {
         trackField('assigned_to', updates.assigned_to || null, current.assigned_to);
         fields.assigned_by = actorId;
@@ -436,6 +439,12 @@ Deno.serve(async (req) => {
         await logActivity(admin, id, actorId, 'updated', 'Lead updated', changes);
       }
       await admin.from('audit_logs').insert({ actor_id: actorId, action: 'lead.update', target_type: 'lead', target_id: id, metadata: changes });
+
+      const scoringKeys = ['stage', 'estimated_value', 'contact_email', 'contact_phone', 'website', 'industry', 'probability_percent', 'last_contacted_at'];
+      if (scoringKeys.some(k => k in fields)) {
+        const scored = await recomputeAndSaveScore(admin, id);
+        if (scored) Object.assign(data, scored);
+      }
 
       return json({ lead: data });
     }
