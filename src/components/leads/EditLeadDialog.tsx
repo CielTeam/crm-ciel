@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { LostReasonDialog } from './LostReasonDialog';
 import { useChangeStage } from '@/hooks/useLeads';
+import { CountryCombobox } from '@/components/shared/CountryCombobox';
 
 const SERVICE_TYPES = ['SSL Certificate', 'Digital Certificate', 'Digital Signature', 'ACME', 'Domain Registration', 'Web Hosting', 'Email Security', 'Code Signing', 'Custom'];
 
@@ -34,6 +35,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }: Props) {
     estimated_value: '', currency: 'USD', probability_percent: '0',
     expected_close_date: '', next_follow_up_at: '',
     industry: '', website: '', secondary_phone: '', city: '', country: '',
+    country_code: '' as string, country_name: '' as string, state_province: '',
   });
   const [solutions, setSolutions] = useState<SolutionRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -69,6 +71,9 @@ export function EditLeadDialog({ open, onOpenChange, lead }: Props) {
       secondary_phone: lead.secondary_phone || '',
       city: lead.city || '',
       country: lead.country || '',
+      country_code: lead.country_code || '',
+      country_name: lead.country_name || '',
+      state_province: lead.state_province || '',
     });
   }, [lead]);
 
@@ -139,7 +144,10 @@ export function EditLeadDialog({ open, onOpenChange, lead }: Props) {
           website: form.website || null,
           secondary_phone: form.secondary_phone || null,
           city: form.city || null,
-          country: form.country || null,
+          country: form.country_name || form.country || null,
+          country_code: form.country_code || null,
+          country_name: form.country_name || null,
+          state_province: form.state_province || null,
         } as any, { onSuccess: () => resolve(), onError: (e) => reject(e) });
       });
 
@@ -204,9 +212,19 @@ export function EditLeadDialog({ open, onOpenChange, lead }: Props) {
                   <div><Label className="text-xs">Company Name *</Label><Input value={form.company_name} onChange={(e) => setForm(f => ({ ...f, company_name: e.target.value }))} onBlur={handleDuplicateCheck} /></div>
                   <div><Label className="text-xs">Industry</Label><Input value={form.industry} onChange={(e) => setForm(f => ({ ...f, industry: e.target.value }))} /></div>
                 </div>
+                <div className="mt-2">
+                  <Label className="text-xs">Website</Label>
+                  <Input value={form.website} onChange={(e) => setForm(f => ({ ...f, website: e.target.value }))} />
+                </div>
                 <div className="grid grid-cols-3 gap-3 mt-2">
-                  <div><Label className="text-xs">Website</Label><Input value={form.website} onChange={(e) => setForm(f => ({ ...f, website: e.target.value }))} /></div>
-                  <div><Label className="text-xs">Country</Label><Input value={form.country} onChange={(e) => setForm(f => ({ ...f, country: e.target.value }))} /></div>
+                  <div>
+                    <Label className="text-xs">Country</Label>
+                    <CountryCombobox
+                      value={form.country_code || null}
+                      onChange={(code, name) => setForm(f => ({ ...f, country_code: code || '', country_name: name || '', country: name || f.country }))}
+                    />
+                  </div>
+                  <div><Label className="text-xs">State / Province</Label><Input value={form.state_province} onChange={(e) => setForm(f => ({ ...f, state_province: e.target.value }))} /></div>
                   <div><Label className="text-xs">City</Label><Input value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 mt-2">

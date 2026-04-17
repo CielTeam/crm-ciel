@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 
 export interface Account {
   id: string;
@@ -11,6 +12,9 @@ export interface Account {
   website: string | null;
   city: string | null;
   country: string | null;
+  country_code: string | null;
+  country_name: string | null;
+  state_province: string | null;
   notes: string | null;
   tags: string[];
   owner: string;
@@ -49,6 +53,7 @@ export function useAccounts() {
       const { data, error } = await supabase
         .from('accounts')
         .select('*')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return (data ?? []) as Account[];
@@ -65,6 +70,7 @@ export function useContacts() {
       const { data, error } = await supabase
         .from('contacts')
         .select('*')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return (data ?? []) as Contact[];
@@ -85,45 +91,120 @@ export function useAccountsWithContacts() {
   return { data: merged, contacts: contacts ?? [], isLoading: accLoading || conLoading };
 }
 
-export function useUpdateAccount() {
-  const queryClient = useQueryClient();
-  const { getToken } = useAuth();
+async function invokeAccounts(token: string, body: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke('accounts', {
+    body,
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
 
+function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['accounts'] });
+  qc.invalidateQueries({ queryKey: ['contacts'] });
+}
+
+export function useCreateAccount() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: Partial<Omit<Account, 'id' | 'created_by' | 'created_at' | 'updated_at' | 'source_lead_id'>>) => {
+      const token = await getToken();
+      const data = await invokeAccounts(token, { action: 'create_account', ...payload });
+      return data.account as Account;
+    },
+    onSuccess: () => { invalidateAll(qc); toast.success('Account created'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useDeleteAccount() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const token = await getToken();
+      return invokeAccounts(token, { action: 'delete_account', id });
+    },
+    onSuccess: () => { invalidateAll(qc); toast.success('Account deleted'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useCreateContact() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: Partial<Omit<Contact, 'id' | 'created_by' | 'created_at' | 'updated_at' | 'source_lead_id'>>) => {
+      const token = await getToken();
+      const data = await invokeAccounts(token, { action: 'create_contact', ...payload });
+      return data.contact as Contact;
+    },
+    onSuccess: () => { invalidateAll(qc); toast.success('Contact created'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useDeleteContact() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const token = await getToken();
+      return invokeAccounts(token, { action: 'delete_contact', id });
+    },
+    onSuccess: () => { invalidateAll(qc); toast.success('Contact deleted'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useUpdateAccount() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
   return useMutation({
     mutationFn: async (payload: { id: string } & Partial<Omit<Account, 'id' | 'owner' | 'created_by' | 'created_at' | 'updated_at' | 'source_lead_id'>>) => {
       const token = await getToken();
-      const { data, error } = await supabase.functions.invoke('accounts', {
-        body: { action: 'update_account', ...payload },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      const data = await invokeAccounts(token, { action: 'update_account', ...payload });
       return data.account as Account;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-    },
+    onSuccess: () => { invalidateAll(qc); },
   });
 }
 
 export function useUpdateContact() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   const { getToken } = useAuth();
-
   return useMutation({
-    mutationFn: async (payload: { id: string } & Partial<Omit<Contact, 'id' | 'owner' | 'created_by' | 'created_at' | 'updated_at' | 'source_lead_id' | 'account_id'>>) => {
+    mutationFn: async (payload: { id: string } & Partial<Omit<Contact, 'id' | 'owner' | 'created_by' | 'created_at' | 'updated_at' | 'source_lead_id'>>) => {
       const token = await getToken();
-      const { data, error } = await supabase.functions.invoke('accounts', {
-        body: { action: 'update_contact', ...payload },
+      const data = await invokeAccounts(token, { action: 'update_contact', ...payload });
+      return data.contact as Contact;
+    },
+    onSuccess: () => { invalidateAll(qc); },
+  });
+}
+
+// Backfill helper for lead scores (one-shot trigger)
+export function useRecomputeAllLeadScores() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async () => {
+      const token = await getToken();
+      const { data, error } = await supabase.functions.invoke('leads', {
+        body: { action: 'recompute_score', all: true },
         headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      return data.contact as Contact;
+      return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contacts'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ['leads-with-services'] });
+      qc.invalidateQueries({ queryKey: ['leads'] });
+      toast.success(`Recomputed ${d?.updated ?? 0} lead scores`);
     },
+    onError: (e: Error) => toast.error(e.message),
   });
 }
