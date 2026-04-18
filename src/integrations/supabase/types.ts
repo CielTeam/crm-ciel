@@ -388,6 +388,41 @@ export type Database = {
         }
         Relationships: []
       }
+      departments: {
+        Row: {
+          created_at: string
+          head_user_id: string | null
+          id: string
+          name: string
+          parent_department_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          head_user_id?: string | null
+          id?: string
+          name: string
+          parent_department_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          head_user_id?: string | null
+          id?: string
+          name?: string
+          parent_department_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departments_parent_department_id_fkey"
+            columns: ["parent_department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_activities: {
         Row: {
           activity_type: string
@@ -954,9 +989,11 @@ export type Database = {
           avatar_url: string | null
           created_at: string
           deleted_at: string | null
+          department_id: string | null
           display_name: string | null
           email: string | null
           id: string
+          manager_user_id: string | null
           phone: string | null
           status: string
           team_id: string | null
@@ -968,9 +1005,11 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string
           deleted_at?: string | null
+          department_id?: string | null
           display_name?: string | null
           email?: string | null
           id?: string
+          manager_user_id?: string | null
           phone?: string | null
           status?: string
           team_id?: string | null
@@ -982,9 +1021,11 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string
           deleted_at?: string | null
+          department_id?: string | null
           display_name?: string | null
           email?: string | null
           id?: string
+          manager_user_id?: string | null
           phone?: string | null
           status?: string
           team_id?: string | null
@@ -993,6 +1034,13 @@ export type Database = {
           working_hours?: Json | null
         }
         Relationships: [
+          {
+            foreignKeyName: "profiles_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "profiles_team_id_fkey"
             columns: ["team_id"]
@@ -1074,6 +1122,7 @@ export type Database = {
       }
       tasks: {
         Row: {
+          account_id: string | null
           actual_duration: string | null
           assigned_to: string | null
           challenges: string | null
@@ -1093,15 +1142,19 @@ export type Database = {
           mark_undone_by: string | null
           pinned: boolean
           priority: string
+          progress_percent: number
           sort_order: number
           started_at: string | null
           status: string
           task_type: string
           team_id: string | null
+          ticket_id: string | null
           title: string
           updated_at: string
+          visible_scope: string
         }
         Insert: {
+          account_id?: string | null
           actual_duration?: string | null
           assigned_to?: string | null
           challenges?: string | null
@@ -1121,15 +1174,19 @@ export type Database = {
           mark_undone_by?: string | null
           pinned?: boolean
           priority?: string
+          progress_percent?: number
           sort_order?: number
           started_at?: string | null
           status?: string
           task_type?: string
           team_id?: string | null
+          ticket_id?: string | null
           title: string
           updated_at?: string
+          visible_scope?: string
         }
         Update: {
+          account_id?: string | null
           actual_duration?: string | null
           assigned_to?: string | null
           challenges?: string | null
@@ -1149,13 +1206,16 @@ export type Database = {
           mark_undone_by?: string | null
           pinned?: boolean
           priority?: string
+          progress_percent?: number
           sort_order?: number
           started_at?: string | null
           status?: string
           task_type?: string
           team_id?: string | null
+          ticket_id?: string | null
           title?: string
           updated_at?: string
+          visible_scope?: string
         }
         Relationships: [
           {
@@ -1163,6 +1223,13 @@ export type Database = {
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "tickets"
             referencedColumns: ["id"]
           },
         ]
@@ -1223,6 +1290,160 @@ export type Database = {
         }
         Relationships: []
       }
+      ticket_activities: {
+        Row: {
+          activity_type: string
+          actor_id: string
+          changes: Json
+          created_at: string
+          id: string
+          metadata: Json
+          ticket_id: string
+          title: string
+        }
+        Insert: {
+          activity_type: string
+          actor_id: string
+          changes?: Json
+          created_at?: string
+          id?: string
+          metadata?: Json
+          ticket_id: string
+          title: string
+        }
+        Update: {
+          activity_type?: string
+          actor_id?: string
+          changes?: Json
+          created_at?: string
+          id?: string
+          metadata?: Json
+          ticket_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_activities_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ticket_comments: {
+        Row: {
+          author_id: string
+          content: string
+          created_at: string
+          id: string
+          is_redacted: boolean
+          redacted_at: string | null
+          redacted_by: string | null
+          redaction_reason: string | null
+          ticket_id: string
+          updated_at: string
+        }
+        Insert: {
+          author_id: string
+          content: string
+          created_at?: string
+          id?: string
+          is_redacted?: boolean
+          redacted_at?: string | null
+          redacted_by?: string | null
+          redaction_reason?: string | null
+          ticket_id: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          is_redacted?: boolean
+          redacted_at?: string | null
+          redacted_by?: string | null
+          redaction_reason?: string | null
+          ticket_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_comments_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tickets: {
+        Row: {
+          account_id: string | null
+          assigned_to: string | null
+          closed_at: string | null
+          contact_id: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          opened_at: string
+          priority: Database["public"]["Enums"]["ticket_priority_enum"]
+          resolution_summary: string | null
+          source_channel: Database["public"]["Enums"]["ticket_source_enum"]
+          status: Database["public"]["Enums"]["ticket_status_enum"]
+          support_duration_actual_hours: number | null
+          support_duration_estimate_hours: number | null
+          technical_owner_id: string | null
+          ticket_type: Database["public"]["Enums"]["ticket_type_enum"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          account_id?: string | null
+          assigned_to?: string | null
+          closed_at?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          opened_at?: string
+          priority?: Database["public"]["Enums"]["ticket_priority_enum"]
+          resolution_summary?: string | null
+          source_channel?: Database["public"]["Enums"]["ticket_source_enum"]
+          status?: Database["public"]["Enums"]["ticket_status_enum"]
+          support_duration_actual_hours?: number | null
+          support_duration_estimate_hours?: number | null
+          technical_owner_id?: string | null
+          ticket_type?: Database["public"]["Enums"]["ticket_type_enum"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string | null
+          assigned_to?: string | null
+          closed_at?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          opened_at?: string
+          priority?: Database["public"]["Enums"]["ticket_priority_enum"]
+          resolution_summary?: string | null
+          source_channel?: Database["public"]["Enums"]["ticket_source_enum"]
+          status?: Database["public"]["Enums"]["ticket_status_enum"]
+          support_duration_actual_hours?: number | null
+          support_duration_estimate_hours?: number | null
+          technical_owner_id?: string | null
+          ticket_type?: Database["public"]["Enums"]["ticket_type_enum"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
@@ -1246,6 +1467,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_visible_user_ids: {
+        Args: { _user_id: string }
+        Returns: {
+          uid: string
+        }[]
+      }
       has_leads_access_scoped: {
         Args: { _lead_assigned_to: string; _user_id: string }
         Returns: boolean
@@ -1255,6 +1482,14 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      has_task_access: {
+        Args: { _task_id: string; _user_id: string }
+        Returns: boolean
+      }
+      has_ticket_access: {
+        Args: { _ticket_id: string; _user_id: string }
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
@@ -1295,6 +1530,30 @@ export type Database = {
         | "negotiation"
         | "won"
         | "lost"
+      ticket_priority_enum: "low" | "medium" | "high" | "urgent"
+      ticket_source_enum:
+        | "internal"
+        | "client"
+        | "email"
+        | "phone"
+        | "whatsapp"
+        | "portal"
+        | "other"
+      ticket_status_enum:
+        | "open"
+        | "in_progress"
+        | "waiting"
+        | "resolved"
+        | "closed"
+        | "archived"
+      ticket_type_enum:
+        | "support"
+        | "incident"
+        | "service_request"
+        | "maintenance"
+        | "deployment"
+        | "bug_fix"
+        | "other"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1459,6 +1718,33 @@ export const Constants = {
         "negotiation",
         "won",
         "lost",
+      ],
+      ticket_priority_enum: ["low", "medium", "high", "urgent"],
+      ticket_source_enum: [
+        "internal",
+        "client",
+        "email",
+        "phone",
+        "whatsapp",
+        "portal",
+        "other",
+      ],
+      ticket_status_enum: [
+        "open",
+        "in_progress",
+        "waiting",
+        "resolved",
+        "closed",
+        "archived",
+      ],
+      ticket_type_enum: [
+        "support",
+        "incident",
+        "service_request",
+        "maintenance",
+        "deployment",
+        "bug_fix",
+        "other",
       ],
     },
   },

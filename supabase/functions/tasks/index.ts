@@ -275,9 +275,53 @@ Deno.serve(async (req) => {
       return jsonResponse({ tasks: data || [] });
     }
 
+    // ─── LIST MANAGEMENT (paginated, hierarchy-scoped) ───
+    if (action === 'list_management') {
+      const page = Math.max(1, parseInt(String(payload.page ?? 1), 10));
+      const pageSize = Math.min(100, Math.max(1, parseInt(String(payload.page_size ?? 25), 10)));
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      const roles = await getActorRoles(admin, actorId);
+      const isExecOrAdmin = roles.some(r => ['chairman','vice_president','head_of_operations','technical_lead','team_development_lead'].includes(r));
+      if (!isExecOrAdmin) return jsonResponse({ error: 'Forbidden' }, 403);
+
+      // Resolve visible user ids via hierarchy helper
+      const { data: vis } = await admin.rpc('get_visible_user_ids', { _user_id: actorId });
+      const visibleIds = new Set(((vis as { uid: string }[] | null) || []).map(r => r.uid));
+
+      let q = admin.from('tasks').select('*', { count: 'exact' });
+      if (Array.isArray(payload.status) && payload.status.length) q = q.in('status', payload.status);
+      if (Array.isArray(payload.priority) && payload.priority.length) q = q.in('priority', payload.priority);
+      if (payload.account_id) q = q.eq('account_id', payload.account_id);
+      if (payload.user_id) q = q.eq('assigned_to', payload.user_id);
+      if (payload.date_from) q = q.gte('created_at', payload.date_from);
+      if (payload.date_to) q = q.lte('created_at', payload.date_to);
+      if (payload.search && typeof payload.search === 'string') {
+        const s = payload.search.replace(/[%_]/g, '\\$&').substring(0, 100);
+        q = q.ilike('title', `%${s}%`);
+      }
+      if (payload.department_id) {
+        const { data: deptMembers } = await admin.from('profiles').select('user_id').eq('department_id', payload.department_id);
+        const ids = ((deptMembers as { user_id: string }[] | null) || []).map(p => p.user_id);
+        if (!ids.length) return jsonResponse({ tasks: [], total: 0, page, page_size: pageSize });
+        q = q.in('assigned_to', ids);
+      }
+      q = q.order('updated_at', { ascending: false }).range(from, to);
+      const { data, error, count } = await q;
+      if (error) throw error;
+
+      let tasks = (data || []) as TaskRecord[];
+      // RBAC filter unless full-company exec
+      const isFullScope = roles.some(r => ['chairman'].includes(r));
+      if (!isFullScope) {
+        tasks = tasks.filter(t => visibleIds.has(t.created_by) || (!!t.assigned_to && visibleIds.has(t.assigned_to)));
+      }
+      return jsonResponse({ tasks, total: count ?? tasks.length, page, page_size: pageSize });
+    }
+
     // ─── CREATE ───
     if (action === 'create') {
-      const { title, description, priority, due_date, assigned_to, estimated_duration } = payload;
+      const { title, description, priority, due_date, assigned_to, estimated_duration, account_id, ticket_id, visible_scope, progress_percent } = payload;
       const cleanTitle = sanitizeString(title, 255);
       const cleanDescription = sanitizeString(description, 5000);
       if (!cleanTitle) return jsonResponse({ error: 'Title is required' }, 400);
@@ -294,12 +338,24 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Validate ticket access if linked
+      if (ticket_id) {
+        const { data: ticket } = await admin.from('tickets').select('id').eq('id', ticket_id).maybeSingle();
+        if (!ticket) return jsonResponse({ error: 'Linked ticket not found' }, 422);
+      }
+
+      const allowedScope = ['private','department','management_chain'];
+      const scope = allowedScope.includes(visible_scope) ? visible_scope : 'private';
+      const progress = Math.max(0, Math.min(100, parseInt(String(progress_percent ?? 0), 10) || 0));
+
       const taskType = assigned_to && assigned_to !== actorId ? 'assigned' : 'personal';
       const status = taskType === 'assigned' ? 'pending_accept' : 'todo';
       const { data, error } = await admin.from('tasks').insert({
         title: cleanTitle, description: cleanDescription || null, priority: priority || 'medium',
         due_date: due_date || null, assigned_to: assigned_to || null, estimated_duration: estimated_duration || null,
         created_by: actorId, task_type: taskType, status,
+        account_id: account_id || null, ticket_id: ticket_id || null,
+        visible_scope: scope, progress_percent: progress,
       }).select().single();
       if (error) throw error;
 
@@ -337,13 +393,22 @@ Deno.serve(async (req) => {
       const oldStatus = task.status;
       const updatePayload: Record<string, unknown> = {};
       const VALID_STATUSES = ['todo', 'in_progress', 'done', 'pending_accept', 'accepted', 'declined', 'submitted', 'approved', 'rejected'];
-      const allowedFields = ['title', 'description', 'priority', 'due_date', 'status', 'challenges', 'estimated_duration', 'actual_duration', 'feedback', 'decline_reason', 'completed_at', 'completion_notes', 'pinned', 'sort_order'];
+      const allowedFields = ['title', 'description', 'priority', 'due_date', 'status', 'challenges', 'estimated_duration', 'actual_duration', 'feedback', 'decline_reason', 'completed_at', 'completion_notes', 'pinned', 'sort_order', 'account_id', 'ticket_id', 'progress_percent', 'visible_scope'];
       for (const field of allowedFields) {
         if (updates[field] !== undefined) {
           if (field === 'status' && !VALID_STATUSES.includes(updates[field])) {
             return jsonResponse({ error: `Invalid status: ${updates[field]}. Allowed: ${VALID_STATUSES.join(', ')}` }, 400);
           }
-          if (field === 'title') updatePayload[field] = sanitizeString(updates[field], 255);
+          if (field === 'progress_percent') {
+            const p = parseInt(String(updates[field]), 10);
+            if (isNaN(p) || p < 0 || p > 100) return jsonResponse({ error: 'progress_percent must be 0-100' }, 400);
+            updatePayload[field] = p;
+          } else if (field === 'visible_scope') {
+            if (!['private','department','management_chain'].includes(updates[field])) {
+              return jsonResponse({ error: 'Invalid visible_scope' }, 400);
+            }
+            updatePayload[field] = updates[field];
+          } else if (field === 'title') updatePayload[field] = sanitizeString(updates[field], 255);
           else if (field === 'description' || field === 'feedback' || field === 'challenges' || field === 'completion_notes') updatePayload[field] = sanitizeString(updates[field], 5000);
           else if (field === 'decline_reason') updatePayload[field] = sanitizeString(updates[field], 1000);
           else updatePayload[field] = updates[field];
@@ -622,6 +687,34 @@ Deno.serve(async (req) => {
         await broadcastNotification(admin, new_assigned_to, notif);
       }
       return jsonResponse({ task: data });
+    }
+
+    // ─── CREATE FROM TICKET ───
+    if (action === 'create_from_ticket') {
+      const { ticket_id, title, description, assigned_to, priority, due_date } = payload;
+      if (!ticket_id) return jsonResponse({ error: 'ticket_id is required' }, 400);
+      const { data: ticket } = await admin.from('tickets').select('*').eq('id', ticket_id).maybeSingle();
+      if (!ticket) return jsonResponse({ error: 'Ticket not found' }, 404);
+      const t = ticket as { id: string; title: string; account_id: string | null };
+
+      const cleanTitle = sanitizeString(title || `Follow-up: ${t.title}`, 255);
+      const cleanDesc = sanitizeString(description, 5000);
+      const taskType = assigned_to && assigned_to !== actorId ? 'assigned' : 'personal';
+      const status = taskType === 'assigned' ? 'pending_accept' : 'todo';
+
+      const { data, error } = await admin.from('tasks').insert({
+        title: cleanTitle, description: cleanDesc || null,
+        priority: priority || 'medium', due_date: due_date || null,
+        assigned_to: assigned_to || actorId, created_by: actorId,
+        task_type: taskType, status,
+        account_id: t.account_id, ticket_id: t.id, visible_scope: 'department',
+      }).select().single();
+      if (error) throw error;
+
+      await logActivity(admin, (data as { id: string }).id, actorId, null, status, `Task created from ticket ${ticket_id}`);
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.create_from_ticket', target_type: 'task', target_id: (data as { id: string }).id, metadata: { ticket_id } });
+      await admin.from('ticket_activities').insert({ ticket_id, actor_id: actorId, activity_type: 'task_created', title: 'Linked task created', changes: {}, metadata: { task_id: (data as { id: string }).id } });
+      return jsonResponse({ task: data }, 201);
     }
 
     return jsonResponse({ error: 'Unknown action' }, 400);
