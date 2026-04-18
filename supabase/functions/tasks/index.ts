@@ -275,9 +275,53 @@ Deno.serve(async (req) => {
       return jsonResponse({ tasks: data || [] });
     }
 
+    // ─── LIST MANAGEMENT (paginated, hierarchy-scoped) ───
+    if (action === 'list_management') {
+      const page = Math.max(1, parseInt(String(payload.page ?? 1), 10));
+      const pageSize = Math.min(100, Math.max(1, parseInt(String(payload.page_size ?? 25), 10)));
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      const roles = await getActorRoles(admin, actorId);
+      const isExecOrAdmin = roles.some(r => ['chairman','vice_president','head_of_operations','technical_lead','team_development_lead'].includes(r));
+      if (!isExecOrAdmin) return jsonResponse({ error: 'Forbidden' }, 403);
+
+      // Resolve visible user ids via hierarchy helper
+      const { data: vis } = await admin.rpc('get_visible_user_ids', { _user_id: actorId });
+      const visibleIds = new Set(((vis as { uid: string }[] | null) || []).map(r => r.uid));
+
+      let q = admin.from('tasks').select('*', { count: 'exact' });
+      if (Array.isArray(payload.status) && payload.status.length) q = q.in('status', payload.status);
+      if (Array.isArray(payload.priority) && payload.priority.length) q = q.in('priority', payload.priority);
+      if (payload.account_id) q = q.eq('account_id', payload.account_id);
+      if (payload.user_id) q = q.eq('assigned_to', payload.user_id);
+      if (payload.date_from) q = q.gte('created_at', payload.date_from);
+      if (payload.date_to) q = q.lte('created_at', payload.date_to);
+      if (payload.search && typeof payload.search === 'string') {
+        const s = payload.search.replace(/[%_]/g, '\\$&').substring(0, 100);
+        q = q.ilike('title', `%${s}%`);
+      }
+      if (payload.department_id) {
+        const { data: deptMembers } = await admin.from('profiles').select('user_id').eq('department_id', payload.department_id);
+        const ids = ((deptMembers as { user_id: string }[] | null) || []).map(p => p.user_id);
+        if (!ids.length) return jsonResponse({ tasks: [], total: 0, page, page_size: pageSize });
+        q = q.in('assigned_to', ids);
+      }
+      q = q.order('updated_at', { ascending: false }).range(from, to);
+      const { data, error, count } = await q;
+      if (error) throw error;
+
+      let tasks = (data || []) as TaskRecord[];
+      // RBAC filter unless full-company exec
+      const isFullScope = roles.some(r => ['chairman'].includes(r));
+      if (!isFullScope) {
+        tasks = tasks.filter(t => visibleIds.has(t.created_by) || (!!t.assigned_to && visibleIds.has(t.assigned_to)));
+      }
+      return jsonResponse({ tasks, total: count ?? tasks.length, page, page_size: pageSize });
+    }
+
     // ─── CREATE ───
     if (action === 'create') {
-      const { title, description, priority, due_date, assigned_to, estimated_duration } = payload;
+      const { title, description, priority, due_date, assigned_to, estimated_duration, account_id, ticket_id, visible_scope, progress_percent } = payload;
       const cleanTitle = sanitizeString(title, 255);
       const cleanDescription = sanitizeString(description, 5000);
       if (!cleanTitle) return jsonResponse({ error: 'Title is required' }, 400);
@@ -294,12 +338,24 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Validate ticket access if linked
+      if (ticket_id) {
+        const { data: ticket } = await admin.from('tickets').select('id').eq('id', ticket_id).maybeSingle();
+        if (!ticket) return jsonResponse({ error: 'Linked ticket not found' }, 422);
+      }
+
+      const allowedScope = ['private','department','management_chain'];
+      const scope = allowedScope.includes(visible_scope) ? visible_scope : 'private';
+      const progress = Math.max(0, Math.min(100, parseInt(String(progress_percent ?? 0), 10) || 0));
+
       const taskType = assigned_to && assigned_to !== actorId ? 'assigned' : 'personal';
       const status = taskType === 'assigned' ? 'pending_accept' : 'todo';
       const { data, error } = await admin.from('tasks').insert({
         title: cleanTitle, description: cleanDescription || null, priority: priority || 'medium',
         due_date: due_date || null, assigned_to: assigned_to || null, estimated_duration: estimated_duration || null,
         created_by: actorId, task_type: taskType, status,
+        account_id: account_id || null, ticket_id: ticket_id || null,
+        visible_scope: scope, progress_percent: progress,
       }).select().single();
       if (error) throw error;
 
