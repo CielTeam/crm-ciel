@@ -183,7 +183,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }: Props) {
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-3xl max-h-[90vh]">
+        <DialogContent className="max-w-3xl max-h-[90vh] w-[calc(100vw-2rem)] sm:w-full p-4 sm:p-6">
           <DialogHeader><DialogTitle>Edit Lead</DialogTitle></DialogHeader>
           <ScrollArea className="max-h-[65vh] pr-3">
             <div className="space-y-5">

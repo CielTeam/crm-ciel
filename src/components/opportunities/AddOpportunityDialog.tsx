@@ -49,7 +49,7 @@ export function AddOpportunityDialog({ open, onOpenChange, defaultAccountId }: P
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] w-[calc(100vw-2rem)] sm:w-full overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>New Opportunity</DialogTitle>
           <DialogDescription>Track a sales opportunity through your pipeline.</DialogDescription>
@@ -69,7 +69,7 @@ export function AddOpportunityDialog({ open, onOpenChange, defaultAccountId }: P
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label>Stage</Label>
               <Select value={form.stage} onValueChange={v => setForm(f => ({ ...f, stage: v as OpportunityStage }))}>
@@ -82,7 +82,7 @@ export function AddOpportunityDialog({ open, onOpenChange, defaultAccountId }: P
               <Input type="number" min={0} max={100} value={form.probability_percent} onChange={e => setForm(f => ({ ...f, probability_percent: e.target.value }))} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label>Value</Label>
               <Input type="number" value={form.estimated_value} onChange={e => setForm(f => ({ ...f, estimated_value: e.target.value }))} />
