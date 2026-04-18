@@ -689,6 +689,34 @@ Deno.serve(async (req) => {
       return jsonResponse({ task: data });
     }
 
+    // ─── CREATE FROM TICKET ───
+    if (action === 'create_from_ticket') {
+      const { ticket_id, title, description, assigned_to, priority, due_date } = payload;
+      if (!ticket_id) return jsonResponse({ error: 'ticket_id is required' }, 400);
+      const { data: ticket } = await admin.from('tickets').select('*').eq('id', ticket_id).maybeSingle();
+      if (!ticket) return jsonResponse({ error: 'Ticket not found' }, 404);
+      const t = ticket as { id: string; title: string; account_id: string | null };
+
+      const cleanTitle = sanitizeString(title || `Follow-up: ${t.title}`, 255);
+      const cleanDesc = sanitizeString(description, 5000);
+      const taskType = assigned_to && assigned_to !== actorId ? 'assigned' : 'personal';
+      const status = taskType === 'assigned' ? 'pending_accept' : 'todo';
+
+      const { data, error } = await admin.from('tasks').insert({
+        title: cleanTitle, description: cleanDesc || null,
+        priority: priority || 'medium', due_date: due_date || null,
+        assigned_to: assigned_to || actorId, created_by: actorId,
+        task_type: taskType, status,
+        account_id: t.account_id, ticket_id: t.id, visible_scope: 'department',
+      }).select().single();
+      if (error) throw error;
+
+      await logActivity(admin, (data as { id: string }).id, actorId, null, status, `Task created from ticket ${ticket_id}`);
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.create_from_ticket', target_type: 'task', target_id: (data as { id: string }).id, metadata: { ticket_id } });
+      await admin.from('ticket_activities').insert({ ticket_id, actor_id: actorId, activity_type: 'task_created', title: 'Linked task created', changes: {}, metadata: { task_id: (data as { id: string }).id } });
+      return jsonResponse({ task: data }, 201);
+    }
+
     return jsonResponse({ error: 'Unknown action' }, 400);
   } catch (err) {
     const message = err instanceof Error
