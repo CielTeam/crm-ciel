@@ -57,14 +57,15 @@ export default function LeadsPage() {
     ]);
     const csv = rowsToCsv(headers, rows);
     const summary = buildFilterSummary([
-      stageFilter,
-      filters.score_bands?.join('-'),
-      filters.country_code,
-      filters.source,
-      filters.industry,
-      filters.search,
-      filters.converted === true && 'converted',
-      filters.converted === false && 'open',
+      stageFilter ? `stage-${stageFilter}` : null,
+      filters.stages?.length ? `stages-${filters.stages.join('-')}` : null,
+      filters.score_bands?.length ? `score-${filters.score_bands.join('-')}` : null,
+      filters.country_code ? `country-${filters.country_code}` : null,
+      filters.source ? `source-${filters.source}` : null,
+      filters.industry ? `industry-${filters.industry}` : null,
+      filters.search ? `q-${filters.search}` : null,
+      filters.converted === true ? 'converted' : null,
+      filters.converted === false ? 'open' : null,
     ]);
     downloadCsv(csv, buildExportFilename('leads', summary));
   };

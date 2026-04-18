@@ -137,7 +137,6 @@ Deno.serve(async (req) => {
       const stage = VALID_STAGES.includes(payload.stage) ? payload.stage : 'prospecting';
       const value = payload.estimated_value != null ? Number(payload.estimated_value) : null;
       const prob = payload.probability_percent != null ? Number(payload.probability_percent) : 0;
-      const weighted = value != null ? computeWeighted(value, prob) : null;
 
       const { data: opp, error } = await admin.from('opportunities').insert({
         name,
@@ -147,7 +146,6 @@ Deno.serve(async (req) => {
         estimated_value: value,
         currency: payload.currency || 'USD',
         probability_percent: prob,
-        weighted_forecast: weighted,
         expected_close_date: payload.expected_close_date || null,
         notes: payload.notes ? sanitize(payload.notes, 5000) : null,
         owner: payload.owner || actorId,
@@ -186,11 +184,7 @@ Deno.serve(async (req) => {
       if ('account_id' in rest) update.account_id = rest.account_id || null;
       if ('contact_id' in rest) update.contact_id = rest.contact_id || null;
 
-      // Recompute weighted
-      const finalValue = 'estimated_value' in update ? update.estimated_value as number | null : existing.estimated_value;
-      const finalProb = 'probability_percent' in update ? update.probability_percent as number : existing.probability_percent;
-      update.weighted_forecast = finalValue != null ? computeWeighted(finalValue, finalProb) : null;
-
+      // weighted_forecast is a generated column — DB recomputes automatically
       const { data: opp, error } = await admin.from('opportunities').update(update).eq('id', id).select().single();
       if (error) throw error;
 

@@ -56,7 +56,7 @@ export default function OpportunitiesPage() {
       o.expected_close_date || '',
       o.created_at.slice(0, 10),
     ]);
-    const summary = buildFilterSummary([search]);
+    const summary = buildFilterSummary([search ? `q-${search}` : null]);
     downloadCsv(rowsToCsv(headers, rows), buildExportFilename('opportunities', summary));
   };
 
