@@ -49,7 +49,7 @@ export function AddContactDialog({ open, onOpenChange, accounts, defaultAccountI
         <DialogHeader><DialogTitle>New Contact</DialogTitle></DialogHeader>
         <ScrollArea className="max-h-[60vh] pr-3">
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><Label className="text-xs">First Name *</Label><Input value={form.first_name} onChange={(e) => setForm(f => ({ ...f, first_name: e.target.value }))} /></div>
               <div><Label className="text-xs">Last Name *</Label><Input value={form.last_name} onChange={(e) => setForm(f => ({ ...f, last_name: e.target.value }))} /></div>
             </div>
@@ -67,7 +67,7 @@ export function AddContactDialog({ open, onOpenChange, accounts, defaultAccountI
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><Label className="text-xs">Email</Label><Input type="email" value={form.email} onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))} /></div>
               <div><Label className="text-xs">Phone</Label><Input value={form.phone} onChange={(e) => setForm(f => ({ ...f, phone: e.target.value }))} /></div>
             </div>

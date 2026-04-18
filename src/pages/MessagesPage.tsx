@@ -25,8 +25,12 @@ import { ChatHeader } from '@/components/messages/ChatHeader';
 import { NewConversationDialog } from '@/components/messages/NewConversationDialog';
 import { PageError } from '@/components/PageError';
 import { Card } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { MessageSquare, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+
+const UNREAD_FILTER_KEY = 'messages.unreadOnly';
 
 export default function MessagesPage() {
   const { user } = useAuth();
@@ -34,6 +38,14 @@ export default function MessagesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(
     searchParams.get('conversation')
   );
+
+  const [unreadOnly, setUnreadOnly] = useState<boolean>(() => {
+    try { return localStorage.getItem(UNREAD_FILTER_KEY) === '1'; } catch { return false; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(UNREAD_FILTER_KEY, unreadOnly ? '1' : '0'); } catch { /* ignore */ }
+  }, [unreadOnly]);
 
   useEffect(() => {
     if (selectedId) {
@@ -109,6 +121,9 @@ export default function MessagesPage() {
   if (convErr) return <PageError message="Failed to load conversations" />;
 
   const selectedConv = conversations?.find(c => c.id === selectedId);
+  const visibleConversations = unreadOnly
+    ? (conversations || []).filter(c => c.unreadCount > 0)
+    : (conversations || []);
 
   return (
     <div className="space-y-4">
@@ -117,14 +132,23 @@ export default function MessagesPage() {
         <NewConversationDialog onCreated={setSelectedId} />
       </div>
 
-      <div className="flex gap-4 h-[calc(100vh-12rem)]">
-        <Card className="w-80 flex flex-col overflow-hidden">
+      <div className="flex flex-col md:flex-row gap-4 h-[calc(100vh-12rem)]">
+        <Card className="w-full md:w-80 flex flex-col overflow-hidden shrink-0">
+          <div className="flex items-center justify-between px-3 py-2 border-b">
+            <Label htmlFor="unread-only" className="text-xs text-muted-foreground cursor-pointer">
+              Unread only
+            </Label>
+            <Switch id="unread-only" checked={unreadOnly} onCheckedChange={setUnreadOnly} />
+          </div>
           {convLoading ? (
             <div className="flex-1 flex items-center justify-center"><Loader2 className="animate-spin" /></div>
-          ) : !conversations?.length ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-sm"><MessageSquare className="mb-2 opacity-30" />No conversations</div>
+          ) : !visibleConversations.length ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-sm text-muted-foreground p-4 text-center">
+              <MessageSquare className="mb-2 opacity-30" />
+              {unreadOnly ? 'No unread conversations' : 'No conversations'}
+            </div>
           ) : (
-            <ConversationList conversations={conversations} selectedId={selectedId} onSelect={setSelectedId} userMap={userMap} currentUserId={user?.id || ''} presenceMap={presenceMap} />
+            <ConversationList conversations={visibleConversations} selectedId={selectedId} onSelect={setSelectedId} userMap={userMap} currentUserId={user?.id || ''} presenceMap={presenceMap} />
           )}
         </Card>
 

@@ -91,8 +91,12 @@ export default function AccountsContactsPage() {
       a.country_name || a.country || '', String(a.contacts.length), a.created_at.slice(0, 10),
     ]);
     const summary = buildFilterSummary([
-      filters.status, filters.type, filters.health, filters.country_code,
-      filters.industry, filters.search,
+      filters.status ? `status-${filters.status}` : null,
+      filters.type ? `type-${filters.type}` : null,
+      filters.health ? `health-${filters.health}` : null,
+      filters.country_code ? `country-${filters.country_code}` : null,
+      filters.industry ? `industry-${filters.industry}` : null,
+      filters.search ? `q-${filters.search}` : null,
     ]);
     downloadCsv(rowsToCsv(headers, rows), buildExportFilename('accounts', summary));
   };

@@ -128,7 +128,7 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh]">
+      <DialogContent className="max-w-3xl max-h-[90vh] w-[calc(100vw-2rem)] sm:w-full p-4 sm:p-6">
         <DialogHeader><DialogTitle>Add New Lead</DialogTitle></DialogHeader>
         <ScrollArea className="max-h-[65vh] pr-3">
           <div className="space-y-5">
@@ -156,18 +156,18 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
                 <Building2 className="h-4 w-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold text-foreground">Company Information</h3>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div><Label className="text-xs">Company Name *</Label><Input value={form.company_name} onChange={(e) => setForm(f => ({ ...f, company_name: e.target.value }))} onBlur={handleDuplicateCheck} /></div>
                 <div><Label className="text-xs">Industry</Label><Input value={form.industry} onChange={(e) => setForm(f => ({ ...f, industry: e.target.value }))} placeholder="e.g. Technology, Finance" /></div>
               </div>
-              <div className="grid grid-cols-3 gap-3 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
                 <div><Label className="text-xs">Website</Label><Input value={form.website} onChange={(e) => setForm(f => ({ ...f, website: e.target.value }))} placeholder="https://..." /></div>
                 <div><Label className="text-xs">Country *</Label>
                   <CountryCombobox value={form.country_code || null} onChange={(code) => setForm(f => ({ ...f, country_code: code || '' }))} required />
                 </div>
                 <div><Label className="text-xs">State / Province</Label><Input value={form.state_province} onChange={(e) => setForm(f => ({ ...f, state_province: e.target.value }))} /></div>
               </div>
-              <div className="grid grid-cols-2 gap-3 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
                 <div><Label className="text-xs">City</Label><Input value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} /></div>
                 <div><Label className="text-xs">Source</Label><Input value={form.source} onChange={(e) => setForm(f => ({ ...f, source: e.target.value }))} placeholder="e.g. Referral, Website" /></div>
               </div>
@@ -193,11 +193,11 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
                 <User className="h-4 w-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold text-foreground">Contact Details</h3>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div><Label className="text-xs">Contact Name *</Label><Input value={form.contact_name} onChange={(e) => setForm(f => ({ ...f, contact_name: e.target.value }))} /></div>
                 <div><Label className="text-xs">Email</Label><Input type="email" value={form.contact_email} onChange={(e) => setForm(f => ({ ...f, contact_email: e.target.value }))} onBlur={handleDuplicateCheck} /></div>
               </div>
-              <div className="grid grid-cols-2 gap-3 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
                 <div><Label className="text-xs">Phone</Label><Input value={form.contact_phone} onChange={(e) => setForm(f => ({ ...f, contact_phone: e.target.value }))} onBlur={handleDuplicateCheck} /></div>
                 <div><Label className="text-xs">Secondary Phone</Label><Input value={form.secondary_phone} onChange={(e) => setForm(f => ({ ...f, secondary_phone: e.target.value }))} /></div>
               </div>
@@ -211,7 +211,7 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
                 <TrendingUp className="h-4 w-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold text-foreground">Deal Intelligence</h3>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div><Label className="text-xs">Pipeline Stage</Label>
                   <Select value={form.stage} onValueChange={(v) => setForm(f => ({ ...f, stage: v as LeadStage }))}>
                     <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
@@ -225,7 +225,7 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
                 <div><Label className="text-xs">Estimated Value</Label><Input type="number" value={form.estimated_value} onChange={(e) => setForm(f => ({ ...f, estimated_value: e.target.value }))} placeholder="0.00" /></div>
                 <div><Label className="text-xs">Probability %</Label><Input type="number" min="0" max="100" value={form.probability_percent} onChange={(e) => setForm(f => ({ ...f, probability_percent: e.target.value }))} /></div>
               </div>
-              <div className="grid grid-cols-2 gap-3 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
                 <div><Label className="text-xs">Expected Close Date</Label><Input type="date" value={form.expected_close_date} onChange={(e) => setForm(f => ({ ...f, expected_close_date: e.target.value }))} /></div>
                 <div><Label className="text-xs">Next Follow-up</Label><Input type="datetime-local" value={form.next_follow_up_at} onChange={(e) => setForm(f => ({ ...f, next_follow_up_at: e.target.value }))} /></div>
               </div>

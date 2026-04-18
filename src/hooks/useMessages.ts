@@ -278,3 +278,9 @@ export function useMarkRead() {
     },
   });
 }
+
+// ─── Total unread count (derived from conversations cache) ───
+export function useTotalUnreadMessages(): number {
+  const { data } = useConversations();
+  return (data ?? []).reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+}
