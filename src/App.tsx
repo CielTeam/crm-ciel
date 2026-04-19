@@ -26,6 +26,8 @@ import AuditLogsPage from "./pages/AuditLogsPage";
 import LeadsPage from "./pages/LeadsPage";
 import AccountsContactsPage from "./pages/AccountsContactsPage";
 import OpportunitiesPage from "./pages/OpportunitiesPage";
+import TicketsPage from "./pages/TicketsPage";
+import AllTasksPage from "./pages/AllTasksPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -77,6 +79,15 @@ const App = () => (
                 <Route path="/notifications" element={<NotificationsPage />} />
                 <Route path="/directory" element={<DirectoryPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/tickets" element={<TicketsPage />} />
+                <Route
+                  path="/all-tasks"
+                  element={
+                    <ProtectedRoute allowedRoles={['chairman','vice_president','head_of_operations','technical_lead','team_development_lead','head_of_accounting','head_of_marketing','sales_lead','hr']}>
+                      <AllTasksPage />
+                    </ProtectedRoute>
+                  }
+                />
 
                 {/* Admin-only routes */}
                 <Route

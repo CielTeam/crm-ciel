@@ -92,7 +92,7 @@ const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 type AttachmentAction = 'upload' | 'list' | 'list_by_entity_ids' | 'delete';
-type EntityType = 'task' | 'comment' | 'message' | 'account' | 'lead';
+type EntityType = 'task' | 'comment' | 'message' | 'account' | 'lead' | 'ticket';
 
 interface AttachmentRequest {
   action?: AttachmentAction;
@@ -204,7 +204,7 @@ Deno.serve(async (req) => {
 
       const { file_name, file_base64, entity_type, entity_id } = body;
       if (!file_name || !file_base64 || !entity_type || !entity_id) return jsonResponse({ error: 'file_name, file_base64, entity_type, and entity_id are required' }, 400);
-      if (!['task', 'comment', 'message', 'account', 'lead'].includes(entity_type)) return jsonResponse({ error: 'entity_type must be task, comment, message, account, or lead' }, 400);
+      if (!['task', 'comment', 'message', 'account', 'lead', 'ticket'].includes(entity_type)) return jsonResponse({ error: 'entity_type must be task, comment, message, account, lead, or ticket' }, 400);
 
       const ext = getExtension(file_name);
       if (!ALLOWED_EXTENSIONS.includes(ext)) return jsonResponse({ error: 'Only images (jpg, png, gif, webp), PDF, and ZIP files are allowed' }, 400);
@@ -228,6 +228,9 @@ Deno.serve(async (req) => {
       } else if (entity_type === 'lead') {
         const { data: lead } = await admin.from('leads').select('id').eq('id', entity_id).is('deleted_at', null).maybeSingle();
         if (!lead) return jsonResponse({ error: 'Forbidden' }, 403);
+      } else if (entity_type === 'ticket') {
+        const { data: ok } = await admin.rpc('has_ticket_access', { _user_id: actorId, _ticket_id: entity_id });
+        if (!ok) return jsonResponse({ error: 'Forbidden' }, 403);
       }
 
       const timestamp = Date.now();
@@ -278,6 +281,9 @@ Deno.serve(async (req) => {
       } else if (entity_type === 'lead') {
         const { data: lead } = await admin.from('leads').select('id').eq('id', entity_id).is('deleted_at', null).maybeSingle();
         if (!lead) return jsonResponse({ error: 'Forbidden' }, 403);
+      } else if (entity_type === 'ticket') {
+        const { data: ok } = await admin.rpc('has_ticket_access', { _user_id: actorId, _ticket_id: entity_id });
+        if (!ok) return jsonResponse({ error: 'Forbidden' }, 403);
       }
 
       const { data, error } = await admin.from('attachments').select('*').eq('entity_type', entity_type).eq('entity_id', entity_id).is('deleted_at', null).order('created_at', { ascending: true });
@@ -341,6 +347,11 @@ Deno.serve(async (req) => {
         throw attachmentError;
       }
       if (!attachment) return jsonResponse({ error: 'Attachment not found' }, 404);
+      // For ticket attachments, also enforce ticket access on delete (defence in depth)
+      if (attachment.entity_type === 'ticket') {
+        const { data: ok } = await admin.rpc('has_ticket_access', { _user_id: actorId, _ticket_id: attachment.entity_id });
+        if (!ok) return jsonResponse({ error: 'Forbidden' }, 403);
+      }
       if (attachment.uploaded_by !== actorId) return jsonResponse({ error: 'Only the uploader can delete this attachment' }, 403);
 
       await admin.from('attachments').update({ deleted_at: new Date().toISOString() }).eq('id', attachment_id);

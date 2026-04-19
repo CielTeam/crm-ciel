@@ -12,6 +12,8 @@ import {
   Target,
   Building2,
   Briefcase,
+  Ticket,
+  ListChecks,
 } from 'lucide-react';
 import type { NavGroup } from '@/types/navigation';
 import type { AppRole } from '@/types/roles';
@@ -24,6 +26,13 @@ export const NAV_GROUPS: NavGroup[] = [
       { title: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { title: 'Calendar', path: '/calendar', icon: Calendar },
       { title: 'Tasks', path: '/tasks', icon: CheckSquare },
+      { title: 'Tickets', path: '/tickets', icon: Ticket },
+      {
+        title: 'All Tasks',
+        path: '/all-tasks',
+        icon: ListChecks,
+        allowedRoles: ['chairman','vice_president','head_of_operations','technical_lead','team_development_lead','head_of_accounting','head_of_marketing','sales_lead','hr'],
+      },
       { title: 'Leaves', path: '/leaves', icon: Palmtree },
     ],
   },
