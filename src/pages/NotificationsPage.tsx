@@ -33,7 +33,13 @@ export default function NotificationsPage() {
   const handleClick = (n: { reference_type: string | null; reference_id: string | null; id: string; is_read: boolean }) => {
     if (!n.is_read) markRead.mutate(n.id);
     const route = n.reference_type ? REFERENCE_ROUTES[n.reference_type] : null;
-    if (route) navigate(route);
+    if (route) {
+      if (n.reference_type === 'calendar_event' && n.reference_id) {
+        navigate(`${route}?event=${n.reference_id}`);
+      } else {
+        navigate(route);
+      }
+    }
   };
 
   return (
