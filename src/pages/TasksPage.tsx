@@ -46,9 +46,11 @@ const DONE_STATUSES = ['done', 'approved'];
 const PENDING_STATUSES = ['pending_accept', 'accepted', 'todo'];
 const IN_PROGRESS_STATUSES = ['in_progress', 'submitted'];
 
+type ActiveTab = TaskTab | 'support';
+
 export default function TasksPage() {
   const { user, roles } = useAuth();
-  const [tab, setTab] = useState<TaskTab>('my_tasks');
+  const [tab, setTab] = useState<ActiveTab>('my_tasks');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
   const [sortField, setSortField] = useState<SortField>('created_at');
@@ -59,7 +61,8 @@ export default function TasksPage() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [sheetAction, setSheetAction] = useState<'accept' | 'decline' | 'submit' | 'approve' | 'reject' | null>(null);
 
-  const { data: tasks = [], isLoading, error, refetch } = useTasks(tab);
+  const taskTab: TaskTab = tab === 'support' ? 'my_tasks' : tab;
+  const { data: tasks = [], isLoading, error, refetch } = useTasks(taskTab);
   const { data: directoryUsers } = useDirectoryData();
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
@@ -251,7 +254,7 @@ export default function TasksPage() {
       {/* Search bar */}
       <TaskSearchBar value={searchQuery} onChange={setSearchQuery} />
 
-      <Tabs value={tab} onValueChange={(v) => { setTab(v as TaskTab); setStatusFilter('all'); setSearchQuery(''); }}>
+      <Tabs value={tab} onValueChange={(v) => { setTab(v as ActiveTab); setStatusFilter('all'); setSearchQuery(''); }}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <TabsList>
             <TabsTrigger value="my_tasks">My Tasks</TabsTrigger>
