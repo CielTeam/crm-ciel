@@ -7,7 +7,7 @@ import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface DocumentsTabProps {
-  entityType: 'lead' | 'account';
+  entityType: 'lead' | 'account' | 'ticket';
   entityId: string;
 }
 
