@@ -3,7 +3,7 @@ import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval,
   format, isSameMonth, isSameDay, isToday, isWithinInterval,
 } from 'date-fns';
-import type { CalendarEvent } from '@/hooks/useCalendarEvents';
+import type { CalendarEvent } from '@/hooks/useCalendarData';
 import { CalendarEventChip } from './CalendarEventChip';
 import { cn } from '@/lib/utils';
 
@@ -11,12 +11,13 @@ interface Props {
   currentDate: Date;
   events: CalendarEvent[];
   onSelectDate: (date: Date) => void;
+  onSelectEvent?: (event: CalendarEvent) => void;
   selectedDate: Date | null;
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-export function MonthView({ currentDate, events, onSelectDate, selectedDate }: Props) {
+export function MonthView({ currentDate, events, onSelectDate, onSelectEvent, selectedDate }: Props) {
   const days = useMemo(() => {
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
@@ -72,7 +73,7 @@ export function MonthView({ currentDate, events, onSelectDate, selectedDate }: P
               </div>
               <div className="space-y-0.5">
                 {dayEvents.slice(0, 3).map(ev => (
-                  <CalendarEventChip key={ev.id} event={ev} />
+                  <CalendarEventChip key={ev.id} event={ev} onClick={onSelectEvent} />
                 ))}
                 {dayEvents.length > 3 && (
                   <p className="text-[10px] text-muted-foreground pl-1">+{dayEvents.length - 3} more</p>

@@ -3,7 +3,7 @@ import {
   startOfWeek, endOfWeek, eachDayOfInterval,
   format, isSameDay, isToday, isWithinInterval,
 } from 'date-fns';
-import type { CalendarEvent } from '@/hooks/useCalendarEvents';
+import type { CalendarEvent } from '@/hooks/useCalendarData';
 import { CalendarEventChip } from './CalendarEventChip';
 import { cn } from '@/lib/utils';
 
@@ -11,12 +11,13 @@ interface Props {
   currentDate: Date;
   events: CalendarEvent[];
   onSelectDate: (date: Date) => void;
+  onSelectEvent?: (event: CalendarEvent) => void;
   selectedDate: Date | null;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
-export function WeekView({ currentDate, events, onSelectDate, selectedDate }: Props) {
+export function WeekView({ currentDate, events, onSelectDate, onSelectEvent, selectedDate }: Props) {
   const days = useMemo(() => {
     const start = startOfWeek(currentDate);
     const end = endOfWeek(currentDate);
@@ -65,7 +66,7 @@ export function WeekView({ currentDate, events, onSelectDate, selectedDate }: Pr
           return (
             <div key={day.toISOString()} className="p-1 border-l min-h-[32px] space-y-0.5">
               {dayEvents.slice(0, 2).map(ev => (
-                <CalendarEventChip key={ev.id} event={ev} />
+                <CalendarEventChip key={ev.id} event={ev} onClick={onSelectEvent} />
               ))}
             </div>
           );
@@ -86,7 +87,7 @@ export function WeekView({ currentDate, events, onSelectDate, selectedDate }: Pr
                   <div key={`${day.toISOString()}-${hour}`} className="h-12 border-l border-b relative">
                     {dayEvents.map(ev => (
                       <div key={ev.id} className="absolute inset-x-0.5 top-0.5">
-                        <CalendarEventChip event={ev} />
+                        <CalendarEventChip event={ev} onClick={onSelectEvent} />
                       </div>
                     ))}
                   </div>
