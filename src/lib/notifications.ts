@@ -78,6 +78,30 @@ export async function playTaskSound() {
   }
 }
 
+/** Play a soft reminder chime — single low-volume tone for calendar event reminders */
+export async function playReminderSound() {
+  try {
+    const ctx = getAudioContext();
+    await ensureResumed(ctx);
+    const compressor = createPunchThrough(ctx);
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(compressor);
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(587, ctx.currentTime);       // D5
+    osc.frequency.setValueAtTime(740, ctx.currentTime + 0.1); // F#5
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.5);
+  } catch {
+    // Audio not available
+  }
+}
+
 /** Play a general notification chime — single mellow tone */
 export async function playNotificationSound(urgent = false) {
   try {

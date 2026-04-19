@@ -7,6 +7,7 @@ import {
   playMessageSound,
   playTaskSound,
   playNotificationSound,
+  playReminderSound,
   requestNotificationPermission,
   showBrowserNotification,
 } from '@/lib/notifications';
@@ -109,6 +110,8 @@ export function useNotificationsRealtime() {
           if (prefs.tasks) playTaskSound();
         } else if (nType === 'lead_expiry') {
           if (prefs.notifications) playNotificationSound(!!isUrgent);
+        } else if (nType === 'event_reminder') {
+          if (prefs.notifications) playReminderSound();
         } else {
           if (prefs.notifications) playNotificationSound(!!isUrgent);
         }

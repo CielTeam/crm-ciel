@@ -1,22 +1,49 @@
-import { useState, useCallback } from 'react';
-import { addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, format } from 'date-fns';
-import { useCalendarEvents } from '@/hooks/useCalendarEvents';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, format, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
+import { useCalendarData, type CalendarEvent } from '@/hooks/useCalendarData';
 import { MonthView } from '@/components/calendar/MonthView';
 import { WeekView } from '@/components/calendar/WeekView';
 import { DayView } from '@/components/calendar/DayView';
+import { AddEventDialog } from '@/components/calendar/AddEventDialog';
+import { EventDetailSheet } from '@/components/calendar/EventDetailSheet';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 
 type ViewMode = 'month' | 'week' | 'day';
 
 export default function CalendarPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const events = useCalendarEvents();
+  const [addOpen, setAddOpen] = useState(false);
+  const [activeEventId, setActiveEventId] = useState<string | null>(searchParams.get('event'));
 
-  const navigate = useCallback((dir: 1 | -1) => {
+  // Window for fetching
+  const { from, to } = useMemo(() => {
+    if (viewMode === 'month') {
+      const ms = startOfMonth(currentDate);
+      const me = endOfMonth(currentDate);
+      return { from: startOfWeek(ms), to: endOfWeek(me) };
+    }
+    if (viewMode === 'week') {
+      return { from: startOfWeek(currentDate), to: endOfWeek(currentDate) };
+    }
+    return { from: new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 0, 0, 0), to: new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 23, 59, 59) };
+  }, [currentDate, viewMode]);
+
+  const { data: events = [] } = useCalendarData(from, to);
+
+  // Open detail from query param
+  useEffect(() => {
+    const ev = searchParams.get('event');
+    if (ev && ev !== activeEventId) setActiveEventId(ev);
+  }, [searchParams, activeEventId]);
+
+  const navigateBy = useCallback((dir: 1 | -1) => {
     setCurrentDate(prev => {
       if (viewMode === 'month') return dir === 1 ? addMonths(prev, 1) : subMonths(prev, 1);
       if (viewMode === 'week') return dir === 1 ? addWeeks(prev, 1) : subWeeks(prev, 1);
@@ -29,6 +56,26 @@ export default function CalendarPage() {
     if (viewMode === 'month') {
       setCurrentDate(date);
       setViewMode('day');
+    }
+  };
+
+  const handleSelectEvent = (ev: CalendarEvent) => {
+    if (ev.source === 'event') {
+      setActiveEventId(ev.id);
+      setSearchParams(p => { p.set('event', ev.id); return p; }, { replace: true });
+    } else if (ev.source === 'ticket' && ev.linkedTicketId) {
+      navigate(`/tickets?ticket=${ev.linkedTicketId}`);
+    } else if (ev.source === 'task' && ev.linkedTaskId) {
+      navigate(`/tasks?task=${ev.linkedTaskId}`);
+    } else if (ev.source === 'leave') {
+      navigate('/leaves');
+    }
+  };
+
+  const closeDetail = (open: boolean) => {
+    if (!open) {
+      setActiveEventId(null);
+      setSearchParams(p => { p.delete('event'); return p; }, { replace: true });
     }
   };
 
@@ -45,6 +92,10 @@ export default function CalendarPage() {
         <h1 className="text-2xl font-bold text-foreground">Calendar</h1>
 
         <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => setAddOpen(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> New event
+          </Button>
+
           <Button variant="outline" size="sm" onClick={() => {
             setCurrentDate(new Date());
             setSelectedDate(new Date());
@@ -53,13 +104,13 @@ export default function CalendarPage() {
           </Button>
 
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(-1)}>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigateBy(-1)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="text-sm font-medium text-foreground min-w-[160px] text-center">
               {headerLabel}
             </span>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(1)}>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigateBy(1)}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -75,22 +126,26 @@ export default function CalendarPage() {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-primary" /> Tasks</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-success" /> Approved Leave</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-warning" /> Pending Leave</span>
+      <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-primary" /> Events</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-info" /> Tickets</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-success" /> Approved leave</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-warning" /> Pending leave</span>
       </div>
 
       {/* View */}
       {viewMode === 'month' && (
-        <MonthView currentDate={currentDate} events={events} onSelectDate={handleSelectDate} selectedDate={selectedDate} />
+        <MonthView currentDate={currentDate} events={events} onSelectDate={handleSelectDate} onSelectEvent={handleSelectEvent} selectedDate={selectedDate} />
       )}
       {viewMode === 'week' && (
-        <WeekView currentDate={currentDate} events={events} onSelectDate={handleSelectDate} selectedDate={selectedDate} />
+        <WeekView currentDate={currentDate} events={events} onSelectDate={handleSelectDate} onSelectEvent={handleSelectEvent} selectedDate={selectedDate} />
       )}
       {viewMode === 'day' && (
-        <DayView currentDate={currentDate} events={events} />
+        <DayView currentDate={currentDate} events={events} onSelectEvent={handleSelectEvent} />
       )}
+
+      <AddEventDialog open={addOpen} onOpenChange={setAddOpen} defaultDate={selectedDate || currentDate} />
+      <EventDetailSheet eventId={activeEventId} open={!!activeEventId} onOpenChange={closeDetail} />
     </div>
   );
 }

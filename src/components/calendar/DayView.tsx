@@ -1,17 +1,18 @@
 import { useMemo } from 'react';
 import { format, isSameDay, isWithinInterval } from 'date-fns';
-import type { CalendarEvent } from '@/hooks/useCalendarEvents';
+import type { CalendarEvent } from '@/hooks/useCalendarData';
 import { CalendarEventChip } from './CalendarEventChip';
 import { cn } from '@/lib/utils';
 
 interface Props {
   currentDate: Date;
   events: CalendarEvent[];
+  onSelectEvent?: (event: CalendarEvent) => void;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
-export function DayView({ currentDate, events }: Props) {
+export function DayView({ currentDate, events, onSelectEvent }: Props) {
   const dayEvents = useMemo(() => {
     return events.filter(e => {
       if (e.endDate) {
@@ -37,7 +38,7 @@ export function DayView({ currentDate, events }: Props) {
         <div className="px-4 py-2 border-b bg-muted/30 space-y-1">
           <p className="text-[10px] text-muted-foreground font-medium">ALL DAY</p>
           {allDayEvents.map(ev => (
-            <CalendarEventChip key={ev.id} event={ev} />
+            <CalendarEventChip key={ev.id} event={ev} onClick={onSelectEvent} />
           ))}
         </div>
       )}
@@ -53,7 +54,7 @@ export function DayView({ currentDate, events }: Props) {
               </div>
               <div className="flex-1 p-1 space-y-0.5">
                 {hourEvents.map(ev => (
-                  <CalendarEventChip key={ev.id} event={ev} />
+                  <CalendarEventChip key={ev.id} event={ev} onClick={onSelectEvent} />
                 ))}
               </div>
             </div>
