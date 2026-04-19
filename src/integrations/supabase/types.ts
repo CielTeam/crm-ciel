@@ -260,6 +260,107 @@ export type Database = {
         }
         Relationships: []
       }
+      calendar_event_participants: {
+        Row: {
+          created_at: string
+          event_id: string
+          id: string
+          is_organizer: boolean
+          response: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          id?: string
+          is_organizer?: boolean
+          response?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          id?: string
+          is_organizer?: boolean
+          response?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_event_participants_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_events: {
+        Row: {
+          account_id: string | null
+          all_day: boolean
+          color: string | null
+          created_at: string
+          created_by: string
+          deleted_at: string | null
+          description: string | null
+          end_time: string
+          event_type: Database["public"]["Enums"]["calendar_event_type_enum"]
+          id: string
+          location: string | null
+          owner_user_id: string
+          recurrence_rule: string | null
+          start_time: string
+          task_id: string | null
+          ticket_id: string | null
+          title: string
+          updated_at: string
+          visibility: Database["public"]["Enums"]["calendar_visibility_enum"]
+        }
+        Insert: {
+          account_id?: string | null
+          all_day?: boolean
+          color?: string | null
+          created_at?: string
+          created_by: string
+          deleted_at?: string | null
+          description?: string | null
+          end_time: string
+          event_type?: Database["public"]["Enums"]["calendar_event_type_enum"]
+          id?: string
+          location?: string | null
+          owner_user_id: string
+          recurrence_rule?: string | null
+          start_time: string
+          task_id?: string | null
+          ticket_id?: string | null
+          title: string
+          updated_at?: string
+          visibility?: Database["public"]["Enums"]["calendar_visibility_enum"]
+        }
+        Update: {
+          account_id?: string | null
+          all_day?: boolean
+          color?: string | null
+          created_at?: string
+          created_by?: string
+          deleted_at?: string | null
+          description?: string | null
+          end_time?: string
+          event_type?: Database["public"]["Enums"]["calendar_event_type_enum"]
+          id?: string
+          location?: string | null
+          owner_user_id?: string
+          recurrence_rule?: string | null
+          start_time?: string
+          task_id?: string | null
+          ticket_id?: string | null
+          title?: string
+          updated_at?: string
+          visibility?: Database["public"]["Enums"]["calendar_visibility_enum"]
+        }
+        Relationships: []
+      }
       contacts: {
         Row: {
           account_id: string | null
@@ -419,6 +520,53 @@ export type Database = {
             columns: ["parent_department_id"]
             isOneToOne: false
             referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      event_reminders: {
+        Row: {
+          channel: Database["public"]["Enums"]["reminder_channel_enum"]
+          created_at: string
+          error: string | null
+          event_id: string
+          fire_at: string
+          id: string
+          offset_minutes: number
+          sent_at: string | null
+          status: Database["public"]["Enums"]["reminder_status_enum"]
+          user_id: string
+        }
+        Insert: {
+          channel?: Database["public"]["Enums"]["reminder_channel_enum"]
+          created_at?: string
+          error?: string | null
+          event_id: string
+          fire_at: string
+          id?: string
+          offset_minutes: number
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["reminder_status_enum"]
+          user_id: string
+        }
+        Update: {
+          channel?: Database["public"]["Enums"]["reminder_channel_enum"]
+          created_at?: string
+          error?: string | null
+          event_id?: string
+          fire_at?: string
+          id?: string
+          offset_minutes?: number
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["reminder_status_enum"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_reminders_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_events"
             referencedColumns: ["id"]
           },
         ]
@@ -1473,6 +1621,10 @@ export type Database = {
           uid: string
         }[]
       }
+      has_event_access: {
+        Args: { _event_id: string; _user_id: string }
+        Returns: boolean
+      }
       has_leads_access_scoped: {
         Args: { _lead_assigned_to: string; _user_id: string }
         Returns: boolean
@@ -1512,6 +1664,19 @@ export type Database = {
         | "sales_lead"
         | "sales_employee"
         | "driver"
+      calendar_event_type_enum:
+        | "meeting"
+        | "deadline"
+        | "reminder"
+        | "personal"
+        | "block"
+        | "ticket_due"
+        | "task_due"
+      calendar_visibility_enum:
+        | "private"
+        | "participants"
+        | "department"
+        | "management_chain"
       lead_lost_reason:
         | "competitor"
         | "price_issue"
@@ -1530,6 +1695,8 @@ export type Database = {
         | "negotiation"
         | "won"
         | "lost"
+      reminder_channel_enum: "in_app" | "browser_push" | "email"
+      reminder_status_enum: "pending" | "sent" | "failed" | "cancelled"
       ticket_priority_enum: "low" | "medium" | "high" | "urgent"
       ticket_source_enum:
         | "internal"
@@ -1699,6 +1866,21 @@ export const Constants = {
         "sales_employee",
         "driver",
       ],
+      calendar_event_type_enum: [
+        "meeting",
+        "deadline",
+        "reminder",
+        "personal",
+        "block",
+        "ticket_due",
+        "task_due",
+      ],
+      calendar_visibility_enum: [
+        "private",
+        "participants",
+        "department",
+        "management_chain",
+      ],
       lead_lost_reason: [
         "competitor",
         "price_issue",
@@ -1719,6 +1901,8 @@ export const Constants = {
         "won",
         "lost",
       ],
+      reminder_channel_enum: ["in_app", "browser_push", "email"],
+      reminder_status_enum: ["pending", "sent", "failed", "cancelled"],
       ticket_priority_enum: ["low", "medium", "high", "urgent"],
       ticket_source_enum: [
         "internal",
