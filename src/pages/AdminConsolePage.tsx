@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAdminUsers, useAdminTeams } from '@/hooks/useAdminData';
 import { UsersTable } from '@/components/admin/UsersTable';
 import { TeamsTable } from '@/components/admin/TeamsTable';
+import { HierarchySection } from '@/components/admin/HierarchySection';
 import { AddUserDialog } from '@/components/admin/AddUserDialog';
 import { CreateTeamDialog } from '@/components/admin/CreateTeamDialog';
 import { PageError } from '@/components/PageError';
@@ -35,12 +36,16 @@ export default function AdminConsolePage() {
           <TabsList>
             <TabsTrigger value="users">Users ({users?.length || 0})</TabsTrigger>
             <TabsTrigger value="teams">Teams ({teams?.length || 0})</TabsTrigger>
+            <TabsTrigger value="hierarchy">Hierarchy</TabsTrigger>
           </TabsList>
           <TabsContent value="users">
             <UsersTable users={users || []} onAddUser={() => setAddUserOpen(true)} />
           </TabsContent>
           <TabsContent value="teams">
             <TeamsTable teams={teams || []} onCreateTeam={() => setCreateTeamOpen(true)} />
+          </TabsContent>
+          <TabsContent value="hierarchy">
+            <HierarchySection users={users || []} />
           </TabsContent>
         </Tabs>
       )}

@@ -89,7 +89,10 @@ function sanitizeString(val: unknown, maxLen: number): string {
 // ─── Types ───
 
 type JsonResponseBody = Record<string, unknown>;
-type AdminManageUserAction = 'create_user' | 'update_role' | 'deactivate_user' | 'reactivate_user' | 'create_team' | 'assign_team' | 'remove_team_member';
+type AdminManageUserAction =
+  | 'create_user' | 'update_role' | 'deactivate_user' | 'reactivate_user'
+  | 'create_team' | 'assign_team' | 'remove_team_member'
+  | 'update_hierarchy' | 'create_department' | 'update_department' | 'delete_department';
 
 interface AdminManageUserRequest {
   action?: AdminManageUserAction;
@@ -101,6 +104,12 @@ interface AdminManageUserRequest {
   name?: string;
   department?: string;
   team_id?: string;
+  // Hierarchy fields
+  id?: string;
+  manager_user_id?: string | null;
+  department_id?: string | null;
+  head_user_id?: string | null;
+  parent_department_id?: string | null;
 }
 
 interface CreatedProfile { id: string; user_id: string; email: string; display_name: string; status: string }
@@ -236,6 +245,64 @@ Deno.serve(async (req) => {
         await adminClient.from('team_members').delete().eq('user_id', target_user_id).eq('team_id', team_id);
         await adminClient.from('profiles').update({ team_id: null }).eq('user_id', target_user_id);
         await adminClient.from('audit_logs').insert({ action: 'remove_team_member', actor_id: actorId, target_id: target_user_id, target_type: 'user', metadata: { team_id } });
+        result = { success: true };
+        break;
+      }
+
+      case 'update_hierarchy': {
+        const { target_user_id } = body;
+        if (!target_user_id) return jsonResponse({ error: 'Missing target_user_id' }, 400);
+        const updates: Record<string, unknown> = {};
+        if (body.manager_user_id !== undefined) updates.manager_user_id = body.manager_user_id;
+        if (body.department_id !== undefined) updates.department_id = body.department_id;
+        if (Object.keys(updates).length === 0) return jsonResponse({ error: 'Nothing to update' }, 400);
+        const { error } = await adminClient.from('profiles').update(updates).eq('user_id', target_user_id);
+        if (error) throw error;
+        await adminClient.from('audit_logs').insert({ action: 'update_hierarchy', actor_id: actorId, target_id: target_user_id, target_type: 'user', metadata: updates });
+        result = { success: true };
+        break;
+      }
+
+      case 'create_department': {
+        const name = sanitizeString(body.name, 100);
+        if (!name) return jsonResponse({ error: 'Department name required' }, 400);
+        const insertPayload: Record<string, unknown> = { name };
+        if (body.head_user_id) insertPayload.head_user_id = body.head_user_id;
+        if (body.parent_department_id) insertPayload.parent_department_id = body.parent_department_id;
+        const { data: dept, error } = await adminClient.from('departments').insert(insertPayload).select().single();
+        if (error) throw error;
+        await adminClient.from('audit_logs').insert({ action: 'create_department', actor_id: actorId, target_id: dept.id, target_type: 'department', metadata: insertPayload });
+        result = { department: dept };
+        break;
+      }
+
+      case 'update_department': {
+        const { id } = body;
+        if (!id) return jsonResponse({ error: 'Missing department id' }, 400);
+        const updates: Record<string, unknown> = {};
+        if (body.name !== undefined) updates.name = sanitizeString(body.name, 100);
+        if (body.head_user_id !== undefined) updates.head_user_id = body.head_user_id;
+        if (body.parent_department_id !== undefined) {
+          if (body.parent_department_id === id) return jsonResponse({ error: 'Department cannot be its own parent' }, 400);
+          updates.parent_department_id = body.parent_department_id;
+        }
+        if (Object.keys(updates).length === 0) return jsonResponse({ error: 'Nothing to update' }, 400);
+        const { error } = await adminClient.from('departments').update(updates).eq('id', id);
+        if (error) throw error;
+        await adminClient.from('audit_logs').insert({ action: 'update_department', actor_id: actorId, target_id: id, target_type: 'department', metadata: updates });
+        result = { success: true };
+        break;
+      }
+
+      case 'delete_department': {
+        const { id } = body;
+        if (!id) return jsonResponse({ error: 'Missing department id' }, 400);
+        // Unassign users and re-parent children before delete
+        await adminClient.from('profiles').update({ department_id: null }).eq('department_id', id);
+        await adminClient.from('departments').update({ parent_department_id: null }).eq('parent_department_id', id);
+        const { error } = await adminClient.from('departments').delete().eq('id', id);
+        if (error) throw error;
+        await adminClient.from('audit_logs').insert({ action: 'delete_department', actor_id: actorId, target_id: id, target_type: 'department' });
         result = { success: true };
         break;
       }
