@@ -12,6 +12,7 @@ const REFERENCE_ROUTES: Record<string, string> = {
   leave: '/leaves',
   task: '/tasks',
   conversation: '/messages',
+  calendar_event: '/calendar',
 };
 
 const TYPE_CONFIG: Record<string, { icon: typeof Bell; color: string; label: string }> = {
@@ -19,6 +20,7 @@ const TYPE_CONFIG: Record<string, { icon: typeof Bell; color: string; label: str
   leave_rejected: { icon: Palmtree, color: 'text-destructive', label: 'Leave Rejected' },
   task_assigned: { icon: CheckSquare, color: 'text-primary', label: 'Task Assigned' },
   new_message: { icon: MessageSquare, color: 'text-info', label: 'New Message' },
+  event_reminder: { icon: Bell, color: 'text-info', label: 'Event Reminder' },
 };
 
 export default function NotificationsPage() {
