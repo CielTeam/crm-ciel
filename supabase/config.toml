@@ -32,3 +32,9 @@ verify_jwt = false
 
 [functions.attachments]
 verify_jwt = false
+
+[functions.calendar-events]
+verify_jwt = false
+
+[functions.reminders-dispatch]
+verify_jwt = false
