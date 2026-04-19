@@ -12,6 +12,7 @@ import { AddTaskDialog } from '@/components/tasks/AddTaskDialog';
 import { AcceptDeclineDialog } from '@/components/tasks/AcceptDeclineDialog';
 import { SubmitTaskDialog } from '@/components/tasks/SubmitTaskDialog';
 import { ReviewTaskDialog } from '@/components/tasks/ReviewTaskDialog';
+import { SupportTicketsTab } from '@/components/tickets/SupportTicketsTab';
 import { PageError } from '@/components/PageError';
 import { useTasks, useCreateTask, useUpdateTask, useDeleteTask, useTogglePin, useMarkDone, useMarkUndone, type TaskTab, type Task } from '@/hooks/useTasks';
 import { useDirectoryData } from '@/hooks/useDirectoryData';
@@ -261,6 +262,7 @@ export default function TasksPage() {
             {canSeeTeamTab && (
               <TabsTrigger value="team_tasks">Team Tasks</TabsTrigger>
             )}
+            <TabsTrigger value="support">Support</TabsTrigger>
           </TabsList>
 
           <div className="flex items-center gap-1">
@@ -343,6 +345,9 @@ export default function TasksPage() {
             {renderTaskList()}
           </TabsContent>
         ))}
+        <TabsContent value="support" className="mt-4">
+          <SupportTicketsTab />
+        </TabsContent>
       </Tabs>
 
       <AddTaskDialog
