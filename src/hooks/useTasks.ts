@@ -33,6 +33,8 @@ export interface Task {
   lead_id?: string | null;
   account_id?: string | null;
   ticket_id?: string | null;
+  project_id?: string | null;
+  project_sort_order?: number;
 }
 
 export interface TaskActivityLog {
@@ -156,6 +158,7 @@ export function useCreateTask() {
       lead_id?: string | null;
       account_id?: string | null;
       ticket_id?: string | null;
+      project_id?: string | null;
     }) => {
       const data = await invoke({ action: 'create', ...payload });
       return data.task as Task;
@@ -163,7 +166,22 @@ export function useCreateTask() {
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
       if (vars.lead_id) qc.invalidateQueries({ queryKey: ['tasks-by-lead', vars.lead_id] });
+      if (vars.account_id) qc.invalidateQueries({ queryKey: ['tasks-by-account', vars.account_id] });
+      if (vars.project_id) qc.invalidateQueries({ queryKey: ['project-tasks', vars.project_id] });
     },
+  });
+}
+
+export function useTasksByAccount(accountId: string | null) {
+  const { user } = useAuth();
+  const invoke = useTaskInvoke();
+  return useQuery({
+    queryKey: ['tasks-by-account', accountId],
+    queryFn: async () => {
+      const data = await invoke({ action: 'list_by_account', account_id: accountId });
+      return (data.tasks || []) as Task[];
+    },
+    enabled: !!user?.id && !!accountId,
   });
 }
 
