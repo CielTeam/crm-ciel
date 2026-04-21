@@ -20,11 +20,14 @@ import {
 import { cn } from '@/lib/utils';
 import { useTaskActivity, useTaskComments, useAddTaskComment, useAssignableUsers, useReassignTask, type Task, type TaskActivityLog } from '@/hooks/useTasks';
 import { useAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/useAttachments';
+import { useProjects } from '@/hooks/useProjects';
+import { AttachToProjectDialog } from '@/components/projects/AttachToProjectDialog';
 import { FileAttachmentList } from '@/components/shared/FileAttachmentList';
 import { FileUploadButton } from '@/components/shared/FileUploadButton';
 import { getTimeToStart, getTimeToComplete, getWaitingTime } from '@/lib/taskTimings';
 import type { TaskAssignee } from './TaskCard';
 import { toast } from 'sonner';
+import { FolderKanban } from 'lucide-react';
 
 const statusConfig: Record<string, { label: string; className: string; icon: typeof Circle }> = {
   todo: { label: 'To Do', className: 'bg-muted text-muted-foreground', icon: Circle },
@@ -114,9 +117,11 @@ export function TaskDetailSheet({
 }: TaskDetailSheetProps) {
   const [commentText, setCommentText] = useState('');
   const [reassignOpen, setReassignOpen] = useState(false);
+  const [attachProjectOpen, setAttachProjectOpen] = useState(false);
   const { data: activityLogs = [], isLoading: activityLoading } = useTaskActivity(open && task ? task.id : null);
   const { data: comments = [], isLoading: commentsLoading } = useTaskComments(open && task ? task.id : null);
   const { data: taskAttachments = [] } = useAttachments('task', open && task ? task.id : null);
+  const { data: allProjects = [] } = useProjects('mine');
   const addComment = useAddTaskComment();
   const { data: assignableUsers = [] } = useAssignableUsers();
   const reassignTask = useReassignTask();
@@ -134,6 +139,7 @@ export function TaskDetailSheet({
   const isPersonal = task.task_type === 'personal';
   const canReassign = isCreator && !isPersonal && assignableUsers.length > 0;
   const isDone = task.status === 'done' || task.status === 'approved';
+  const currentProject = task.project_id ? allProjects.find(p => p.id === task.project_id) : null;
 
   const timeToStart = getTimeToStart(task);
   const timeToComplete = getTimeToComplete(task);
