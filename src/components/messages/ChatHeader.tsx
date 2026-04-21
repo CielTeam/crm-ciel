@@ -25,9 +25,9 @@ export function ChatHeader({ conversation, userMap, currentUserId, presenceMap }
     const displayName = conversation.name || getGroupFallbackName(conversation.memberIds, currentUserId, userMap);
 
     return (
-      <div className="p-3 border-b flex items-center gap-3">
-        <div className="flex items-center justify-center h-9 w-9 rounded-full bg-primary/10">
-          <Users className="h-4 w-4 text-primary" />
+      <div className="p-3 border-b flex items-center gap-3 bg-[hsl(var(--chat-surface))]">
+        <div className="flex items-center justify-center h-9 w-9 rounded-full bg-[hsl(var(--chat-bubble-mine))]/15">
+          <Users className="h-4 w-4 text-[hsl(var(--chat-bubble-mine))]" />
         </div>
         <div className="min-w-0">
           <p className="font-semibold text-sm truncate">{displayName}</p>
@@ -47,10 +47,10 @@ export function ChatHeader({ conversation, userMap, currentUserId, presenceMap }
   const isOnline = presence?.isOnline ?? false;
 
   return (
-    <div className="p-3 border-b flex items-center gap-3">
+    <div className="p-3 border-b flex items-center gap-3 bg-[hsl(var(--chat-surface))]">
       <div className="relative">
         <Avatar className="h-9 w-9">
-          <AvatarFallback className="text-xs bg-primary/10 text-primary">
+          <AvatarFallback className="text-xs bg-[hsl(var(--chat-bubble-mine))]/15 text-[hsl(var(--chat-bubble-mine))] font-semibold">
             {getInitials(otherName)}
           </AvatarFallback>
         </Avatar>

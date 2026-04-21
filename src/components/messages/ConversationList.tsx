@@ -53,17 +53,19 @@ export function ConversationList({ conversations, selectedId, onSelect, userMap,
               onClick={() => onSelect(conv.id)}
               className={cn(
                 'w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors',
-                selectedId === conv.id ? 'bg-accent' : 'hover:bg-muted'
+                selectedId === conv.id
+                  ? 'bg-[hsl(var(--chat-bubble-mine))]/15 border-l-2 border-[hsl(var(--chat-bubble-mine))]'
+                  : 'hover:bg-muted border-l-2 border-transparent'
               )}
             >
               <div className="relative shrink-0">
                 {isGroup ? (
-                  <div className="flex items-center justify-center h-9 w-9 rounded-full bg-primary/10">
-                    <Users className="h-4 w-4 text-primary" />
+                  <div className="flex items-center justify-center h-9 w-9 rounded-full bg-[hsl(var(--chat-bubble-mine))]/15">
+                    <Users className="h-4 w-4 text-[hsl(var(--chat-bubble-mine))]" />
                   </div>
                 ) : (
                   <Avatar className="h-9 w-9">
-                    <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                    <AvatarFallback className="text-xs bg-[hsl(var(--chat-bubble-mine))]/15 text-[hsl(var(--chat-bubble-mine))] font-semibold">
                       {getInitials(name)}
                     </AvatarFallback>
                   </Avatar>
@@ -74,9 +76,9 @@ export function ConversationList({ conversations, selectedId, onSelect, userMap,
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-foreground truncate">{name}</p>
+                  <p className="text-sm font-semibold text-foreground truncate">{name}</p>
                   {conv.unreadCount > 0 && (
-                    <Badge variant="default" className="ml-2 h-5 min-w-5 flex items-center justify-center text-xs">
+                    <Badge className="ml-2 h-5 min-w-5 flex items-center justify-center text-xs bg-[hsl(var(--chat-bubble-mine))] text-white hover:bg-[hsl(var(--chat-bubble-mine))]">
                       {conv.unreadCount}
                     </Badge>
                   )}

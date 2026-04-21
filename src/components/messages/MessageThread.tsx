@@ -39,14 +39,14 @@ export function MessageThread({
 
   if (!messages.length) {
     return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm bg-[hsl(var(--chat-surface))]">
         No messages yet. Start the conversation!
       </div>
     );
   }
 
   return (
-    <ScrollArea className="flex-1 px-4">
+    <ScrollArea className="flex-1 px-4 bg-[hsl(var(--chat-surface))]">
       <div className="space-y-3 py-4">
         {messages.map((msg) => {
           const isMine = msg.sender_id === currentUserId;
@@ -60,14 +60,14 @@ export function MessageThread({
             >
               <div
                 className={cn(
-                  'max-w-[75%] rounded-xl px-3 py-2',
+                  'max-w-[75%] rounded-2xl px-3.5 py-2 shadow-sm',
                   isMine
-                    ? 'bg-slate-700 text-white dark:bg-slate-600'
-                    : 'bg-muted text-foreground'
+                    ? 'bg-[hsl(var(--chat-bubble-mine))] text-[hsl(var(--chat-bubble-mine-fg))]'
+                    : 'bg-[hsl(var(--chat-bubble-other))] text-[hsl(var(--chat-bubble-other-fg))]'
                 )}
               >
-                {!isMine && (isGroup || !isMine) && (
-                  <p className="text-[10px] font-medium opacity-70 mb-0.5">
+                {!isMine && isGroup && (
+                  <p className="text-[11px] font-semibold opacity-80 mb-0.5">
                     {senderName}
                   </p>
                 )}
@@ -95,9 +95,7 @@ export function MessageThread({
                   <p
                     className={cn(
                       'text-[10px]',
-                    isMine
-                        ? 'text-white/60'
-                        : 'text-muted-foreground/60'
+                      isMine ? 'text-[hsl(var(--chat-bubble-mine-fg))]/70' : 'text-[hsl(var(--chat-meta))]'
                     )}
                   >
                     {format(new Date(msg.created_at), 'HH:mm')}
@@ -105,12 +103,12 @@ export function MessageThread({
                   {isMine && readReceipts && (() => {
                     const status = readReceipts.get(msg.id) ?? 'sent';
                     if (status === 'seen') {
-                      return <CheckCheck className="h-3 w-3 text-blue-400" />;
+                      return <CheckCheck className="h-3 w-3 text-[hsl(var(--chat-read))]" />;
                     }
                     if (status === 'delivered') {
-                      return <CheckCheck className="h-3 w-3 text-white/50" />;
+                      return <CheckCheck className="h-3 w-3 text-[hsl(var(--chat-bubble-mine-fg))]/60" />;
                     }
-                    return <Check className="h-3 w-3 text-white/50" />;
+                    return <Check className="h-3 w-3 text-[hsl(var(--chat-bubble-mine-fg))]/60" />;
                   })()}
                 </div>
               </div>
@@ -120,8 +118,8 @@ export function MessageThread({
 
         {typingUserIds.length > 0 && (
           <div className="flex justify-start">
-            <div className="bg-muted text-foreground rounded-xl px-3 py-2">
-              <p className="text-xs text-muted-foreground">
+            <div className="bg-[hsl(var(--chat-bubble-other))] text-[hsl(var(--chat-bubble-other-fg))] rounded-2xl px-3 py-2">
+              <p className="text-xs">
                 {typingUserIds.length <= 2
                   ? typingUserIds
                       .map((id) => userMap.get(id) ?? 'Someone')
