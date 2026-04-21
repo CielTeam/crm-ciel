@@ -1,189 +1,101 @@
 
 
-# Five fixes: notifications, chat UX, leads/conversion, lead→tasks, calendar reminders
+# Four fixes: task actions, blue ticks, lead/account solutions, More popover overflow
 
-## 1. Sync message notifications with read state
+## 1. Approve / Reject (and Accept / Decline / Submit / Start) do nothing inside the lead's Tasks tab
 
-When a conversation is read in the Messages page, all `notifications` rows of type `new_message` for that conversation must be marked read so they disappear from the bell badge and the Unread tab.
+Root cause: `LeadTasksPanel.tsx` mounts `TaskDetailSheet` with **stub no-op handlers** for `onActionClick`, `onStatusChange`, `onMarkDone`, `onMarkUndone`, `onTogglePin`. The sheet's Approve/Reject buttons call `onActionClick('approve' | 'reject')` → nothing happens. `TasksPage.tsx` already has the correct wiring (opens `AcceptDeclineDialog` / `SubmitTaskDialog` / `ReviewTaskDialog`).
 
-**Backend — `supabase/functions/messages/index.ts`** (extend `mark_read` action):
-- After updating `conversation_members.last_read_at`, also run:
+Fix — refactor `LeadTasksPanel.tsx` to mirror the `TasksPage` pattern:
+- Add `sheetAction` state (`'accept' | 'decline' | 'submit' | 'approve' | 'reject' | null`).
+- Wire `onActionClick={(a) => setSheetAction(a)}`.
+- Wire `onStatusChange` to a new local mutation that calls the `tasks` edge function with `action: 'update_status'` (used by Start Working / Resume Work).
+- Wire `onMarkDone` / `onMarkUndone` / `onTogglePin` to the existing hooks `useMarkTaskDone`, `useMarkTaskUndone`, `useTogglePin` from `useTasks.ts`.
+- Mount `AcceptDeclineDialog`, `SubmitTaskDialog`, `ReviewTaskDialog` conditionally (same shape as `TasksPage` lines 386–420), each calling the existing mutations (`useAcceptTask`, `useDeclineTask`, `useSubmitTask`, `useApproveTask`, `useRejectTask`).
+- After any successful action invalidate `['lead-tasks', lead.id]` and `['tasks']`.
+
+Result: clicking Approve / Reject inside the Lead → Tasks tab opens the same review dialog used in the global Tasks page and the status transitions (and writes activity + notifications) just like elsewhere.
+
+## 2. Blue read-receipt ticks not visible
+
+Root cause: when chat was restyled to violet, `--chat-read` was set to violet (`270 95% 78%`). The "seen" state now blends into the violet "mine" bubble — the WhatsApp-style **blue** double-check is gone.
+
+Fix — `src/index.css`:
+- Light: `--chat-read: 210 100% 56%;` (vivid blue)
+- Dark: `--chat-read: 210 100% 65%;` (slightly lighter for dark surfaces)
+
+Optional polish in `MessageThread.tsx` — bump the seen tick to `h-3.5 w-3.5` so it reads clearly against the violet bubble. The `delivered` state stays as the muted on-bubble color (single gray check, two muted checks), `seen` becomes blue — matches user expectation.
+
+## 3. Solutions section: remove from lead creation, add to account creation
+
+### 3a. Remove from `AddLeadDialog.tsx`
+- Delete the entire `Solutions / Services` block (the trailing `<Separator />` + the `<div>…</div>` from "Solutions / Services" through the rows; lines ~239–282).
+- Drop the now-unused state: `solutions`, `setSolutions`, `SolutionRow`, `emptySolution`, `SERVICE_TYPES`, `handleTypeChange`, `updateSolution`, `removeSolution`, `validSolutions`, `addService` import + hook call.
+- Remove the post-create solution loop in `handleSubmit` (the `Promise.all(validSolutions.map…)` block).
+- Trim unused icon imports (`Plus`, `X`).
+
+Solutions can still be added to a lead later via the existing "Solutions" tab inside `LeadDetailSheet` (uses `AddServiceDialog`) — that path is unchanged. So "lead creation" becomes solution-free; "lead lifecycle" still supports them.
+
+### 3b. Add Solutions section to `AddAccountDialog.tsx`
+The accounts module currently has no service table at all, so this needs a minimal end-to-end addition:
+
+- **Database (1 migration)**: create `account_services` table mirroring `lead_services`:
   ```
-  UPDATE notifications
-  SET is_read = true
-  WHERE user_id = actorId
-    AND type = 'new_message'
-    AND reference_type = 'conversation'
-    AND reference_id = conversation_id
-    AND is_read = false
+  id uuid pk default gen_random_uuid()
+  account_id uuid not null references accounts(id) on delete cascade
+  service_name text not null
+  start_date date
+  expiry_date date not null
+  status text not null default 'active'   -- active | expired | renewed | cancelled
+  notes text
+  created_at, updated_at, deleted_at, created_by
   ```
-- Broadcast `notifications_read` event on `user-notify-{actorId}` so the bell refreshes instantly.
+  Indexes on `account_id` and `expiry_date`. Enable RLS; reuse the visibility helper used by `accounts` (caller must be in `get_visible_user_ids`-scoped accounts). Default-deny for `anon`.
 
-**Backend — `supabase/functions/messages/index.ts`** (extend `send_message` action):
-- Skip inserting a `new_message` notification for any recipient who is currently a member of the conversation **and** whose `last_read_at` is within the last 60 seconds (treat as actively viewing) — minor optimization, optional.
+- **Backend — `supabase/functions/accounts/index.ts`**: add three actions:
+  - `add_service { account_id, service_name, start_date?, expiry_date }`
+  - `list_services { account_id }`
+  - `delete_service { service_id }`
+  Authorization: caller must own/manage the account.
 
-**Frontend — `src/hooks/useNotifications.ts`**:
-- Add a second broadcast handler for `notifications_read`: invalidates `['notifications']` and `['notifications-unread-count']`.
+- **Frontend — `AddAccountDialog.tsx`**: after the Notes block, add a "Solutions / Services" section identical in shape to the one being removed from `AddLeadDialog` (Service Type select with the same `SERVICE_TYPES` list, optional Custom name, Start Date, Expiry Date *required, Add/Remove rows). On submit: after the account is created, loop the rows and call the new `add_service` action (same pattern as the lead version).
 
-**Frontend — `src/pages/MessagesPage.tsx`**:
-- After `markRead.mutate(selectedId)` (already in `useEffect` on conversation open), add a sibling call: `qc.invalidateQueries({ queryKey: ['notifications-unread-count'] })` (defense in depth in case broadcast is missed).
+- **Frontend — `AccountDetailSheet.tsx`**: add a small "Solutions" section that lists `account_services` and supports add/remove (re-use the same UX as the lead Solutions tab; minimal panel — list rows with name, dates, status badge, and an Add button opening a small inline form). This makes the "keep adding solutions later" flow work for accounts the same way it works for leads.
 
-## 2. Restyle chat — slate + purple, drop heavy blue
+## 4. "More" filter popover clipped on the right
 
-Replace the blue palette in chat with a dark-slate surface + violet accent for own messages and a clearer light surface for incoming messages. Stays inside the existing semantic token system (no hard-coded brand color drift outside chat).
+Root cause: in `LeadsFilterBar.tsx` the More popover uses `<PopoverContent className="w-96 p-3" align="start">`. On a 1002px viewport the trigger sits roughly center-right of the toolbar, so a 384px-wide popover anchored to the trigger's left edge runs past the viewport.
 
-**`src/index.css`** — add chat-scoped CSS variables (light + dark blocks):
-- `--chat-bubble-mine`, `--chat-bubble-mine-fg` → violet 600/50 (light) and violet 500/95 (dark)
-- `--chat-bubble-other`, `--chat-bubble-other-fg` → slate 100/900 (light) and slate 800/100 (dark)
-- `--chat-meta`, `--chat-read` → muted neutral + violet-300 for read receipts
-- `--chat-surface` for the panel background to soften from pure card
+Fix — single line change:
+- `<PopoverContent className="w-[min(24rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto p-3" align="end" sideOffset={4} collisionPadding={16}>`
+- `align="end"` anchors to the trigger's right edge → opens leftward.
+- `w-[min(24rem,calc(100vw-2rem))]` clamps the popover so it never exceeds viewport width minus a 1rem gutter.
+- `max-h-[70vh] overflow-y-auto` protects vertical clipping on short viewports.
+- `collisionPadding={16}` lets Radix nudge it inside the viewport if it still overflows.
 
-**`src/components/messages/MessageThread.tsx`**:
-- `isMine` bubble: `bg-[hsl(var(--chat-bubble-mine))] text-[hsl(var(--chat-bubble-mine-fg))]`
-- Other bubble: `bg-[hsl(var(--chat-bubble-other))] text-[hsl(var(--chat-bubble-other-fg))]`
-- Read-receipt double-check uses `text-[hsl(var(--chat-read))]` instead of `text-blue-400`
-- Sender name on group chats: stronger contrast (`opacity-80` + `font-semibold`).
-
-**`src/components/messages/ConversationList.tsx`**:
-- Active row: `bg-[hsl(var(--chat-bubble-mine))]/15 border-l-2 border-[hsl(var(--chat-bubble-mine))]`
-- Avatar fallback: switch from `bg-primary/10 text-primary` to `bg-[hsl(var(--chat-bubble-mine))]/15 text-[hsl(var(--chat-bubble-mine))]`
-- Unread badge: `bg-[hsl(var(--chat-bubble-mine))] text-white`
-
-**`src/components/messages/ChatHeader.tsx`** + **`MessageInput.tsx`**:
-- Replace `text-primary` / `bg-primary/10` references with the same chat tokens. Send button uses `bg-[hsl(var(--chat-bubble-mine))]`.
-- Slightly increase font-weight on names and improve focus ring on the textarea.
-
-Sidebar, top bar, dashboards, leads, etc. are untouched — primary blue stays elsewhere.
-
-## 3. Hide converted leads from the Leads page (archive on conversion)
-
-Today, conversion only stamps `converted_at` on the lead — the row still shows in every Leads view. Treat conversion as immediate archival.
-
-**Backend — `supabase/functions/leads/index.ts`**:
-- In every list-side action (`list`, `list_with_services`, `stats`, `bulk_*`) default to `query.is('converted_at', null)` **unless** `filters.converted === true` (then only converted) or `filters.converted === 'all'` (then no filter — used by saved Converted view).
-- Conversion already updates `converted_at`; no additional write needed.
-- `unconvert` already clears `converted_at` → row reappears automatically.
-
-**Frontend — `src/components/leads/LeadsFilterBar.tsx`** + `LeadFilters` shape:
-- Replace `converted?: boolean` with `converted?: 'open' | 'converted' | 'all'` (default `'open'`).
-- Add a small `Show: Open / Converted / All` toggle in the filter bar.
-
-**Frontend — `src/components/leads/LeadStatsCards.tsx`** / `LeadsAnalyticsView` / `LeadsKanbanView`:
-- These read from filtered list, so they automatically exclude converted; no extra change.
-
-**Frontend — `src/components/leads/LeadDetailSheet.tsx`**:
-- Keep the existing "Undo Conversion" entry point (it already calls `useUnconvertLead`) — once executed, the lead reappears in default view since `converted_at` is cleared.
-
-## 4. Lead → Task creation that lands in the assignee's Tasks page (and marks origin)
-
-Today the lead detail sheet's "Tasks" tab is a placeholder. Make it a full create + list panel that links the task to the lead, and show "From Lead" provenance everywhere a task surfaces.
-
-**Database — single migration**:
-- Add `lead_id uuid` column to `tasks` (nullable, indexed). Mirrors existing `account_id` / `ticket_id` link columns. No FK needed (matches existing convention).
-
-**Backend — `supabase/functions/tasks/index.ts`**:
-- Add `lead_id` to allowed create + update fields (already has the `account_id` / `ticket_id` shape — extend the same `allowedFields` array and `create` insert payload).
-- On `create` with `lead_id`, validate the lead exists and the actor passes `has_leads_access_scoped` (call existing helper with the lead's `assigned_to`).
-- Add new action `list_by_lead { lead_id }` returning tasks where `lead_id = ?`, scoped to caller via existing visibility rules. Used by the lead detail Tasks tab.
-- After insert, append `lead_activities` row (`activity_type: 'task_created'`, links to the new task) so it shows up in the Lead Activity timeline.
-
-**Frontend — new component `src/components/leads/LeadTasksPanel.tsx`**:
-- Replaces the placeholder `<TabsContent value="tasks">` body in `LeadDetailSheet.tsx`.
-- Lists tasks via new `useTasksByLead(leadId)` hook (wraps `list_by_lead`).
-- "Add Task" button opens the existing `AddTaskDialog`, but wrapped to inject `lead_id` in the submit payload and pre-fill `description` with `"From lead: {company_name} — {contact_name}"`.
-- Each row shows assignee avatar, status badge, due date, click-through opens existing `TaskDetailSheet`.
-
-**Frontend — `src/hooks/useTasks.ts`**:
-- Extend `useCreateTask` payload type to accept `lead_id?: string | null` (and `account_id?`, `ticket_id?` for parity).
-- Add `useTasksByLead(leadId)`.
-
-**Frontend — `src/components/tasks/TaskCard.tsx` + `TaskDetailSheet.tsx`**:
-- When `task.lead_id` is set, render a small purple `From Lead` chip near the title (uses `Building2` icon). On click in the detail sheet, open the lead in `LeadDetailSheet` (via a new `?lead={id}` query param handler in `LeadsPage` — non-blocking polish; v1 just shows the chip).
-- Surface `lead_id` in the `Task` interface in `useTasks.ts`.
-
-**Notifications**:
-- Already covered: `tasks/create` already sends `task_assigned` notification + broadcast to the assignee. Title is augmented with `(from lead: {company_name})` when `lead_id` is set, by reading the lead's company name in the create handler.
-
-## 5. Calendar reminders not firing — finish the wiring
-
-Reminders schedule + render in the calendar but no notification arrives. Three concrete root causes to fix:
-
-### 5a. Cron job is not actually scheduled
-
-The previous step asked the user to run the SQL manually with the anon key, which they did not. Schedule it programmatically using the **insert/SQL tool** (not a migration), pulling values from secrets so it never leaks the key:
-```
-SELECT cron.schedule(
-  'reminders-dispatch-every-minute',
-  '* * * * *',
-  $$ SELECT net.http_post(
-    url := 'https://orkbfoviqjijcoqtihuu.supabase.co/functions/v1/reminders-dispatch',
-    headers := jsonb_build_object(
-      'Content-Type','application/json',
-      'Authorization','Bearer <SUPABASE_ANON_KEY>'
-    ),
-    body := '{}'::jsonb
-  ); $$
-);
-```
-Pre-flight: ensure `pg_cron` and `pg_net` extensions are enabled (verify, do not migrate if already present). Also drop any duplicate prior schedule with the same name first (`SELECT cron.unschedule('reminders-dispatch-every-minute')` wrapped in a `DO` block that ignores not-found).
-
-### 5b. Dispatcher batch query is too narrow
-
-`supabase/functions/reminders-dispatch/index.ts` currently selects only `fire_at > now() - 15 min AND fire_at <= now()`. If the cron was off for >15 min OR a user creates a "0-minute" reminder for an event already started, rows are silently `cancelled` as stale by the second query. Fix:
-
-- Widen the "claim" window to `fire_at <= now() + 30s` (catches reminders that became due in the same minute, including 0-offset on near-future events).
-- Move the stale-cleanup into the same loop and only cancel rows older than **60 minutes** (not 15) — gives the dispatcher headroom after outages.
-- Ensure `0` minute offset is allowed end-to-end (Zod schema already permits `min(0)`; just verify the create path doesn't drop reminders whose `fire_at` is already <= now at insert time — currently it inserts them as `pending`, which is correct).
-
-### 5c. Notifications not appearing for the organizer in some cases
-
-Inspect: dispatcher inserts into `notifications` and broadcasts to `user-notify-{userId}`. Two issues:
-- The broadcast `payload` does not include `id`, but `useNotifications` real-time handler reads `row.id` for the toast `tag`. Already nullable, so harmless — but include `id` anyway for browser-notification de-dup.
-- The dispatcher `audit_logs` insert uses `actor_id: 'system'`. The `audit_logs.actor_id` column is `not null` and has no constraint, so this works — keep.
-
-Add **defensive client invalidation**: in `useNotifications.useNotificationsRealtime`, when receiving a broadcast with `type === 'event_reminder'`, also invalidate `['calendar-events']` so the event detail sheet shows the most recent reminder dispatch state.
-
-### 5d. Smoke test (post-implementation)
-- Create an event 2 min in the future with reminders `[2, 0]`, log in as both organizer and a participant, wait for cron tick → expect bell badge increments, toast appears, sound plays, browser push fires (if granted), and clicking the notification deep-links to `/calendar?event={id}` with the detail sheet open.
-- Inspect `event_reminders` rows: `status = 'sent'`, `sent_at` populated, no `error`.
-- Inspect `notifications` rows for type `event_reminder` linked to the event id.
+Apply the same `align="end" + collisionPadding` to the Stage / Owner / Country / Score popovers as a defensive consistency tweak (they're narrower so rarely clip, but it costs nothing).
 
 ## File impact
 
 ```
 Database (1 migration)
-  add `tasks.lead_id uuid` + index
+  create account_services + indexes + RLS
 
-Insert tool (no migration)
-  schedule reminders-dispatch cron job (with anon key from secrets)
+Backend (1 function edited)
+  supabase/functions/accounts/index.ts          — add_service / list_services / delete_service
 
-Backend edge functions (4 edits)
-  supabase/functions/messages/index.ts        — extend mark_read + send_message
-  supabase/functions/leads/index.ts           — converted=open default + 'all' option
-  supabase/functions/tasks/index.ts           — lead_id field, list_by_lead, lead-aware notif
-  supabase/functions/reminders-dispatch/index.ts — wider claim window + stale cleanup
-
-Frontend (≈10 edits, 1 new file, 0 deletes)
-  src/index.css                               — chat color tokens (slate + violet)
-  src/hooks/useMessages.ts                    — invalidate notifications on mark_read
-  src/hooks/useNotifications.ts               — handle notifications_read broadcast + invalidate calendar
-  src/hooks/useTasks.ts                       — lead_id in payload + useTasksByLead
-  src/pages/MessagesPage.tsx                  — minor wiring after mark_read
-  src/components/messages/MessageThread.tsx   — chat palette
-  src/components/messages/ConversationList.tsx — chat palette
-  src/components/messages/ChatHeader.tsx      — chat palette
-  src/components/messages/MessageInput.tsx    — chat palette
-  src/components/leads/LeadsFilterBar.tsx     — converted toggle (open/converted/all)
-  src/pages/LeadsPage.tsx                     — pass converted='open' default
-  src/components/leads/LeadDetailSheet.tsx    — replace tasks placeholder
-  src/components/leads/LeadTasksPanel.tsx     — NEW: lead-scoped tasks UI
-  src/components/tasks/TaskCard.tsx           — "From Lead" chip
-  src/components/tasks/TaskDetailSheet.tsx    — "From Lead" chip
+Frontend (6 edits, 0 new files)
+  src/components/leads/LeadTasksPanel.tsx       — wire action handlers + mount review dialogs
+  src/index.css                                 — --chat-read = blue (light + dark)
+  src/components/leads/AddLeadDialog.tsx        — remove Solutions block + dead state
+  src/components/accounts/AddAccountDialog.tsx  — add Solutions section + post-create loop
+  src/components/accounts/AccountDetailSheet.tsx — Solutions list/add/remove panel
+  src/components/leads/LeadsFilterBar.tsx       — More popover overflow fix (+ defensive align="end")
 ```
 
-## Out of scope (callouts)
+## Out of scope
 
-- Re-architecting chat to a fully separate "chat surface" theme — only the message bubbles + inputs are restyled.
-- Bidirectional Lead↔Task deep linking via URL params (chip is shown; click-through navigation is a follow-up if needed).
-- Email channel for reminders (still reserved in enum, dispatcher continues to skip).
+- Reorganizing the chat receipts UX beyond restoring the blue color (no separate "delivered" iconography rework).
+- Bulk service import/export for accounts (only manual add/remove, matching leads parity).
+- Backfilling existing leads' converted solutions into the new `account_services` table — conversion-time copy can be added later if needed.
 
