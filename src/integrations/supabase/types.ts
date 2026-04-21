@@ -1248,6 +1248,77 @@ export type Database = {
           },
         ]
       }
+      project_departments: {
+        Row: {
+          department: string
+          project_id: string
+        }
+        Insert: {
+          department: string
+          project_id: string
+        }
+        Update: {
+          department?: string
+          project_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_departments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          color: string | null
+          created_at: string
+          created_by: string
+          deleted_at: string | null
+          department: string | null
+          description: string | null
+          id: string
+          is_personal: boolean
+          name: string
+          owner_user_id: string
+          status: string
+          target_end_date: string | null
+          updated_at: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          created_by: string
+          deleted_at?: string | null
+          department?: string | null
+          description?: string | null
+          id?: string
+          is_personal?: boolean
+          name: string
+          owner_user_id: string
+          status?: string
+          target_end_date?: string | null
+          updated_at?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          created_by?: string
+          deleted_at?: string | null
+          department?: string | null
+          description?: string | null
+          id?: string
+          is_personal?: boolean
+          name?: string
+          owner_user_id?: string
+          status?: string
+          target_end_date?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       task_activity_logs: {
         Row: {
           actor_id: string
@@ -1342,6 +1413,8 @@ export type Database = {
           pinned: boolean
           priority: string
           progress_percent: number
+          project_id: string | null
+          project_sort_order: number
           sort_order: number
           started_at: string | null
           status: string
@@ -1375,6 +1448,8 @@ export type Database = {
           pinned?: boolean
           priority?: string
           progress_percent?: number
+          project_id?: string | null
+          project_sort_order?: number
           sort_order?: number
           started_at?: string | null
           status?: string
@@ -1408,6 +1483,8 @@ export type Database = {
           pinned?: boolean
           priority?: string
           progress_percent?: number
+          project_id?: string | null
+          project_sort_order?: number
           sort_order?: number
           started_at?: string | null
           status?: string
@@ -1419,6 +1496,13 @@ export type Database = {
           visible_scope?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "tasks_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tasks_team_id_fkey"
             columns: ["team_id"]
@@ -1682,6 +1766,10 @@ export type Database = {
         Args: { _lead_assigned_to: string; _user_id: string }
         Returns: boolean
       }
+      has_project_access: {
+        Args: { _project_id: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1698,6 +1786,10 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      user_in_department: {
+        Args: { _dept_name: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role:

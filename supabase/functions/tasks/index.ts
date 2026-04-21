@@ -335,9 +335,61 @@ Deno.serve(async (req) => {
       return jsonResponse({ tasks: filtered });
     }
 
+    // ─── LIST BY ACCOUNT ───
+    if (action === 'list_by_account') {
+      const { account_id } = payload;
+      if (!account_id) return jsonResponse({ error: 'account_id required' }, 400);
+      const { data, error } = await admin.from('tasks').select('*').eq('account_id', account_id)
+        .order('pinned', { ascending: false }).order('created_at', { ascending: false });
+      if (error) throw error;
+      const { data: vis } = await admin.rpc('get_visible_user_ids', { _user_id: actorId });
+      const visibleIds = new Set(((vis as { uid: string }[] | null) || []).map(r => r.uid));
+      visibleIds.add(actorId);
+      const tasks = (data || []) as TaskRecord[];
+      const filtered = tasks.filter(t => visibleIds.has(t.created_by) || (!!t.assigned_to && visibleIds.has(t.assigned_to)));
+      return jsonResponse({ tasks: filtered });
+    }
+
+    // ─── ATTACH TO PROJECT ───
+    if (action === 'attach_to_project') {
+      const { task_id, project_id, create_personal_project_name } = payload;
+      if (!task_id) return jsonResponse({ error: 'task_id required' }, 400);
+      const { data: existing } = await admin.from('tasks').select('*').eq('id', task_id).single();
+      if (!existing) return jsonResponse({ error: 'Task not found' }, 404);
+      const task = existing as TaskRecord;
+      if (task.created_by !== actorId && task.assigned_to !== actorId) {
+        return jsonResponse({ error: 'Forbidden' }, 403);
+      }
+
+      let finalProjectId: string | null = project_id ?? null;
+      let projectName: string | null = null;
+
+      if (create_personal_project_name && typeof create_personal_project_name === 'string') {
+        const cleanName = sanitizeString(create_personal_project_name, 200);
+        if (!cleanName) return jsonResponse({ error: 'Project name required' }, 400);
+        const { data: newProj, error: pErr } = await admin.from('projects').insert({
+          name: cleanName, is_personal: true, owner_user_id: actorId, created_by: actorId,
+        }).select().single();
+        if (pErr) throw pErr;
+        finalProjectId = newProj.id;
+        projectName = cleanName;
+      } else if (finalProjectId) {
+        const { data: proj } = await admin.from('projects').select('id, name, owner_user_id, is_personal, department').eq('id', finalProjectId).maybeSingle();
+        if (!proj) return jsonResponse({ error: 'Project not found' }, 404);
+        projectName = (proj as { name: string }).name;
+      }
+
+      const { data: updated, error } = await admin.from('tasks').update({ project_id: finalProjectId }).eq('id', task_id).select().single();
+      if (error) throw error;
+
+      await logActivity(admin, task_id, actorId, null, null, finalProjectId ? `Moved to project: ${projectName}` : 'Removed from project');
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.attach_to_project', target_type: 'task', target_id: task_id, metadata: { project_id: finalProjectId } });
+      return jsonResponse({ task: updated });
+    }
+
     // ─── CREATE ───
     if (action === 'create') {
-      const { title, description, priority, due_date, assigned_to, estimated_duration, account_id, ticket_id, lead_id, visible_scope, progress_percent } = payload;
+      const { title, description, priority, due_date, assigned_to, estimated_duration, account_id, ticket_id, lead_id, visible_scope, progress_percent, project_id } = payload;
       const cleanTitle = sanitizeString(title, 255);
       const cleanDescription = sanitizeString(description, 5000);
       if (!cleanTitle) return jsonResponse({ error: 'Title is required' }, 400);
@@ -371,12 +423,20 @@ Deno.serve(async (req) => {
 
       const taskType = assigned_to && assigned_to !== actorId ? 'assigned' : 'personal';
       const status = taskType === 'assigned' ? 'pending_accept' : 'todo';
+
+      // Validate project_id (optional). Origin from lead/account skips project requirement.
+      let finalProjectId: string | null = project_id || null;
+      if (finalProjectId) {
+        const { data: proj } = await admin.from('projects').select('id').eq('id', finalProjectId).is('deleted_at', null).maybeSingle();
+        if (!proj) return jsonResponse({ error: 'Linked project not found' }, 422);
+      }
+
       const { data, error } = await admin.from('tasks').insert({
         title: cleanTitle, description: cleanDescription || null, priority: priority || 'medium',
         due_date: due_date || null, assigned_to: assigned_to || null, estimated_duration: estimated_duration || null,
         created_by: actorId, task_type: taskType, status,
         account_id: account_id || null, ticket_id: ticket_id || null, lead_id: lead_id || null,
-        visible_scope: scope, progress_percent: progress,
+        visible_scope: scope, progress_percent: progress, project_id: finalProjectId,
       }).select().single();
       if (error) throw error;
 
@@ -423,7 +483,7 @@ Deno.serve(async (req) => {
       const oldStatus = task.status;
       const updatePayload: Record<string, unknown> = {};
       const VALID_STATUSES = ['todo', 'in_progress', 'done', 'pending_accept', 'accepted', 'declined', 'submitted', 'approved', 'rejected'];
-      const allowedFields = ['title', 'description', 'priority', 'due_date', 'status', 'challenges', 'estimated_duration', 'actual_duration', 'feedback', 'decline_reason', 'completed_at', 'completion_notes', 'pinned', 'sort_order', 'account_id', 'ticket_id', 'lead_id', 'progress_percent', 'visible_scope'];
+      const allowedFields = ['title', 'description', 'priority', 'due_date', 'status', 'challenges', 'estimated_duration', 'actual_duration', 'feedback', 'decline_reason', 'completed_at', 'completion_notes', 'pinned', 'sort_order', 'account_id', 'ticket_id', 'lead_id', 'progress_percent', 'visible_scope', 'project_id', 'project_sort_order'];
       for (const field of allowedFields) {
         if (updates[field] !== undefined) {
           if (field === 'status' && !VALID_STATUSES.includes(updates[field])) {
