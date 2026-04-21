@@ -3,7 +3,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import {
   Calendar, Clock, User, AlertTriangle, MessageSquare, CheckCircle2,
   XCircle, Send, ThumbsUp, ThumbsDown, Circle, History, Loader2,
-  ChevronsUpDown, Check, UserRoundPlus, Paperclip, Star, RotateCcw,
+  ChevronsUpDown, Check, UserRoundPlus, Paperclip, Star, RotateCcw, Building2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -156,6 +156,11 @@ export function TaskDetailSheet({
             </Badge>
             <Badge variant="outline" className={priority.className}>{priority.label}</Badge>
             {!isPersonal && <Badge variant="secondary" className="text-[10px]">Assigned</Badge>}
+            {task.lead_id && (
+              <Badge variant="outline" className="bg-violet-500/10 text-violet-600 border-violet-500/30 text-[10px]">
+                <Building2 className="h-3 w-3 mr-0.5" /> From Lead
+              </Badge>
+            )}
             {task.pinned && (
               <Badge variant="outline" className="bg-amber-500/10 text-amber-600 text-[10px]">
                 <Star className="h-3 w-3 mr-0.5 fill-amber-500" /> Pinned

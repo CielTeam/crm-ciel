@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format, isPast, isToday } from 'date-fns';
-import { Calendar, Trash2, User, Clock, AlertTriangle, CheckCircle2, XCircle, Send, ThumbsUp, ThumbsDown, Star, RotateCcw } from 'lucide-react';
+import { Calendar, Trash2, User, Clock, AlertTriangle, CheckCircle2, XCircle, Send, ThumbsUp, ThumbsDown, Star, RotateCcw, Building2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -105,6 +105,11 @@ export function TaskCard({ task, assignee, creator, currentUserId, onStatusChang
                 </Badge>
                 {!isPersonal && (
                   <Badge variant="secondary" className="text-[10px]">Assigned</Badge>
+                )}
+                {task.lead_id && (
+                  <Badge variant="outline" className="text-[10px] bg-violet-500/10 text-violet-600 border-violet-500/30">
+                    <Building2 className="h-2.5 w-2.5 mr-0.5" /> From Lead
+                  </Badge>
                 )}
                 {overdue && (
                   <Badge variant="destructive" className="text-[10px]">Overdue</Badge>
