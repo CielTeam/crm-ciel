@@ -40,8 +40,8 @@ Deno.serve(async (req) => {
   try {
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     const now = new Date();
-    const cutoffEarly = new Date(now.getTime() - 15 * 60_000).toISOString(); // drop stale > 15 min
-    const cutoffLate = now.toISOString();
+    const cutoffEarly = new Date(now.getTime() - 60 * 60_000).toISOString(); // drop stale > 60 min
+    const cutoffLate = new Date(now.getTime() + 30_000).toISOString(); // include reminders due within 30s
 
     // Claim batch atomically
     const { data: claimed, error: claimErr } = await admin
@@ -119,6 +119,7 @@ Deno.serve(async (req) => {
           body,
           reference_id: r.event_id,
           reference_type: 'calendar_event',
+          urgent: true,
         });
 
         await admin.from('audit_logs').insert({

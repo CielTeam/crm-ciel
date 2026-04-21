@@ -78,6 +78,10 @@ export function useNotificationsRealtime() {
 
     const channel = supabase
       .channel(`user-notify-${user.id}`)
+      .on('broadcast', { event: 'notifications_read' }, () => {
+        qc.invalidateQueries({ queryKey: ['notifications'] });
+        qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
+      })
       .on('broadcast', { event: 'new_notification' }, (payload) => {
         const row = (payload?.payload ?? null) as BroadcastPayload | null;
         qc.invalidateQueries({ queryKey: ['notifications'] });
@@ -86,6 +90,9 @@ export function useNotificationsRealtime() {
         if (!row) return;
 
         const nType = row.type || '';
+        if (nType === 'event_reminder') {
+          qc.invalidateQueries({ queryKey: ['calendar-events'] });
+        }
         const isUrgent =
           nType === 'task_urgent' ||
           nType === 'lead_expiry' && (row.title?.includes('1 day') || row.title?.includes('3 day')) ||

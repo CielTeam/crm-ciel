@@ -30,6 +30,9 @@ export interface Task {
   mark_done_at: string | null;
   mark_undone_by: string | null;
   mark_undone_at: string | null;
+  lead_id?: string | null;
+  account_id?: string | null;
+  ticket_id?: string | null;
 }
 
 export interface TaskActivityLog {
@@ -150,11 +153,31 @@ export function useCreateTask() {
       due_date?: string | null;
       assigned_to?: string | null;
       estimated_duration?: string | null;
+      lead_id?: string | null;
+      account_id?: string | null;
+      ticket_id?: string | null;
     }) => {
       const data = await invoke({ action: 'create', ...payload });
       return data.task as Task;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      if (vars.lead_id) qc.invalidateQueries({ queryKey: ['tasks-by-lead', vars.lead_id] });
+    },
+  });
+}
+
+export function useTasksByLead(leadId: string | null) {
+  const { user } = useAuth();
+  const invoke = useTaskInvoke();
+
+  return useQuery({
+    queryKey: ['tasks-by-lead', leadId],
+    queryFn: async () => {
+      const data = await invoke({ action: 'list_by_lead', lead_id: leadId });
+      return (data.tasks || []) as Task[];
+    },
+    enabled: !!user?.id && !!leadId,
   });
 }
 

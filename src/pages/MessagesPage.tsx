@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useConversations,
   useMessages,
@@ -86,12 +87,15 @@ export default function MessagesPage() {
     return map;
   }, [directoryUsers]);
 
+  const qc = useQueryClient();
   useEffect(() => {
     if (!selectedId || !messages || !user?.id) return;
     markReadRef.current.mutate(selectedId);
+    qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
+    qc.invalidateQueries({ queryKey: ['notifications'] });
     const otherMsgIds = messages.filter(m => m.sender_id !== user.id).map(m => m.id);
     if (otherMsgIds.length > 0) broadcastRead(otherMsgIds);
-  }, [selectedId, messages, user?.id, broadcastRead]);
+  }, [selectedId, messages, user?.id, broadcastRead, qc]);
 
   const handleSend = useCallback((content: string) => {
     if (!selectedId || !content.trim()) return;

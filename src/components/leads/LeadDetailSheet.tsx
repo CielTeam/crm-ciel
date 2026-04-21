@@ -16,6 +16,7 @@ import { ConvertLeadDialog } from './ConvertLeadDialog';
 import { LeadActivityTimeline } from './LeadActivityTimeline';
 import { LeadNotesPanel } from './LeadNotesPanel';
 import { LeadCockpitPanel } from './LeadCockpitPanel';
+import { LeadTasksPanel } from './LeadTasksPanel';
 import { DocumentsTab } from '@/components/shared/DocumentsTab';
 import { format, differenceInDays } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -255,11 +256,7 @@ export function LeadDetailSheet({ open, onOpenChange, lead }: Props) {
                 </TabsContent>
 
                 <TabsContent value="tasks" className="mt-4">
-                  <div className="text-center py-12 text-muted-foreground">
-                    <ListTodo className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                    <p className="text-sm font-medium">Tasks Integration</p>
-                    <p className="text-xs mt-1">Linked tasks will appear here in a future update.</p>
-                  </div>
+                  <LeadTasksPanel lead={lead} />
                 </TabsContent>
 
                 <TabsContent value="files" className="mt-4">

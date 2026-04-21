@@ -28,7 +28,7 @@ export default function LeadsPage() {
   const [editLead, setEditLead] = useState<Lead | null>(null);
   const [viewLead, setViewLead] = useState<Lead | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [filters, setFilters] = useState<LeadFilters>({});
+  const [filters, setFilters] = useState<LeadFilters>({ converted: 'open' });
 
   const stageFilter = tab === 'all' ? undefined : tab;
   const { data: leads, isLoading } = useLeadsWithServices(undefined, stageFilter, filters as Record<string, unknown>);
@@ -64,8 +64,8 @@ export default function LeadsPage() {
       filters.source ? `source-${filters.source}` : null,
       filters.industry ? `industry-${filters.industry}` : null,
       filters.search ? `q-${filters.search}` : null,
-      filters.converted === true ? 'converted' : null,
-      filters.converted === false ? 'open' : null,
+      filters.converted === 'converted' ? 'converted' : null,
+      filters.converted === 'all' ? 'all' : null,
     ]);
     downloadCsv(csv, buildExportFilename('leads', summary));
   };
