@@ -37,7 +37,7 @@ export interface LeadFilters {
   overdue_followups?: boolean;
   no_activity_14d?: boolean;
   expiring_services?: boolean;
-  converted?: boolean;
+  converted?: 'open' | 'converted' | 'all';
 }
 
 const SCORE_BANDS: { value: 'hot' | 'warm' | 'cold'; label: string }[] = [
@@ -70,8 +70,9 @@ function filtersToParams(f: LeadFilters): Record<string, string> {
   if (f.overdue_followups) out.overdue = '1';
   if (f.no_activity_14d) out.noact = '1';
   if (f.expiring_services) out.expsvc = '1';
-  if (f.converted === true) out.conv = '1';
-  if (f.converted === false) out.conv = '0';
+  if (f.converted === 'converted') out.conv = 'converted';
+  if (f.converted === 'all') out.conv = 'all';
+  // 'open' is default — no param
   return out;
 }
 
@@ -106,7 +107,7 @@ function paramsToFilters(p: URLSearchParams): LeadFilters {
     overdue_followups: p.get('overdue') === '1',
     no_activity_14d: p.get('noact') === '1',
     expiring_services: p.get('expsvc') === '1',
-    converted: conv === '1' ? true : conv === '0' ? false : undefined,
+    converted: conv === 'converted' ? 'converted' : conv === 'all' ? 'all' : 'open',
   };
 }
 
@@ -127,7 +128,7 @@ function countActiveFilters(f: LeadFilters): number {
   if (f.overdue_followups) n++;
   if (f.no_activity_14d) n++;
   if (f.expiring_services) n++;
-  if (f.converted !== undefined) n++;
+  if (f.converted && f.converted !== 'open') n++;
   return n;
 }
 
