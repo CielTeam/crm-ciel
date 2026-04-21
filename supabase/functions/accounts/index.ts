@@ -483,6 +483,73 @@ Deno.serve(async (req) => {
       return json({ activities: data || [] });
     }
 
+    // ─── ADD SERVICE (account) ───
+    if (action === 'add_service') {
+      const { account_id, service_name, start_date, expiry_date, description } = payload;
+      if (!account_id || !service_name || !expiry_date) {
+        return json({ error: 'account_id, service_name, expiry_date required' }, 400);
+      }
+
+      const { data: acct } = await admin.from('accounts')
+        .select('id, name, owner').eq('id', account_id).is('deleted_at', null).single();
+      if (!acct) return json({ error: 'Account not found' }, 404);
+
+      const cleanName = sanitize(service_name, 200);
+      if (!cleanName) return json({ error: 'service_name required' }, 400);
+
+      const { data, error } = await admin.from('account_services').insert({
+        account_id,
+        service_name: cleanName,
+        description: sanitize(description, 1000) || null,
+        start_date: start_date || null,
+        expiry_date,
+        status: 'active',
+        created_by: actorId,
+      }).select().single();
+      if (error) throw error;
+
+      await logActivity(
+        admin, account_id, actorId, 'service_added',
+        `Service "${cleanName}" added`, {},
+        { service_id: data.id, service_name: cleanName, expiry_date }
+      );
+
+      return json({ service: data }, 201);
+    }
+
+    // ─── LIST SERVICES (account) ───
+    if (action === 'list_services') {
+      const { account_id } = payload;
+      if (!account_id) return json({ error: 'account_id required' }, 400);
+      const { data, error } = await admin.from('account_services').select('*')
+        .eq('account_id', account_id).is('deleted_at', null)
+        .order('expiry_date', { ascending: true }).limit(200);
+      if (error) throw error;
+      return json({ services: data || [] });
+    }
+
+    // ─── DELETE SERVICE (account, soft) ───
+    if (action === 'delete_service') {
+      const { service_id } = payload;
+      if (!service_id) return json({ error: 'service_id required' }, 400);
+
+      const { data: existing } = await admin.from('account_services')
+        .select('id, account_id, service_name').eq('id', service_id).is('deleted_at', null).single();
+      if (!existing) return json({ error: 'Service not found' }, 404);
+
+      const { error } = await admin.from('account_services')
+        .update({ deleted_at: new Date().toISOString() }).eq('id', service_id);
+      if (error) throw error;
+
+      await logActivity(
+        admin, existing.account_id as string, actorId, 'service_removed',
+        `Service "${existing.service_name}" removed`, {},
+        { service_id }
+      );
+
+      return json({ success: true });
+    }
+
     return json({ error: `Unknown action: ${action}` }, 400);
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : 'Internal error' }, 500);

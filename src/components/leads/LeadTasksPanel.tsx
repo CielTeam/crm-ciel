@@ -11,7 +11,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useDirectoryData } from '@/hooks/useDirectoryData';
 import { AddTaskDialog } from '@/components/tasks/AddTaskDialog';
 import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
-import type { Task } from '@/hooks/useTasks';
+import { AcceptDeclineDialog } from '@/components/tasks/AcceptDeclineDialog';
+import { SubmitTaskDialog } from '@/components/tasks/SubmitTaskDialog';
+import { ReviewTaskDialog } from '@/components/tasks/ReviewTaskDialog';
+import {
+  useUpdateTask,
+  useTogglePin,
+  useMarkDone,
+  useMarkUndone,
+  type Task,
+} from '@/hooks/useTasks';
 import type { Lead } from '@/hooks/useLeads';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -38,10 +47,23 @@ export function LeadTasksPanel({ lead }: Props) {
   const { data: directory } = useDirectoryData();
   const [addOpen, setAddOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [sheetAction, setSheetAction] = useState<'accept' | 'decline' | 'submit' | 'approve' | 'reject' | null>(null);
+
+  const updateTask = useUpdateTask();
+  const togglePin = useTogglePin();
+  const markDone = useMarkDone();
+  const markUndone = useMarkUndone();
 
   const userMap = new Map(
     (directory || []).map(u => [u.userId, { displayName: u.displayName, avatarUrl: u.avatarUrl }])
   );
+
+  const invalidateLists = () => {
+    qc.invalidateQueries({ queryKey: ['lead-tasks', lead.id] });
+    qc.invalidateQueries({ queryKey: ['tasks-by-lead', lead.id] });
+    qc.invalidateQueries({ queryKey: ['tasks'] });
+    qc.invalidateQueries({ queryKey: ['lead-activities', lead.id] });
+  };
 
   const { data: tasks, isLoading } = useQuery({
     queryKey: ['lead-tasks', lead.id],
@@ -69,13 +91,42 @@ export function LeadTasksPanel({ lead }: Props) {
       return data.task as Task;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['lead-tasks', lead.id] });
-      qc.invalidateQueries({ queryKey: ['tasks'] });
-      qc.invalidateQueries({ queryKey: ['lead-activities', lead.id] });
+      invalidateLists();
       toast.success('Task created');
     },
     onError: (e: Error) => toast.error(e.message || 'Failed to create task'),
   });
+
+  const handleStatusChange = (id: string, status: string, extra?: Record<string, unknown>) => {
+    updateTask.mutate(
+      { id, status, ...extra },
+      {
+        onSuccess: () => { invalidateLists(); },
+        onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to update task'),
+      }
+    );
+  };
+
+  const handleTogglePin = (id: string) => {
+    togglePin.mutate(id, {
+      onSuccess: () => invalidateLists(),
+      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to toggle pin'),
+    });
+  };
+
+  const handleMarkDone = (id: string) => {
+    markDone.mutate({ id }, {
+      onSuccess: () => { invalidateLists(); toast.success('Task marked as done'); },
+      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to mark done'),
+    });
+  };
+
+  const handleMarkUndone = (id: string) => {
+    markUndone.mutate(id, {
+      onSuccess: () => { invalidateLists(); toast.success('Task marked as not done'); },
+      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to mark undone'),
+    });
+  };
 
   return (
     <div className="space-y-3">
@@ -165,11 +216,64 @@ export function LeadTasksPanel({ lead }: Props) {
           assignee={selectedTask.assigned_to ? userMap.get(selectedTask.assigned_to) || null : null}
           creator={userMap.get(selectedTask.created_by) || null}
           currentUserId={user?.id || ''}
-          onStatusChange={() => { /* handled via mutations inside the sheet */ }}
-          onActionClick={() => { /* not exposed here */ }}
-          onTogglePin={() => { /* not exposed here */ }}
-          onMarkDone={() => { /* not exposed here */ }}
-          onMarkUndone={() => { /* not exposed here */ }}
+          onStatusChange={(id, status, extra) => {
+            handleStatusChange(id, status, extra);
+            setSelectedTask(null);
+          }}
+          onActionClick={(action) => setSheetAction(action)}
+          onTogglePin={handleTogglePin}
+          onMarkDone={handleMarkDone}
+          onMarkUndone={handleMarkUndone}
+        />
+      )}
+
+      {/* Sheet-triggered dialogs */}
+      {selectedTask && sheetAction && (sheetAction === 'accept' || sheetAction === 'decline') && (
+        <AcceptDeclineDialog
+          open
+          onOpenChange={() => setSheetAction(null)}
+          mode={sheetAction}
+          taskTitle={selectedTask.title}
+          onConfirm={(reason) => {
+            handleStatusChange(
+              selectedTask.id,
+              sheetAction === 'accept' ? 'accepted' : 'declined',
+              sheetAction === 'decline' ? { decline_reason: reason } : undefined
+            );
+            setSheetAction(null);
+            setSelectedTask(null);
+          }}
+        />
+      )}
+
+      {selectedTask && sheetAction === 'submit' && (
+        <SubmitTaskDialog
+          open
+          onOpenChange={() => setSheetAction(null)}
+          taskTitle={selectedTask.title}
+          onConfirm={(data) => {
+            handleStatusChange(selectedTask.id, 'submitted', data);
+            setSheetAction(null);
+            setSelectedTask(null);
+          }}
+        />
+      )}
+
+      {selectedTask && sheetAction && (sheetAction === 'approve' || sheetAction === 'reject') && (
+        <ReviewTaskDialog
+          open
+          onOpenChange={() => setSheetAction(null)}
+          mode={sheetAction}
+          taskTitle={selectedTask.title}
+          onConfirm={(feedback) => {
+            handleStatusChange(
+              selectedTask.id,
+              sheetAction === 'approve' ? 'approved' : 'rejected',
+              { feedback }
+            );
+            setSheetAction(null);
+            setSelectedTask(null);
+          }}
         />
       )}
     </div>

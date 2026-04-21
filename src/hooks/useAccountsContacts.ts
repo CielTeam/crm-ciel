@@ -299,3 +299,70 @@ export function useAccountActivities(accountId: string | null | undefined) {
     enabled: !!user && !!accountId,
   });
 }
+
+// =================== Account Services ===================
+
+export interface AccountService {
+  id: string;
+  account_id: string;
+  service_name: string;
+  description: string | null;
+  start_date: string | null;
+  expiry_date: string;
+  status: string;
+  created_at: string;
+}
+
+export function useAccountServices(accountId: string | null | undefined) {
+  const { user, getToken } = useAuth();
+  return useQuery({
+    queryKey: ['account-services', accountId],
+    queryFn: async () => {
+      const token = await getToken();
+      const data = await invokeAccounts(token, { action: 'list_services', account_id: accountId });
+      return (data.services ?? []) as AccountService[];
+    },
+    enabled: !!user && !!accountId,
+  });
+}
+
+export function useAddAccountService() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: {
+      account_id: string;
+      service_name: string;
+      start_date?: string | null;
+      expiry_date: string;
+      description?: string | null;
+    }) => {
+      const token = await getToken();
+      const data = await invokeAccounts(token, { action: 'add_service', ...payload });
+      return data.service as AccountService;
+    },
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['account-services', vars.account_id] });
+      qc.invalidateQueries({ queryKey: ['account-activities', vars.account_id] });
+      toast.success('Service added');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useDeleteAccountService() {
+  const qc = useQueryClient();
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: { service_id: string; account_id: string }) => {
+      const token = await getToken();
+      return invokeAccounts(token, { action: 'delete_service', service_id: payload.service_id });
+    },
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['account-services', vars.account_id] });
+      qc.invalidateQueries({ queryKey: ['account-activities', vars.account_id] });
+      toast.success('Service removed');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}

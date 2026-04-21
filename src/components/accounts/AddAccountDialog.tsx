@@ -5,25 +5,53 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CountryCombobox } from '@/components/shared/CountryCombobox';
-import { useCreateAccount } from '@/hooks/useAccountsContacts';
+import { useCreateAccount, useAddAccountService } from '@/hooks/useAccountsContacts';
+import { Plus, X } from 'lucide-react';
+
+const SERVICE_TYPES = ['SSL Certificate', 'Digital Certificate', 'Digital Signature', 'ACME', 'Domain Registration', 'Web Hosting', 'Email Security', 'Code Signing', 'Custom'];
+
+interface SolutionRow {
+  type: string;
+  service_name: string;
+  start_date: string;
+  expiry_date: string;
+}
+
+const emptySolution = (): SolutionRow => ({ type: '', service_name: '', start_date: '', expiry_date: '' });
 
 interface Props { open: boolean; onOpenChange: (v: boolean) => void; }
 
 export function AddAccountDialog({ open, onOpenChange }: Props) {
   const create = useCreateAccount();
+  const addService = useAddAccountService();
   const [form, setForm] = useState({
     name: '', industry: '', email: '', phone: '', website: '',
     country_code: null as string | null, country_name: null as string | null,
     state_province: '', city: '', notes: '',
   });
+  const [solutions, setSolutions] = useState<SolutionRow[]>([]);
 
-  const reset = () => setForm({ name: '', industry: '', email: '', phone: '', website: '', country_code: null, country_name: null, state_province: '', city: '', notes: '' });
+  const reset = () => {
+    setForm({ name: '', industry: '', email: '', phone: '', website: '', country_code: null, country_name: null, state_province: '', city: '', notes: '' });
+    setSolutions([]);
+  };
+
+  const handleTypeChange = (idx: number, val: string) => {
+    setSolutions(prev => prev.map((s, i) => i === idx ? { ...s, type: val, service_name: val !== 'Custom' ? val : '' } : s));
+  };
+  const updateSolution = (idx: number, field: keyof SolutionRow, val: string) => {
+    setSolutions(prev => prev.map((s, i) => i === idx ? { ...s, [field]: val } : s));
+  };
+  const removeSolution = (idx: number) => setSolutions(prev => prev.filter((_, i) => i !== idx));
+  const validSolutions = solutions.filter(s => s.service_name.trim() && s.expiry_date);
 
   const handleSubmit = async () => {
     if (!form.name.trim()) return;
     try {
-      await create.mutateAsync({
+      const account = await create.mutateAsync({
         name: form.name,
         industry: form.industry || null,
         email: form.email || null,
@@ -36,6 +64,18 @@ export function AddAccountDialog({ open, onOpenChange }: Props) {
         city: form.city || null,
         notes: form.notes || null,
       });
+
+      if (account?.id && validSolutions.length > 0) {
+        await Promise.all(validSolutions.map(s =>
+          addService.mutateAsync({
+            account_id: account.id,
+            service_name: s.service_name,
+            start_date: s.start_date || null,
+            expiry_date: s.expiry_date,
+          }).catch(() => null)
+        ));
+      }
+
       reset();
       onOpenChange(false);
     } catch { /* toast handled by hook */ }
@@ -73,6 +113,51 @@ export function AddAccountDialog({ open, onOpenChange }: Props) {
             <div>
               <Label className="text-xs">Notes</Label>
               <Textarea value={form.notes} onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))} rows={3} />
+            </div>
+
+            <Separator />
+
+            {/* Solutions / Services */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-base font-semibold">Solutions / Services</Label>
+                <Button type="button" variant="outline" size="sm" onClick={() => setSolutions(prev => [...prev, emptySolution()])}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Solution
+                </Button>
+              </div>
+              {solutions.length === 0 && (
+                <p className="text-sm text-muted-foreground">No solutions added yet. You can add them now or later.</p>
+              )}
+              <div className="space-y-3">
+                {solutions.map((sol, idx) => (
+                  <div key={idx} className="border rounded-lg p-3 space-y-2 bg-muted/20">
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1">
+                        <Label className="text-xs">Service Type *</Label>
+                        <Select value={sol.type} onValueChange={(v) => handleTypeChange(idx, v)}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select type" /></SelectTrigger>
+                          <SelectContent>
+                            {SERVICE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {sol.type === 'Custom' && (
+                        <div className="flex-1">
+                          <Label className="text-xs">Custom Name *</Label>
+                          <Input className="h-8 text-xs" value={sol.service_name} onChange={(e) => updateSolution(idx, 'service_name', e.target.value)} placeholder="Service name" />
+                        </div>
+                      )}
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 mt-5 text-destructive" onClick={() => removeSolution(idx)}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><Label className="text-xs">Start Date</Label><Input className="h-8 text-xs" type="date" value={sol.start_date} onChange={(e) => updateSolution(idx, 'start_date', e.target.value)} /></div>
+                      <div><Label className="text-xs">Expiry Date *</Label><Input className="h-8 text-xs" type="date" value={sol.expiry_date} onChange={(e) => updateSolution(idx, 'expiry_date', e.target.value)} /></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </ScrollArea>

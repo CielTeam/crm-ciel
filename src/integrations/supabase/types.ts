@@ -105,6 +105,56 @@ export type Database = {
           },
         ]
       }
+      account_services: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string
+          deleted_at: string | null
+          description: string | null
+          expiry_date: string
+          id: string
+          service_name: string
+          start_date: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by: string
+          deleted_at?: string | null
+          description?: string | null
+          expiry_date: string
+          id?: string
+          service_name: string
+          start_date?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string
+          deleted_at?: string | null
+          description?: string | null
+          expiry_date?: string
+          id?: string
+          service_name?: string
+          start_date?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_services_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       accounts: {
         Row: {
           account_health: string

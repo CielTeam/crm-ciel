@@ -215,7 +215,7 @@ export function LeadsFilterBar({ filters, onChange }: Props) {
               <ChevronDown className="ml-1 h-3 w-3" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-56 p-2" align="start">
+          <PopoverContent className="w-56 p-2" align="end" collisionPadding={16}>
             <div className="space-y-1">
               {LEAD_STAGES.map(s => (
                 <label key={s.value} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer">
@@ -236,7 +236,7 @@ export function LeadsFilterBar({ filters, onChange }: Props) {
               <ChevronDown className="ml-1 h-3 w-3" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-64 p-0" align="start">
+          <PopoverContent className="w-64 p-0" align="end" collisionPadding={16}>
             <ScrollArea className="h-64">
               <div className="p-2 space-y-0.5">
                 <button
@@ -275,7 +275,7 @@ export function LeadsFilterBar({ filters, onChange }: Props) {
               <ChevronDown className="ml-1 h-3 w-3" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-72 p-2" align="start">
+          <PopoverContent className="w-72 p-2" align="end" collisionPadding={16}>
             <CountryCombobox
               value={filters.country_code}
               onChange={(code) => update({ country_code: code || undefined })}
@@ -297,7 +297,7 @@ export function LeadsFilterBar({ filters, onChange }: Props) {
               <ChevronDown className="ml-1 h-3 w-3" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-40 p-2" align="start">
+          <PopoverContent className="w-40 p-2" align="end" collisionPadding={16}>
             {SCORE_BANDS.map(b => (
               <label key={b.value} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer">
                 <Checkbox checked={filters.score_bands?.includes(b.value) || false} onCheckedChange={() => toggleBand(b.value)} />
@@ -319,7 +319,7 @@ export function LeadsFilterBar({ filters, onChange }: Props) {
                 ) : null}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-96 p-3" align="start">
+          <PopoverContent className="w-[min(24rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto p-3" align="end" sideOffset={4} collisionPadding={16}>
             <div className="space-y-3">
               <div>
                 <Label className="text-xs">City</Label>

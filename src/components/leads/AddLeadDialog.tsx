@@ -5,24 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useCreateLead, useAddService, useCheckDuplicates, LEAD_STAGES, type LeadStage, type Lead } from '@/hooks/useLeads';
-import { Plus, X, AlertTriangle, Building2, User, TrendingUp } from 'lucide-react';
+import { useCreateLead, useCheckDuplicates, LEAD_STAGES, type LeadStage, type Lead } from '@/hooks/useLeads';
+import { AlertTriangle, Building2, User, TrendingUp } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { CountryCombobox } from '@/components/shared/CountryCombobox';
 import { getCountryName } from '@/lib/countries';
-
-const SERVICE_TYPES = ['SSL Certificate', 'Digital Certificate', 'Digital Signature', 'ACME', 'Domain Registration', 'Web Hosting', 'Email Security', 'Code Signing', 'Custom'];
-
-interface SolutionRow {
-  type: string;
-  service_name: string;
-  start_date: string;
-  expiry_date: string;
-}
-
-const emptySolution = (): SolutionRow => ({ type: '', service_name: '', start_date: '', expiry_date: '' });
 
 interface Props { open: boolean; onOpenChange: (v: boolean) => void; }
 
@@ -36,10 +25,8 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
     industry: '', website: '', secondary_phone: '', city: '', country: '',
     country_code: '' as string, state_province: '',
   });
-  const [solutions, setSolutions] = useState<SolutionRow[]>([]);
   const [duplicates, setDuplicates] = useState<Record<string, unknown>[]>([]);
   const create = useCreateLead();
-  const addService = useAddService();
   const checkDuplicates = useCheckDuplicates();
   const [submitting, setSubmitting] = useState(false);
 
@@ -55,20 +42,8 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
     } catch { /* ignore */ }
   }, [form.company_name, form.contact_email, form.contact_phone]);
 
-  const handleTypeChange = (idx: number, val: string) => {
-    setSolutions(prev => prev.map((s, i) => i === idx ? { ...s, type: val, service_name: val !== 'Custom' ? val : '' } : s));
-  };
-
-  const updateSolution = (idx: number, field: keyof SolutionRow, val: string) => {
-    setSolutions(prev => prev.map((s, i) => i === idx ? { ...s, [field]: val } : s));
-  };
-
-  const removeSolution = (idx: number) => setSolutions(prev => prev.filter((_, i) => i !== idx));
-  const validSolutions = solutions.filter(s => s.service_name.trim() && s.expiry_date);
-
   const resetForm = () => {
     setForm({ company_name: '', contact_name: '', contact_email: '', contact_phone: '', status: 'potential', source: '', notes: '', stage: 'new', estimated_value: '', currency: 'USD', probability_percent: '0', expected_close_date: '', next_follow_up_at: '', industry: '', website: '', secondary_phone: '', city: '', country: '', country_code: '', state_province: '' });
-    setSolutions([]);
     setDuplicates([]);
   };
 
@@ -76,7 +51,7 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
     if (!form.company_name.trim() || !form.contact_name.trim()) return;
     setSubmitting(true);
     try {
-      const result = await new Promise<any>((resolve, reject) => {
+      await new Promise<unknown>((resolve, reject) => {
         create.mutate({
           company_name: form.company_name,
           contact_name: form.contact_name,
@@ -105,18 +80,6 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
         });
       });
 
-      const leadId = result?.lead?.id;
-      if (leadId && validSolutions.length > 0) {
-        await Promise.all(validSolutions.map(s =>
-          new Promise<void>((resolve, reject) => {
-            addService.mutate(
-              { lead_id: leadId, service_name: s.service_name, start_date: s.start_date || undefined, expiry_date: s.expiry_date },
-              { onSuccess: () => resolve(), onError: (e) => reject(e) }
-            );
-          })
-        ));
-      }
-
       onOpenChange(false);
       resetForm();
     } catch {
@@ -139,10 +102,10 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
                 <div>
                   <p className="text-sm font-medium text-[hsl(var(--warning))]">Possible duplicates found</p>
                   <div className="mt-1 space-y-1">
-                    {duplicates.map((d: any) => (
-                      <p key={d.id} className="text-xs text-muted-foreground">
-                        {d.company_name} — {d.contact_email || d.contact_phone || 'No contact'}
-                        <Badge variant="outline" className="ml-1 text-[10px] px-1 py-0">{d.stage}</Badge>
+                    {duplicates.map((d: Record<string, unknown>) => (
+                      <p key={String(d.id)} className="text-xs text-muted-foreground">
+                        {String(d.company_name)} — {String(d.contact_email || d.contact_phone || 'No contact')}
+                        <Badge variant="outline" className="ml-1 text-[10px] px-1 py-0">{String(d.stage)}</Badge>
                       </p>
                     ))}
                   </div>
@@ -235,51 +198,6 @@ export function AddLeadDialog({ open, onOpenChange }: Props) {
 
             {/* Notes */}
             <div><Label className="text-xs">Notes</Label><Textarea value={form.notes} onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></div>
-
-            <Separator />
-
-            {/* Solutions */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label className="text-base font-semibold">Solutions / Services</Label>
-                <Button type="button" variant="outline" size="sm" onClick={() => setSolutions(prev => [...prev, emptySolution()])}>
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Solution
-                </Button>
-              </div>
-              {solutions.length === 0 && (
-                <p className="text-sm text-muted-foreground">No solutions added yet. You can add them now or later.</p>
-              )}
-              <div className="space-y-3">
-                {solutions.map((sol, idx) => (
-                  <div key={idx} className="border rounded-lg p-3 space-y-2 bg-muted/20">
-                    <div className="flex items-start gap-2">
-                      <div className="flex-1">
-                        <Label className="text-xs">Service Type *</Label>
-                        <Select value={sol.type} onValueChange={(v) => handleTypeChange(idx, v)}>
-                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select type" /></SelectTrigger>
-                          <SelectContent>
-                            {SERVICE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {sol.type === 'Custom' && (
-                        <div className="flex-1">
-                          <Label className="text-xs">Custom Name *</Label>
-                          <Input className="h-8 text-xs" value={sol.service_name} onChange={(e) => updateSolution(idx, 'service_name', e.target.value)} placeholder="Service name" />
-                        </div>
-                      )}
-                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 mt-5 text-destructive" onClick={() => removeSolution(idx)}>
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div><Label className="text-xs">Start Date</Label><Input className="h-8 text-xs" type="date" value={sol.start_date} onChange={(e) => updateSolution(idx, 'start_date', e.target.value)} /></div>
-                      <div><Label className="text-xs">Expiry Date *</Label><Input className="h-8 text-xs" type="date" value={sol.expiry_date} onChange={(e) => updateSolution(idx, 'expiry_date', e.target.value)} /></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </ScrollArea>
         <DialogFooter>
