@@ -41,7 +41,7 @@ export function MessageInput({
   };
 
   return (
-    <div className="flex items-end gap-2 p-3 border-t bg-background">
+    <div className="flex items-end gap-2 p-3 border-t bg-[hsl(var(--chat-surface))]">
       <Textarea
         value={value}
         onChange={(e) => {
@@ -51,7 +51,7 @@ export function MessageInput({
         onKeyDown={handleKeyDown}
         placeholder="Type a message..."
         rows={1}
-        className="resize-none min-h-[40px] max-h-[120px]"
+        className="resize-none min-h-[40px] max-h-[120px] focus-visible:ring-[hsl(var(--chat-bubble-mine))] focus-visible:ring-offset-1"
         disabled={disabled}
       />
 
@@ -68,6 +68,7 @@ export function MessageInput({
         size="icon"
         onClick={handleSubmit}
         disabled={disabled || !value.trim()}
+        className="bg-[hsl(var(--chat-bubble-mine))] hover:bg-[hsl(var(--chat-bubble-mine))]/90 text-white"
       >
         <Send className="h-4 w-4" />
       </Button>

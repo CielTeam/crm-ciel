@@ -437,6 +437,22 @@ Deno.serve(async (req) => {
 
       if (error) throw error;
 
+      // Mark related new_message notifications as read so the bell badge updates
+      await admin.from('notifications')
+        .update({ is_read: true })
+        .eq('user_id', actorId)
+        .eq('type', 'new_message')
+        .eq('reference_type', 'conversation')
+        .eq('reference_id', conversation_id)
+        .eq('is_read', false);
+
+      // Broadcast a hint so the client refreshes the unread count instantly
+      try {
+        const channel = admin.channel(`user-notify-${actorId}`);
+        await channel.send({ type: 'broadcast', event: 'notifications_read', payload: { conversation_id } });
+        await admin.removeChannel(channel);
+      } catch { /* best effort */ }
+
       return new Response(JSON.stringify({ success: true, read_message_ids: readMessageIds }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
