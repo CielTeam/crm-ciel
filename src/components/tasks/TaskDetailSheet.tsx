@@ -623,6 +623,12 @@ export function TaskDetailSheet({
           </div>
         </div>
       </SheetContent>
+      <AttachToProjectDialog
+        open={attachProjectOpen}
+        onOpenChange={setAttachProjectOpen}
+        taskId={task.id}
+        currentProjectId={task.project_id ?? null}
+      />
     </Sheet>
   );
 }
