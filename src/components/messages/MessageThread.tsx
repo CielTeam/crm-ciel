@@ -103,7 +103,7 @@ export function MessageThread({
                   {isMine && readReceipts && (() => {
                     const status = readReceipts.get(msg.id) ?? 'sent';
                     if (status === 'seen') {
-                      return <CheckCheck className="h-3 w-3 text-[hsl(var(--chat-read))]" />;
+                      return <CheckCheck className="h-3.5 w-3.5 text-[hsl(var(--chat-read))]" />;
                     }
                     if (status === 'delivered') {
                       return <CheckCheck className="h-3 w-3 text-[hsl(var(--chat-bubble-mine-fg))]/60" />;
