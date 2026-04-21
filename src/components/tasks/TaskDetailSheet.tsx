@@ -172,6 +172,16 @@ export function TaskDetailSheet({
                 <Star className="h-3 w-3 mr-0.5 fill-amber-500" /> Pinned
               </Badge>
             )}
+            {currentProject && (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1"
+                style={currentProject.color ? { borderColor: currentProject.color, color: currentProject.color } : undefined}
+              >
+                <FolderKanban className="h-3 w-3" />
+                {currentProject.name}
+              </Badge>
+            )}
           </div>
           <SheetTitle className="text-lg leading-tight">{task.title}</SheetTitle>
           <SheetDescription className="sr-only">Task details for {task.title}</SheetDescription>
@@ -206,6 +216,12 @@ export function TaskDetailSheet({
             {canMarkUndone && (
               <Button size="sm" variant="outline" onClick={() => onMarkUndone(task.id)}>
                 <RotateCcw className="h-3.5 w-3.5 mr-1" /> Mark Undone
+              </Button>
+            )}
+            {(isCreator || isAssignee) && (
+              <Button size="sm" variant="outline" onClick={() => setAttachProjectOpen(true)}>
+                <FolderKanban className="h-3.5 w-3.5 mr-1" />
+                {currentProject ? 'Move project' : 'Add to project'}
               </Button>
             )}
           </div>
