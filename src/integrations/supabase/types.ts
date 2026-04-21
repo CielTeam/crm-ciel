@@ -1284,6 +1284,7 @@ export type Database = {
           estimated_duration: string | null
           feedback: string | null
           id: string
+          lead_id: string | null
           mark_done_at: string | null
           mark_done_by: string | null
           mark_undone_at: string | null
@@ -1316,6 +1317,7 @@ export type Database = {
           estimated_duration?: string | null
           feedback?: string | null
           id?: string
+          lead_id?: string | null
           mark_done_at?: string | null
           mark_done_by?: string | null
           mark_undone_at?: string | null
@@ -1348,6 +1350,7 @@ export type Database = {
           estimated_duration?: string | null
           feedback?: string | null
           id?: string
+          lead_id?: string | null
           mark_done_at?: string | null
           mark_done_by?: string | null
           mark_undone_at?: string | null
