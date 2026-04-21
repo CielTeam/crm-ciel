@@ -28,7 +28,6 @@ import AccountsContactsPage from "./pages/AccountsContactsPage";
 import OpportunitiesPage from "./pages/OpportunitiesPage";
 import TicketsPage from "./pages/TicketsPage";
 import AllTasksPage from "./pages/AllTasksPage";
-import ProjectsPage from "./pages/ProjectsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -81,7 +80,6 @@ const App = () => (
                 <Route path="/directory" element={<DirectoryPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/tickets" element={<TicketsPage />} />
-                <Route path="/projects" element={<ProjectsPage />} />
                 <Route
                   path="/all-tasks"
                   element={
