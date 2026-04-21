@@ -319,14 +319,29 @@ Deno.serve(async (req) => {
       return jsonResponse({ tasks, total: count ?? tasks.length, page, page_size: pageSize });
     }
 
+    // ─── LIST BY LEAD ───
+    if (action === 'list_by_lead') {
+      const { lead_id } = payload;
+      if (!lead_id) return jsonResponse({ error: 'lead_id required' }, 400);
+      const { data, error } = await admin.from('tasks').select('*').eq('lead_id', lead_id)
+        .order('pinned', { ascending: false })
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      const { data: vis } = await admin.rpc('get_visible_user_ids', { _user_id: actorId });
+      const visibleIds = new Set(((vis as { uid: string }[] | null) || []).map(r => r.uid));
+      visibleIds.add(actorId);
+      const tasks = (data || []) as TaskRecord[];
+      const filtered = tasks.filter(t => visibleIds.has(t.created_by) || (!!t.assigned_to && visibleIds.has(t.assigned_to)));
+      return jsonResponse({ tasks: filtered });
+    }
+
     // ─── CREATE ───
     if (action === 'create') {
-      const { title, description, priority, due_date, assigned_to, estimated_duration, account_id, ticket_id, visible_scope, progress_percent } = payload;
+      const { title, description, priority, due_date, assigned_to, estimated_duration, account_id, ticket_id, lead_id, visible_scope, progress_percent } = payload;
       const cleanTitle = sanitizeString(title, 255);
       const cleanDescription = sanitizeString(description, 5000);
       if (!cleanTitle) return jsonResponse({ error: 'Title is required' }, 400);
 
-      // Validate assignment permission
       if (assigned_to && assigned_to !== actorId) {
         const roles = await getActorRoles(admin, actorId);
         const isLead = roles.some(r => LEAD_ROLES.includes(r));
@@ -338,10 +353,16 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Validate ticket access if linked
       if (ticket_id) {
         const { data: ticket } = await admin.from('tickets').select('id').eq('id', ticket_id).maybeSingle();
         if (!ticket) return jsonResponse({ error: 'Linked ticket not found' }, 422);
+      }
+
+      let linkedLeadCompany: string | null = null;
+      if (lead_id) {
+        const { data: lead } = await admin.from('leads').select('id, company_name').eq('id', lead_id).is('deleted_at', null).maybeSingle();
+        if (!lead) return jsonResponse({ error: 'Linked lead not found' }, 422);
+        linkedLeadCompany = (lead as { company_name: string }).company_name;
       }
 
       const allowedScope = ['private','department','management_chain'];
@@ -354,20 +375,29 @@ Deno.serve(async (req) => {
         title: cleanTitle, description: cleanDescription || null, priority: priority || 'medium',
         due_date: due_date || null, assigned_to: assigned_to || null, estimated_duration: estimated_duration || null,
         created_by: actorId, task_type: taskType, status,
-        account_id: account_id || null, ticket_id: ticket_id || null,
+        account_id: account_id || null, ticket_id: ticket_id || null, lead_id: lead_id || null,
         visible_scope: scope, progress_percent: progress,
       }).select().single();
       if (error) throw error;
 
       await logActivity(admin, data.id, actorId, null, status, 'Task created');
-      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.create', target_type: 'task', target_id: data.id, metadata: { title: cleanTitle } });
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.create', target_type: 'task', target_id: data.id, metadata: { title: cleanTitle, lead_id: lead_id || null } });
+
+      if (lead_id) {
+        await admin.from('lead_activities').insert({
+          lead_id, actor_id: actorId, activity_type: 'task_created',
+          title: `Task created: ${cleanTitle}`,
+          metadata: { task_id: data.id, assigned_to: assigned_to || null },
+        });
+      }
 
       if (assigned_to && assigned_to !== actorId) {
         const { data: actorProfile } = await admin.from('profiles').select('display_name').eq('user_id', actorId).single();
         const actorName = (actorProfile as ProfileRow | null)?.display_name || 'Someone';
+        const titleSuffix = linkedLeadCompany ? ` (from lead: ${linkedLeadCompany})` : '';
         const notif = {
           type: 'task_assigned',
-          title: `New task assigned by ${actorName}`,
+          title: `New task assigned by ${actorName}${titleSuffix}`,
           body: cleanTitle, reference_id: data.id, reference_type: 'task',
         };
         await admin.from('notifications').insert({ user_id: assigned_to, ...notif });
@@ -393,7 +423,7 @@ Deno.serve(async (req) => {
       const oldStatus = task.status;
       const updatePayload: Record<string, unknown> = {};
       const VALID_STATUSES = ['todo', 'in_progress', 'done', 'pending_accept', 'accepted', 'declined', 'submitted', 'approved', 'rejected'];
-      const allowedFields = ['title', 'description', 'priority', 'due_date', 'status', 'challenges', 'estimated_duration', 'actual_duration', 'feedback', 'decline_reason', 'completed_at', 'completion_notes', 'pinned', 'sort_order', 'account_id', 'ticket_id', 'progress_percent', 'visible_scope'];
+      const allowedFields = ['title', 'description', 'priority', 'due_date', 'status', 'challenges', 'estimated_duration', 'actual_duration', 'feedback', 'decline_reason', 'completed_at', 'completion_notes', 'pinned', 'sort_order', 'account_id', 'ticket_id', 'lead_id', 'progress_percent', 'visible_scope'];
       for (const field of allowedFields) {
         if (updates[field] !== undefined) {
           if (field === 'status' && !VALID_STATUSES.includes(updates[field])) {
