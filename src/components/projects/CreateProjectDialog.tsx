@@ -21,7 +21,8 @@ interface Props {
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#10b981', '#f59e0b', '#ef4444', '#06b6d4'];
 
 export function CreateProjectDialog({ open, onOpenChange, defaultDepartment, onCreated }: Props) {
-  const { role } = useAuth();
+  const { primaryRole } = useAuth();
+  const role = primaryRole;
   const createProject = useCreateProject();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');

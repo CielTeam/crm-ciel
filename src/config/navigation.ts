@@ -14,6 +14,7 @@ import {
   Briefcase,
   Ticket,
   ListChecks,
+  FolderKanban,
 } from 'lucide-react';
 import type { NavGroup } from '@/types/navigation';
 import type { AppRole } from '@/types/roles';
@@ -26,6 +27,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { title: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { title: 'Calendar', path: '/calendar', icon: Calendar },
       { title: 'Tasks', path: '/tasks', icon: CheckSquare },
+      { title: 'Projects', path: '/projects', icon: FolderKanban },
       { title: 'Tickets', path: '/tickets', icon: Ticket },
       {
         title: 'All Tasks',
