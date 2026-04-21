@@ -1,101 +1,162 @@
 
 
-# Four fixes: task actions, blue ticks, lead/account solutions, More popover overflow
+# Projects for Tasks: department-scoped, draggable, with analytics
 
-## 1. Approve / Reject (and Accept / Decline / Submit / Start) do nothing inside the lead's Tasks tab
+A new "Project" concept groups tasks. Department leads create projects, assign tasks to them, and see per-project analytics. Executives see a tree of departments → projects → tasks. Tasks created from leads or accounts skip project assignment and can be moved into a project later.
 
-Root cause: `LeadTasksPanel.tsx` mounts `TaskDetailSheet` with **stub no-op handlers** for `onActionClick`, `onStatusChange`, `onMarkDone`, `onMarkUndone`, `onTogglePin`. The sheet's Approve/Reject buttons call `onActionClick('approve' | 'reject')` → nothing happens. `TasksPage.tsx` already has the correct wiring (opens `AcceptDeclineDialog` / `SubmitTaskDialog` / `ReviewTaskDialog`).
+## 1. Data model — new tables
 
-Fix — refactor `LeadTasksPanel.tsx` to mirror the `TasksPage` pattern:
-- Add `sheetAction` state (`'accept' | 'decline' | 'submit' | 'approve' | 'reject' | null`).
-- Wire `onActionClick={(a) => setSheetAction(a)}`.
-- Wire `onStatusChange` to a new local mutation that calls the `tasks` edge function with `action: 'update_status'` (used by Start Working / Resume Work).
-- Wire `onMarkDone` / `onMarkUndone` / `onTogglePin` to the existing hooks `useMarkTaskDone`, `useMarkTaskUndone`, `useTogglePin` from `useTasks.ts`.
-- Mount `AcceptDeclineDialog`, `SubmitTaskDialog`, `ReviewTaskDialog` conditionally (same shape as `TasksPage` lines 386–420), each calling the existing mutations (`useAcceptTask`, `useDeclineTask`, `useSubmitTask`, `useApproveTask`, `useRejectTask`).
-- After any successful action invalidate `['lead-tasks', lead.id]` and `['tasks']`.
+### `projects`
+```
+id uuid pk
+name text not null
+description text
+status text not null default 'active'        -- active | on_hold | completed | archived
+color text                                    -- hex tag color
+department text                               -- one of DEPARTMENTS, null = personal
+is_personal boolean not null default false    -- personal projects: owner-only
+target_end_date date                          -- lead's planned finish
+owner_user_id text not null                   -- creator/lead
+created_by text not null
+created_at, updated_at, deleted_at timestamptz
+```
 
-Result: clicking Approve / Reject inside the Lead → Tasks tab opens the same review dialog used in the global Tasks page and the status transitions (and writes activity + notifications) just like elsewhere.
+### `project_departments` (cross-department sharing)
+```
+project_id uuid not null
+department text not null
+primary key (project_id, department)
+```
+Used when a project spans more than one department (e.g. development + technical). For single-department projects, the `projects.department` column is enough; the table holds *additional* shared departments.
 
-## 2. Blue read-receipt ticks not visible
+### `tasks` — additive columns (one migration)
+```
+project_id uuid           -- nullable; required only when assigned_to is set + scope = department
+project_sort_order int default 0   -- per-project drag order
+```
+Index on `(project_id, project_sort_order)`.
 
-Root cause: when chat was restyled to violet, `--chat-read` was set to violet (`270 95% 78%`). The "seen" state now blends into the violet "mine" bubble — the WhatsApp-style **blue** double-check is gone.
+### RLS (mirrors `tasks` patterns)
 
-Fix — `src/index.css`:
-- Light: `--chat-read: 210 100% 56%;` (vivid blue)
-- Dark: `--chat-read: 210 100% 65%;` (slightly lighter for dark surfaces)
+- `projects` — authenticated SELECT when:
+  - `is_personal = true AND owner_user_id = auth0_sub`, OR
+  - executive role (chairman, vice_president, head_of_operations, technical_lead, team_development_lead), OR
+  - caller is in `projects.department` or any row in `project_departments` for this project (resolved through `profiles.department_id` → department name mapping via a small `SECURITY DEFINER` helper `user_in_department(_user, _dept_name)`).
+- `project_departments` — readable when caller can read the parent project.
+- All writes via service role through the edge function.
 
-Optional polish in `MessageThread.tsx` — bump the seen tick to `h-3.5 w-3.5` so it reads clearly against the violet bubble. The `delivered` state stays as the muted on-bubble color (single gray check, two muted checks), `seen` becomes blue — matches user expectation.
+## 2. Edge function changes
 
-## 3. Solutions section: remove from lead creation, add to account creation
+### `supabase/functions/projects/index.ts` (new)
+Actions, all auth via existing Auth0 JWT helper:
 
-### 3a. Remove from `AddLeadDialog.tsx`
-- Delete the entire `Solutions / Services` block (the trailing `<Separator />` + the `<div>…</div>` from "Solutions / Services" through the rows; lines ~239–282).
-- Drop the now-unused state: `solutions`, `setSolutions`, `SolutionRow`, `emptySolution`, `SERVICE_TYPES`, `handleTypeChange`, `updateSolution`, `removeSolution`, `validSolutions`, `addService` import + hook call.
-- Remove the post-create solution loop in `handleSubmit` (the `Promise.all(validSolutions.map…)` block).
-- Trim unused icon imports (`Plus`, `X`).
+- `list { scope?: 'mine' | 'department' | 'all', department?, include_personal? }`
+  - `mine`: projects the caller owns or is in (default for assignment dropdowns)
+  - `department`: projects in caller's department(s) — used by leads
+  - `all`: executives only — returns every project, grouped by department
+- `create { name, description?, department?, is_personal?, color?, target_end_date?, shared_departments?: string[] }`
+  - Authorization: leads/executives can create department projects in their own department(s); anyone can create personal (`is_personal = true, department = null`).
+- `update { id, ... }` — owner / lead of department / executive only.
+- `archive { id }` / `restore { id }` — soft delete.
+- `analytics { id }` — returns: total tasks, open / in_progress / done / overdue counts, completion %, sum of remaining `estimated_duration` in minutes, target_end_date, on-track flag (`days_remaining vs avg_velocity * open_count`).
+- `analytics_summary { department? }` — for the lead dashboard: per-project rollup as above for every project the caller can see.
+- `reorder_tasks { project_id, task_ids: string[] }` — bulk update `project_sort_order`.
 
-Solutions can still be added to a lead later via the existing "Solutions" tab inside `LeadDetailSheet` (uses `AddServiceDialog`) — that path is unchanged. So "lead creation" becomes solution-free; "lead lifecycle" still supports them.
+### `supabase/functions/tasks/index.ts` (extend)
 
-### 3b. Add Solutions section to `AddAccountDialog.tsx`
-The accounts module currently has no service table at all, so this needs a minimal end-to-end addition:
+- `create` / `update` payload accepts `project_id`. Validation:
+  - If `project_id` is provided, verify caller can see that project.
+  - **Required when** `assigned_to` is set AND request is not `lead_id`/`account_id`-originated AND assignee belongs to a department. Lead-originated and account-originated tasks may omit project (matches your spec); attaching later is allowed via `update`.
+- New action `attach_to_project { task_id, project_id | null, create_personal_project_name? }` — special path used from the task detail sheet's "Add to project" button. If `create_personal_project_name` is given, creates a personal project first, then attaches.
+- `list_management` — group results by project when caller is executive/chairman/VP/head_of_sales (used by the All Tasks page tree view).
 
-- **Database (1 migration)**: create `account_services` table mirroring `lead_services`:
-  ```
-  id uuid pk default gen_random_uuid()
-  account_id uuid not null references accounts(id) on delete cascade
-  service_name text not null
-  start_date date
-  expiry_date date not null
-  status text not null default 'active'   -- active | expired | renewed | cancelled
-  notes text
-  created_at, updated_at, deleted_at, created_by
-  ```
-  Indexes on `account_id` and `expiry_date`. Enable RLS; reuse the visibility helper used by `accounts` (caller must be in `get_visible_user_ids`-scoped accounts). Default-deny for `anon`.
+## 3. Frontend changes
 
-- **Backend — `supabase/functions/accounts/index.ts`**: add three actions:
-  - `add_service { account_id, service_name, start_date?, expiry_date }`
-  - `list_services { account_id }`
-  - `delete_service { service_id }`
-  Authorization: caller must own/manage the account.
+### Hooks — `src/hooks/useProjects.ts` (new)
+`useProjects(scope)`, `useProjectAnalytics(id)`, `useProjectsAnalyticsSummary(department?)`, `useCreateProject`, `useUpdateProject`, `useArchiveProject`, `useAttachTaskToProject`, `useReorderProjectTasks`.
 
-- **Frontend — `AddAccountDialog.tsx`**: after the Notes block, add a "Solutions / Services" section identical in shape to the one being removed from `AddLeadDialog` (Service Type select with the same `SERVICE_TYPES` list, optional Custom name, Start Date, Expiry Date *required, Add/Remove rows). On submit: after the account is created, loop the rows and call the new `add_service` action (same pattern as the lead version).
+### `useTasks.ts` — extend `Task` and `useCreateTask` payload with `project_id`. Add `useTasksByProject(projectId)`.
 
-- **Frontend — `AccountDetailSheet.tsx`**: add a small "Solutions" section that lists `account_services` and supports add/remove (re-use the same UX as the lead Solutions tab; minimal panel — list rows with name, dates, status badge, and an Add button opening a small inline form). This makes the "keep adding solutions later" flow work for accounts the same way it works for leads.
+### Task creation UX — `AddTaskDialog.tsx`
+- New required field "Project" (a `Combobox` listing the caller's accessible projects + an inline "Create new project…" CTA that opens `CreateProjectDialog`).
+- Required only when `assigned_to` is set (department task). For unassigned/personal it stays optional.
+- Lead-originated dialog (called from `LeadTasksPanel`) and account-originated (new `AccountTasksPanel`) inject `lead_id`/`account_id` and **hide** the Project field.
 
-## 4. "More" filter popover clipped on the right
+### Task detail — `TaskDetailSheet.tsx`
+- Show current project as a chip near title (color from `projects.color`).
+- "Add to project" button when `project_id` is null → opens `AttachToProjectDialog`:
+  - Tabs: "Existing project" (combobox of accessible projects) / "New personal project" (name + create).
+- Move to a different project supported the same way.
 
-Root cause: in `LeadsFilterBar.tsx` the More popover uses `<PopoverContent className="w-96 p-3" align="start">`. On a 1002px viewport the trigger sits roughly center-right of the toolbar, so a 384px-wide popover anchored to the trigger's left edge runs past the viewport.
+### New components
+- `src/components/projects/CreateProjectDialog.tsx`
+- `src/components/projects/AttachToProjectDialog.tsx`
+- `src/components/projects/ProjectCard.tsx` — title, status pill, completion bar, counts, target date / on-track badge.
+- `src/components/projects/ProjectAnalyticsCard.tsx` — used in the lead dashboard.
+- `src/components/projects/ProjectTasksBoard.tsx` — DnD-kit sortable list of tasks inside one project.
 
-Fix — single line change:
-- `<PopoverContent className="w-[min(24rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto p-3" align="end" sideOffset={4} collisionPadding={16}>`
-- `align="end"` anchors to the trigger's right edge → opens leftward.
-- `w-[min(24rem,calc(100vw-2rem))]` clamps the popover so it never exceeds viewport width minus a 1rem gutter.
-- `max-h-[70vh] overflow-y-auto` protects vertical clipping on short viewports.
-- `collisionPadding={16}` lets Radix nudge it inside the viewport if it still overflows.
+### Lead dashboard — `src/pages/ProjectsPage.tsx` (new) + nav entry
+- Visible to anyone with a department (everyone). Shows projects scoped to the caller.
+- Toggle: My Projects / Department Projects.
+- Grid of `ProjectCard`s with create button.
+- Click a project → `ProjectDetailSheet` with tabs: Overview (analytics), Tasks (drag-and-drop board), Members (read-only list), Settings.
 
-Apply the same `align="end" + collisionPadding` to the Stage / Owner / Country / Score popovers as a defensive consistency tweak (they're narrower so rarely clip, but it costs nothing).
+### Executive view — extend `AllTasksPage.tsx`
+- New "Group by" toggle: Flat (today) / By Department → Project.
+- Tree: Department > Project (collapsible) > Tasks table. Roles `chairman`, `vice_president`, `head_of_operations`, `head_of_marketing`, `head_of_accounting`, `sales_lead` see all departments; department leads see only theirs.
+- Reuses `analytics_summary` for the per-project stat header inside each tree node.
 
-## File impact
+### Drag-and-drop tasks within a project
+- `ProjectTasksBoard` uses existing `@dnd-kit/sortable` (already in deps).
+- On drop, calls `useReorderProjectTasks` → `reorder_tasks` action. Same pattern already used by `useReorderTasks` in `useTasks.ts`.
+
+### Account tasks — `src/components/accounts/AccountTasksPanel.tsx` (new)
+- Mirrors `LeadTasksPanel` exactly. Lists `tasks` where `account_id = current_account.id` via a new `list_by_account` action in the tasks function.
+- "Add task" opens `AddTaskDialog` with `account_id` injected and the Project field hidden (same lead behavior).
+- Wire all action dialogs (Accept/Decline/Submit/Approve/Reject) — uses the same pattern that was just fixed for `LeadTasksPanel`.
+- Mounted in `AccountDetailSheet.tsx` as a new "Tasks" tab between "Solutions" and "Notes".
+
+## 4. Notifications & activity
+
+- Project create / archive / task-attached events insert into `audit_logs` (no per-user notification spam).
+- Task `attach_to_project` adds a `task_activity_logs` entry: "Moved to project: {name}" — surfaces in the existing task detail Activity tab.
+
+## 5. File impact
 
 ```
 Database (1 migration)
-  create account_services + indexes + RLS
+  create projects
+  create project_departments
+  add tasks.project_id, tasks.project_sort_order (+ index)
+  create user_in_department helper + RLS policies
 
-Backend (1 function edited)
-  supabase/functions/accounts/index.ts          — add_service / list_services / delete_service
+Backend
+  supabase/functions/projects/index.ts            NEW
+  supabase/functions/tasks/index.ts               extend create/update + attach_to_project + list_by_account + grouped list_management
 
-Frontend (6 edits, 0 new files)
-  src/components/leads/LeadTasksPanel.tsx       — wire action handlers + mount review dialogs
-  src/index.css                                 — --chat-read = blue (light + dark)
-  src/components/leads/AddLeadDialog.tsx        — remove Solutions block + dead state
-  src/components/accounts/AddAccountDialog.tsx  — add Solutions section + post-create loop
-  src/components/accounts/AccountDetailSheet.tsx — Solutions list/add/remove panel
-  src/components/leads/LeadsFilterBar.tsx       — More popover overflow fix (+ defensive align="end")
+Frontend (≈12 files, 7 new)
+  src/hooks/useProjects.ts                        NEW
+  src/hooks/useTasks.ts                           project_id field + useTasksByProject + useTasksByAccount
+  src/components/tasks/AddTaskDialog.tsx          Project combobox (conditional)
+  src/components/tasks/TaskDetailSheet.tsx        project chip + "Add to project" button
+  src/components/projects/CreateProjectDialog.tsx        NEW
+  src/components/projects/AttachToProjectDialog.tsx      NEW
+  src/components/projects/ProjectCard.tsx                NEW
+  src/components/projects/ProjectAnalyticsCard.tsx       NEW
+  src/components/projects/ProjectTasksBoard.tsx          NEW
+  src/components/projects/ProjectDetailSheet.tsx         NEW
+  src/components/accounts/AccountTasksPanel.tsx          NEW
+  src/components/accounts/AccountDetailSheet.tsx  add Tasks tab
+  src/components/leads/LeadTasksPanel.tsx         hide project field on add (props change to AddTaskDialog)
+  src/pages/ProjectsPage.tsx                              NEW
+  src/pages/AllTasksPage.tsx                      add "Group by Department/Project" tree mode
+  src/App.tsx + src/config/navigation.ts          Projects route + sidebar entry
 ```
 
-## Out of scope
+## 6. Out of scope (callouts)
 
-- Reorganizing the chat receipts UX beyond restoring the blue color (no separate "delivered" iconography rework).
-- Bulk service import/export for accounts (only manual add/remove, matching leads parity).
-- Backfilling existing leads' converted solutions into the new `account_services` table — conversion-time copy can be added later if needed.
+- Project member invites (no per-project ACL; visibility is department + cross-department + executive).
+- Cross-project drag-and-drop (drag is within a single project's task list).
+- Auto-rolling project status (manual transitions only — `active` → `completed` etc.).
+- Email digests for project completion (in-app activity log only).
 
