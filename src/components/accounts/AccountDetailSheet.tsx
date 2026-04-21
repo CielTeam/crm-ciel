@@ -9,13 +9,14 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Building2, Globe, Mail, MapPin, Phone, User, Pencil, Save, X, Trash2, Phone as PhoneIcon, Users, StickyNote, AlertTriangle, FileText, Wrench } from 'lucide-react';
+import { Building2, Globe, Mail, MapPin, Phone, User, Pencil, Save, X, Trash2, Phone as PhoneIcon, Users, StickyNote, AlertTriangle, FileText, Wrench, ListTodo } from 'lucide-react';
 import { useUpdateAccount, useDeleteAccount, useAccountActivities } from '@/hooks/useAccountsContacts';
 import type { AccountWithContacts } from '@/hooks/useAccountsContacts';
 import { CountryCombobox } from '@/components/shared/CountryCombobox';
 import { AccountNotesPanel } from './AccountNotesPanel';
 import { AccountActivityTimeline } from './AccountActivityTimeline';
 import { AccountSolutionsPanel } from './AccountSolutionsPanel';
+import { AccountTasksPanel } from './AccountTasksPanel';
 import { DocumentsTab } from '@/components/shared/DocumentsTab';
 import { toast } from 'sonner';
 
@@ -254,10 +255,11 @@ export function AccountDetailSheet({ account, open, onOpenChange }: Props) {
         )}
 
         <Tabs value={tab} onValueChange={setTab} className="mt-5">
-          <TabsList className="grid grid-cols-6 w-full">
+          <TabsList className="grid grid-cols-7 w-full">
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="contacts">Contacts ({account.contacts.length})</TabsTrigger>
             <TabsTrigger value="solutions"><Wrench className="h-3.5 w-3.5 mr-1" />Solutions</TabsTrigger>
+            <TabsTrigger value="tasks"><ListTodo className="h-3.5 w-3.5 mr-1" />Tasks</TabsTrigger>
             <TabsTrigger value="notes">Notes</TabsTrigger>
             <TabsTrigger value="documents"><FileText className="h-3.5 w-3.5 mr-1" />Docs</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
@@ -410,6 +412,10 @@ export function AccountDetailSheet({ account, open, onOpenChange }: Props) {
 
           <TabsContent value="solutions" className="mt-4">
             <AccountSolutionsPanel accountId={account.id} />
+          </TabsContent>
+
+          <TabsContent value="tasks" className="mt-4">
+            <AccountTasksPanel accountId={account.id} accountName={account.name} />
           </TabsContent>
 
           <TabsContent value="notes" className="mt-4">

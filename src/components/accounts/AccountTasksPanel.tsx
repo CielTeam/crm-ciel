@@ -151,6 +151,7 @@ export function AccountTasksPanel({ accountId, accountName }: Props) {
       <AddTaskDialog
         open={addOpen}
         onOpenChange={setAddOpen}
+        hideProjectField
         onSubmit={(payload) => {
           const prefix = `From account: ${accountName}`;
           const desc = payload.description ? `${prefix}\n\n${payload.description}` : prefix;

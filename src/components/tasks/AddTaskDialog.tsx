@@ -17,10 +17,12 @@ import { Calendar } from '@/components/ui/calendar';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Check, ChevronsUpDown, User, CalendarIcon, Clock, Timer } from 'lucide-react';
+import { Check, ChevronsUpDown, User, CalendarIcon, Clock, Timer, FolderKanban } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useAssignableUsers } from '@/hooks/useTasks';
+import { useProjects } from '@/hooks/useProjects';
+import { CreateProjectDialog } from '@/components/projects/CreateProjectDialog';
 
 interface AddTaskDialogProps {
   open: boolean;
@@ -32,8 +34,11 @@ interface AddTaskDialogProps {
     due_date?: string | null;
     assigned_to?: string | null;
     estimated_duration?: string | null;
+    project_id?: string | null;
   }) => void;
   isLoading?: boolean;
+  /** Hide the project field (lead / account-originated tasks) */
+  hideProjectField?: boolean;
 }
 
 function formatRole(role: string | null): string {
@@ -53,8 +58,9 @@ const PRIORITY_CONFIG = {
   urgent: { label: 'Urgent', color: 'bg-destructive' },
 } as const;
 
-export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTaskDialogProps) {
+export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hideProjectField }: AddTaskDialogProps) {
   const { data: assignableUsers = [] } = useAssignableUsers();
+  const { data: projects = [] } = useProjects('mine');
   const [title, setTitle] = useState('');
   const [titleTouched, setTitleTouched] = useState(false);
   const [description, setDescription] = useState('');
@@ -64,6 +70,8 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTa
   const [durationHours, setDurationHours] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
+  const [projectId, setProjectId] = useState<string>('');
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [assignPopoverOpen, setAssignPopoverOpen] = useState(false);
   const [datePopoverOpen, setDatePopoverOpen] = useState(false);
 
@@ -77,6 +85,7 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTa
     setDurationHours('');
     setDurationMinutes('');
     setAssignedTo('');
+    setProjectId('');
   };
 
   const buildDuration = (): string | null => {
@@ -112,6 +121,7 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTa
       due_date: dueDateISO,
       assigned_to: assignedTo && assignedTo !== 'unassigned' ? assignedTo : null,
       estimated_duration: buildDuration(),
+      project_id: !hideProjectField && projectId ? projectId : null,
     });
     reset();
     onOpenChange(false);
@@ -373,6 +383,39 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTa
             </>
           )}
 
+          {!hideProjectField && (
+            <>
+              <Separator />
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium flex items-center gap-1.5">
+                  <FolderKanban className="h-3.5 w-3.5 text-muted-foreground" />
+                  Project <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                <div className="flex gap-2">
+                  <Select value={projectId || 'none'} onValueChange={(v) => setProjectId(v === 'none' ? '' : v)}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="No project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No project</SelectItem>
+                      {projects.map(p => (
+                        <SelectItem key={p.id} value={p.id}>
+                          <span className="flex items-center gap-2">
+                            {p.color && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />}
+                            {p.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setCreateProjectOpen(true)}>
+                    New
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+
           <DialogFooter className="pt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={!title.trim() || isLoading}>
@@ -381,6 +424,11 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading }: AddTa
           </DialogFooter>
         </form>
       </DialogContent>
+      <CreateProjectDialog
+        open={createProjectOpen}
+        onOpenChange={setCreateProjectOpen}
+        onCreated={(id) => setProjectId(id)}
+      />
     </Dialog>
   );
 }

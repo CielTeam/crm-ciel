@@ -20,11 +20,14 @@ import {
 import { cn } from '@/lib/utils';
 import { useTaskActivity, useTaskComments, useAddTaskComment, useAssignableUsers, useReassignTask, type Task, type TaskActivityLog } from '@/hooks/useTasks';
 import { useAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/useAttachments';
+import { useProjects } from '@/hooks/useProjects';
+import { AttachToProjectDialog } from '@/components/projects/AttachToProjectDialog';
 import { FileAttachmentList } from '@/components/shared/FileAttachmentList';
 import { FileUploadButton } from '@/components/shared/FileUploadButton';
 import { getTimeToStart, getTimeToComplete, getWaitingTime } from '@/lib/taskTimings';
 import type { TaskAssignee } from './TaskCard';
 import { toast } from 'sonner';
+import { FolderKanban } from 'lucide-react';
 
 const statusConfig: Record<string, { label: string; className: string; icon: typeof Circle }> = {
   todo: { label: 'To Do', className: 'bg-muted text-muted-foreground', icon: Circle },
@@ -114,9 +117,11 @@ export function TaskDetailSheet({
 }: TaskDetailSheetProps) {
   const [commentText, setCommentText] = useState('');
   const [reassignOpen, setReassignOpen] = useState(false);
+  const [attachProjectOpen, setAttachProjectOpen] = useState(false);
   const { data: activityLogs = [], isLoading: activityLoading } = useTaskActivity(open && task ? task.id : null);
   const { data: comments = [], isLoading: commentsLoading } = useTaskComments(open && task ? task.id : null);
   const { data: taskAttachments = [] } = useAttachments('task', open && task ? task.id : null);
+  const { data: allProjects = [] } = useProjects('mine');
   const addComment = useAddTaskComment();
   const { data: assignableUsers = [] } = useAssignableUsers();
   const reassignTask = useReassignTask();
@@ -134,6 +139,7 @@ export function TaskDetailSheet({
   const isPersonal = task.task_type === 'personal';
   const canReassign = isCreator && !isPersonal && assignableUsers.length > 0;
   const isDone = task.status === 'done' || task.status === 'approved';
+  const currentProject = task.project_id ? allProjects.find(p => p.id === task.project_id) : null;
 
   const timeToStart = getTimeToStart(task);
   const timeToComplete = getTimeToComplete(task);
@@ -164,6 +170,16 @@ export function TaskDetailSheet({
             {task.pinned && (
               <Badge variant="outline" className="bg-amber-500/10 text-amber-600 text-[10px]">
                 <Star className="h-3 w-3 mr-0.5 fill-amber-500" /> Pinned
+              </Badge>
+            )}
+            {currentProject && (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1"
+                style={currentProject.color ? { borderColor: currentProject.color, color: currentProject.color } : undefined}
+              >
+                <FolderKanban className="h-3 w-3" />
+                {currentProject.name}
               </Badge>
             )}
           </div>
@@ -200,6 +216,12 @@ export function TaskDetailSheet({
             {canMarkUndone && (
               <Button size="sm" variant="outline" onClick={() => onMarkUndone(task.id)}>
                 <RotateCcw className="h-3.5 w-3.5 mr-1" /> Mark Undone
+              </Button>
+            )}
+            {(isCreator || isAssignee) && (
+              <Button size="sm" variant="outline" onClick={() => setAttachProjectOpen(true)}>
+                <FolderKanban className="h-3.5 w-3.5 mr-1" />
+                {currentProject ? 'Move project' : 'Add to project'}
               </Button>
             )}
           </div>
@@ -601,6 +623,12 @@ export function TaskDetailSheet({
           </div>
         </div>
       </SheetContent>
+      <AttachToProjectDialog
+        open={attachProjectOpen}
+        onOpenChange={setAttachProjectOpen}
+        taskId={task.id}
+        currentProjectId={task.project_id ?? null}
+      />
     </Sheet>
   );
 }
