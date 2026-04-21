@@ -311,8 +311,11 @@ Deno.serve(async (req) => {
         const cutoff = new Date(Date.now() - 14 * 86400000).toISOString();
         query = query.or(`last_contacted_at.lt.${cutoff},last_contacted_at.is.null`);
       }
-      if (f.converted === true) query = query.not('converted_at', 'is', null);
-      if (f.converted === false) query = query.is('converted_at', null);
+      // Converted handling: default 'open' (hide converted), 'converted' (only converted), 'all' (no filter)
+      const convMode = f.converted ?? 'open';
+      if (convMode === 'open' || f.converted === false) query = query.is('converted_at', null);
+      else if (convMode === 'converted' || f.converted === true) query = query.not('converted_at', 'is', null);
+      // 'all' => no filter
       // Text search across company / contact / email
       if (typeof f.search === 'string' && f.search.trim()) {
         const s = f.search.trim().replace(/[,()]/g, '');
@@ -361,8 +364,12 @@ Deno.serve(async (req) => {
 
     // ─── STATS ───
     if (action === 'stats') {
-      // Get all leads for scope filtering
-      const { data: allLeads } = await admin.from('leads').select('id,stage,status,estimated_value,probability_percent,weighted_forecast,next_follow_up_at,assigned_to').is('deleted_at', null);
+      // Default: stats reflect open leads only
+      const convMode = payload.converted ?? 'open';
+      let statsQuery = admin.from('leads').select('id,stage,status,estimated_value,probability_percent,weighted_forecast,next_follow_up_at,assigned_to').is('deleted_at', null);
+      if (convMode === 'open') statsQuery = statsQuery.is('converted_at', null);
+      else if (convMode === 'converted') statsQuery = statsQuery.not('converted_at', 'is', null);
+      const { data: allLeads } = await statsQuery;
       const leads = filterLeadsByScope(allLeads || [], scopedIds);
       
       const now = new Date();
