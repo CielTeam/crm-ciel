@@ -383,6 +383,39 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
             </>
           )}
 
+          {!hideProjectField && (
+            <>
+              <Separator />
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium flex items-center gap-1.5">
+                  <FolderKanban className="h-3.5 w-3.5 text-muted-foreground" />
+                  Project <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                <div className="flex gap-2">
+                  <Select value={projectId || 'none'} onValueChange={(v) => setProjectId(v === 'none' ? '' : v)}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="No project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No project</SelectItem>
+                      {projects.map(p => (
+                        <SelectItem key={p.id} value={p.id}>
+                          <span className="flex items-center gap-2">
+                            {p.color && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />}
+                            {p.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setCreateProjectOpen(true)}>
+                    New
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+
           <DialogFooter className="pt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={!title.trim() || isLoading}>
@@ -391,6 +424,11 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
           </DialogFooter>
         </form>
       </DialogContent>
+      <CreateProjectDialog
+        open={createProjectOpen}
+        onOpenChange={setCreateProjectOpen}
+        onCreated={(id) => setProjectId(id)}
+      />
     </Dialog>
   );
 }
