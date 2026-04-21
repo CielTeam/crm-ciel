@@ -200,6 +200,7 @@ export function LeadTasksPanel({ lead }: Props) {
       <AddTaskDialog
         open={addOpen}
         onOpenChange={setAddOpen}
+        hideProjectField
         onSubmit={(payload) => {
           const prefix = `From lead: ${lead.company_name} — ${lead.contact_name}`;
           const desc = payload.description ? `${prefix}\n\n${payload.description}` : prefix;
