@@ -247,6 +247,11 @@ Deno.serve(async (req) => {
       let query = admin.from('leads').select('*').is('deleted_at', null).order('created_at', { ascending: false });
       if (payload.status) query = query.eq('status', payload.status);
       if (payload.stage) query = query.eq('stage', payload.stage);
+      // Default: hide converted leads (treat conversion as archival)
+      const convMode = payload.converted ?? 'open';
+      if (convMode === 'open') query = query.is('converted_at', null);
+      else if (convMode === 'converted' || convMode === true) query = query.not('converted_at', 'is', null);
+      // 'all' => no filter
       const { data, error } = await query;
       if (error) throw error;
       return json({ leads: filterLeadsByScope(data || [], scopedIds) });
