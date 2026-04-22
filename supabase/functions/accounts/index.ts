@@ -550,6 +550,104 @@ Deno.serve(async (req) => {
       return json({ success: true });
     }
 
+    // ─── REQUEST QUOTATION (sugar: build items from existing account_services) ───
+    if (action === 'request_quotation') {
+      const REQUEST_QUOTATION_ROLES = ['chairman', 'vice_president', 'head_of_operations', 'head_of_marketing', 'sales_lead'];
+      if (!roles.some((r: string) => REQUEST_QUOTATION_ROLES.includes(r))) {
+        return json({ error: 'Forbidden — insufficient role to request quotations' }, 403);
+      }
+      const { account_id, service_ids, notes, currency, total_amount } = payload;
+      if (!account_id) return json({ error: 'account_id required' }, 400);
+      if (!Array.isArray(service_ids) || service_ids.length === 0) {
+        return json({ error: 'At least one service_id required' }, 400);
+      }
+
+      const { data: acct } = await admin.from('accounts')
+        .select('id, name, owner').eq('id', account_id).is('deleted_at', null).single();
+      if (!acct) return json({ error: 'Account not found' }, 404);
+
+      const { data: services, error: svcErr } = await admin.from('account_services')
+        .select('*').in('id', service_ids).eq('account_id', account_id).is('deleted_at', null);
+      if (svcErr) throw svcErr;
+      if (!services || services.length === 0) return json({ error: 'No matching services found' }, 404);
+
+      const cur = sanitize(currency, 8) || 'USD';
+      const finalTotal = total_amount != null && Number.isFinite(Number(total_amount)) ? Number(total_amount) : null;
+
+      const { data: q, error: insErr } = await admin.from('quotations').insert({
+        account_id,
+        requested_by: actorId,
+        status: 'requested',
+        currency: cur,
+        total_amount: finalTotal,
+        notes: sanitize(notes, 5000) || null,
+      }).select().single();
+      if (insErr) throw insErr;
+
+      const itemRows = services.map((s, idx: number) => ({
+        quotation_id: q.id,
+        account_service_id: s.id,
+        service_name: s.service_name,
+        description: s.description,
+        quantity: 1,
+        unit_price: null,
+        line_total: null,
+        sort_order: idx,
+      }));
+      const { error: itemErr } = await admin.from('quotation_items').insert(itemRows);
+      if (itemErr) throw itemErr;
+
+      await admin.from('quotation_activities').insert({
+        quotation_id: q.id,
+        actor_id: actorId,
+        activity_type: 'created',
+        title: `Quotation ${q.reference} requested for "${acct.name}"`,
+        changes: {},
+        metadata: { item_count: services.length, source: 'account_services' },
+      });
+
+      // Notify accounting users
+      const ACCOUNTING_ROLES_LOCAL = ['head_of_accounting', 'accounting_employee'];
+      const { data: acctUsers } = await admin.from('user_roles')
+        .select('user_id').in('role', ACCOUNTING_ROLES_LOCAL);
+      const accountingIds = Array.from(new Set((acctUsers || []).map((r: { user_id: string }) => r.user_id)));
+      const { data: requesterProfile } = await admin.from('profiles')
+        .select('display_name').eq('user_id', actorId).maybeSingle();
+      const requesterName = requesterProfile?.display_name || 'A user';
+
+      const notif = {
+        type: 'quotation_requested',
+        title: 'New quotation request',
+        body: `${requesterName} requested a quotation for "${acct.name}" (${q.reference})`,
+        reference_id: q.id,
+        reference_type: 'quotation',
+      };
+      for (const uid of accountingIds) {
+        try {
+          await admin.from('notifications').insert({ user_id: uid, ...notif });
+          const channel = admin.channel(`user-notify-${uid}`);
+          await channel.send({ type: 'broadcast', event: 'new_notification', payload: notif });
+          await admin.removeChannel(channel);
+        } catch { /* best effort */ }
+      }
+
+      await admin.from('audit_logs').insert({
+        actor_id: actorId,
+        action: 'quotation.created',
+        target_type: 'quotation',
+        target_id: q.id,
+        metadata: { reference: q.reference, account_id, item_count: services.length, source: 'account_services' },
+      });
+
+      await logActivity(
+        admin, account_id, actorId, 'quotation_requested',
+        `Quotation ${q.reference} requested (${services.length} item${services.length === 1 ? '' : 's'})`,
+        {}, { quotation_id: q.id, reference: q.reference }
+      );
+
+      return json({ quotation: q }, 201);
+    }
+
     return json({ error: `Unknown action: ${action}` }, 400);
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : 'Internal error' }, 500);
