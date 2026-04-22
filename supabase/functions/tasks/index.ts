@@ -455,19 +455,28 @@ Deno.serve(async (req) => {
 
     // ─── CREATE ───
     if (action === 'create') {
-      const { title, description, priority, due_date, assigned_to, estimated_duration, account_id, ticket_id, lead_id, visible_scope, progress_percent, project_id } = payload;
+      const { title, description, priority, due_date, assigned_to, assignees: assigneesIn, estimated_duration, account_id, ticket_id, lead_id, visible_scope, progress_percent, project_id } = payload;
       const cleanTitle = sanitizeString(title, 255);
       const cleanDescription = sanitizeString(description, 5000);
       if (!cleanTitle) return jsonResponse({ error: 'Title is required' }, 400);
 
-      if (assigned_to && assigned_to !== actorId) {
+      // Normalize assignees: prefer assignees[] if provided, else fallback to assigned_to
+      let assignees: string[] = Array.isArray(assigneesIn) ? assigneesIn.filter((u: unknown): u is string => typeof u === 'string' && !!u) : [];
+      if (!assignees.length && assigned_to) assignees = [assigned_to];
+      // de-dup, preserve order
+      assignees = [...new Set(assignees)];
+      const primary = assignees[0] || null;
+      const secondaries = assignees.slice(1);
+
+      // Permission check on every non-self assignee
+      const externalAssignees = assignees.filter(u => u !== actorId);
+      if (externalAssignees.length) {
         const roles = await getActorRoles(admin, actorId);
         const isLead = roles.some(r => LEAD_ROLES.includes(r));
         if (!isLead) return jsonResponse({ error: 'You do not have permission to assign tasks' }, 403);
-
         const allowedUsers = await getExpandedAssignableUsers(admin, actorId, roles);
-        if (!allowedUsers.includes(assigned_to)) {
-          return jsonResponse({ error: 'You cannot assign tasks to this user' }, 403);
+        for (const u of externalAssignees) {
+          if (!allowedUsers.includes(u)) return jsonResponse({ error: 'You cannot assign tasks to one of these users' }, 403);
         }
       }
 
@@ -487,10 +496,9 @@ Deno.serve(async (req) => {
       const scope = allowedScope.includes(visible_scope) ? visible_scope : 'private';
       const progress = Math.max(0, Math.min(100, parseInt(String(progress_percent ?? 0), 10) || 0));
 
-      const taskType = assigned_to && assigned_to !== actorId ? 'assigned' : 'personal';
+      const taskType = primary && primary !== actorId ? 'assigned' : 'personal';
       const status = taskType === 'assigned' ? 'pending_accept' : 'todo';
 
-      // Validate project_id (optional). Origin from lead/account skips project requirement.
       let finalProjectId: string | null = project_id || null;
       if (finalProjectId) {
         const { data: proj } = await admin.from('projects').select('id').eq('id', finalProjectId).is('deleted_at', null).maybeSingle();
@@ -499,35 +507,45 @@ Deno.serve(async (req) => {
 
       const { data, error } = await admin.from('tasks').insert({
         title: cleanTitle, description: cleanDescription || null, priority: priority || 'medium',
-        due_date: due_date || null, assigned_to: assigned_to || null, estimated_duration: estimated_duration || null,
+        due_date: due_date || null, assigned_to: primary, estimated_duration: estimated_duration || null,
         created_by: actorId, task_type: taskType, status,
         account_id: account_id || null, ticket_id: ticket_id || null, lead_id: lead_id || null,
         visible_scope: scope, progress_percent: progress, project_id: finalProjectId,
       }).select().single();
       if (error) throw error;
 
+      // Insert secondary assignees rows
+      if (secondaries.length) {
+        await admin.from('task_assignees').insert(secondaries.map(uid => ({ task_id: data.id, user_id: uid, assigned_by: actorId })));
+      }
+
+      // Grant project access to every assignee
+      if (finalProjectId) {
+        for (const uid of assignees) await grantProjectAccess(admin, finalProjectId, uid, actorId);
+      }
+
       await logActivity(admin, data.id, actorId, null, status, 'Task created');
-      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.create', target_type: 'task', target_id: data.id, metadata: { title: cleanTitle, lead_id: lead_id || null } });
+      await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.create', target_type: 'task', target_id: data.id, metadata: { title: cleanTitle, lead_id: lead_id || null, assignees } });
 
       if (lead_id) {
         await admin.from('lead_activities').insert({
           lead_id, actor_id: actorId, activity_type: 'task_created',
           title: `Task created: ${cleanTitle}`,
-          metadata: { task_id: data.id, assigned_to: assigned_to || null },
+          metadata: { task_id: data.id, assignees },
         });
       }
 
-      if (assigned_to && assigned_to !== actorId) {
+      // Notify every assignee except actor
+      const recipients = assignees.filter(u => u !== actorId);
+      if (recipients.length) {
         const { data: actorProfile } = await admin.from('profiles').select('display_name').eq('user_id', actorId).single();
         const actorName = (actorProfile as ProfileRow | null)?.display_name || 'Someone';
         const titleSuffix = linkedLeadCompany ? ` (from lead: ${linkedLeadCompany})` : '';
-        const notif = {
+        await notifyUsers(admin, recipients, {
           type: 'task_assigned',
           title: `New task assigned by ${actorName}${titleSuffix}`,
           body: cleanTitle, reference_id: data.id, reference_type: 'task',
-        };
-        await admin.from('notifications').insert({ user_id: assigned_to, ...notif });
-        await broadcastNotification(admin, assigned_to, notif);
+        });
       }
       return jsonResponse({ task: data }, 201);
     }
