@@ -70,7 +70,7 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
   const [dueTime, setDueTime] = useState('');
   const [durationHours, setDurationHours] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('');
-  const [assignedTo, setAssignedTo] = useState('');
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [projectId, setProjectId] = useState<string>('');
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [assignPopoverOpen, setAssignPopoverOpen] = useState(false);
@@ -85,7 +85,7 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
     setDueTime('');
     setDurationHours('');
     setDurationMinutes('');
-    setAssignedTo('');
+    setAssigneeIds([]);
     setProjectId('');
   };
 
