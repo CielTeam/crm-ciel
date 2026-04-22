@@ -602,18 +602,77 @@ Deno.serve(async (req) => {
       const { data, error } = await admin.from('tasks').update(updatePayload).eq('id', id).select().single();
       if (error) throw error;
 
+      // If project_id changed (set), grant project access to current assignees
+      if ('project_id' in updatePayload && updatePayload.project_id) {
+        await grantProjectAccess(admin, updatePayload.project_id as string, task.assigned_to, actorId);
+        const { data: extras } = await admin.from('task_assignees').select('user_id').eq('task_id', id);
+        for (const r of (extras as { user_id: string }[] | null) || []) {
+          await grantProjectAccess(admin, updatePayload.project_id as string, r.user_id, actorId);
+        }
+      }
+
       await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.update', target_type: 'task', target_id: id, metadata: { fields: Object.keys(updatePayload) } });
 
       if (updatePayload.status && updatePayload.status !== oldStatus) {
         await logActivity(admin, id, actorId, oldStatus, updatePayload.status as string);
-        const notifyUserId = task.created_by === actorId ? task.assigned_to : task.created_by;
-        if (notifyUserId) {
-          const notif = { type: 'task_status_changed', title: `Task status changed to ${updatePayload.status}`, body: task.title, reference_id: id, reference_type: 'task' };
-          await admin.from('notifications').insert({ user_id: notifyUserId, ...notif });
-          await broadcastNotification(admin, notifyUserId, notif);
+        const recipientSet = new Set<string>();
+        if (task.created_by && task.created_by !== actorId) recipientSet.add(task.created_by);
+        if (task.assigned_to && task.assigned_to !== actorId) recipientSet.add(task.assigned_to);
+        const { data: extras2 } = await admin.from('task_assignees').select('user_id').eq('task_id', id);
+        for (const r of (extras2 as { user_id: string }[] | null) || []) if (r.user_id !== actorId) recipientSet.add(r.user_id);
+        if (recipientSet.size) {
+          await notifyUsers(admin, [...recipientSet], { type: 'task_status_changed', title: `Task status changed to ${updatePayload.status}`, body: task.title, reference_id: id, reference_type: 'task' });
         }
       }
       return jsonResponse({ task: data });
+    }
+
+    // ─── ADD ASSIGNEES ───
+    if (action === 'add_assignees') {
+      const { task_id, user_ids } = payload;
+      if (!task_id || !Array.isArray(user_ids) || !user_ids.length) return jsonResponse({ error: 'task_id and user_ids[] required' }, 400);
+      const { data: existing } = await admin.from('tasks').select('*').eq('id', task_id).single();
+      if (!existing) return jsonResponse({ error: 'Task not found' }, 404);
+      const t = existing as TaskRecord;
+
+      const roles = await getActorRoles(admin, actorId);
+      const isLead = roles.some(r => LEAD_ROLES.includes(r));
+      if (t.created_by !== actorId && !isLead) return jsonResponse({ error: 'Forbidden' }, 403);
+
+      const allowed = await getExpandedAssignableUsers(admin, actorId, roles);
+      const toAdd = (user_ids as string[]).filter(u => typeof u === 'string' && allowed.includes(u));
+      if (!toAdd.length) return jsonResponse({ error: 'No allowed users to add' }, 403);
+
+      await admin.from('task_assignees').upsert(
+        toAdd.map(uid => ({ task_id, user_id: uid, assigned_by: actorId })),
+        { onConflict: 'task_id,user_id' }
+      );
+
+      if (t.project_id) for (const uid of toAdd) await grantProjectAccess(admin, t.project_id, uid, actorId);
+
+      await logActivity(admin, task_id, actorId, null, null, `Added assignees: ${toAdd.length}`);
+      const { data: actorProfile } = await admin.from('profiles').select('display_name').eq('user_id', actorId).single();
+      const actorName = (actorProfile as ProfileRow | null)?.display_name || 'Someone';
+      await notifyUsers(admin, toAdd.filter(u => u !== actorId), {
+        type: 'task_assigned', title: `${actorName} added you to a task`,
+        body: t.title, reference_id: task_id, reference_type: 'task',
+      });
+      return jsonResponse({ success: true });
+    }
+
+    // ─── REMOVE ASSIGNEE ───
+    if (action === 'remove_assignee') {
+      const { task_id, user_id } = payload;
+      if (!task_id || !user_id) return jsonResponse({ error: 'task_id and user_id required' }, 400);
+      const { data: t } = await admin.from('tasks').select('created_by').eq('id', task_id).single();
+      if (!t) return jsonResponse({ error: 'Task not found' }, 404);
+      const roles = await getActorRoles(admin, actorId);
+      if ((t as TaskRecord).created_by !== actorId && !roles.some(r => LEAD_ROLES.includes(r))) {
+        return jsonResponse({ error: 'Forbidden' }, 403);
+      }
+      await admin.from('task_assignees').delete().eq('task_id', task_id).eq('user_id', user_id);
+      await logActivity(admin, task_id, actorId, null, null, `Removed assignee`);
+      return jsonResponse({ success: true });
     }
 
     // ─── MARK DONE ───
