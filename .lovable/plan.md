@@ -1,133 +1,90 @@
 
 
-# Three improvements: project visibility, multi-assignee tasks, and Quotations workflow
+# Finish the remaining frontend for multi-assignee tasks + Quotations
 
-Three independent but related changes. All add to existing patterns — no rip-and-replace.
+Backend is fully in place. This plan delivers only the frontend pieces that were not yet built.
 
-## 1. Project visibility — "auto-share to assignees"
+## 1. Multi-assignee task UI
 
-**Problem today**: a Head of Department's project is only visible to people in the same department. If they assign a task to someone outside (e.g. VP creates a project, assigns task to Head of Dev), the assignee can't see the parent project.
+**`src/hooks/useTasks.ts`**
+- Extend the `Task` type with `assignees: { user_id: string; display_name: string | null; avatar_url: string | null; role?: string | null; is_primary: boolean }[]`. The edge function already returns this.
+- Add mutation hooks: `useAddTaskAssignees()` → calls `{ action: 'add_assignees', task_id, user_ids }`, and `useRemoveTaskAssignee()` → `{ action: 'remove_assignee', task_id, user_id }`. Both invalidate the same task query keys the existing reassignment flow uses.
 
-**Fix**: every time a task is attached to a project (on `tasks.create`, `tasks.update`, and `tasks.attach_to_project`), also grant the assignee implicit access to that project. Implementation: a new lightweight table `project_members` (project_id, user_id) and an OR branch added to `has_project_access()`. Owner / department / cross-dept / executive rules stay; an extra "is the user listed in `project_members`?" check is added.
+**`src/components/tasks/AddTaskDialog.tsx`**
+- Replace the single-select assignee combobox with a multi-select. Selected users render as chips above the field; the first selected is marked "Primary" with a small badge.
+- `onSubmit` payload becomes `{ ..., assignees: string[] }` (drop `assigned_to`). The first chip is the primary; the edge function already handles this contract.
+- Keep `useAssignableUsers` data and the same role/department filtering logic — only the selection model changes.
 
-Backend wiring:
-- `tasks` edge function — when `assigned_to` is set on a task that has a `project_id`, upsert `(project_id, assigned_to)` into `project_members`.
-- `useProjects('mine')` already returns projects the caller can see, so once RLS permits it the project will appear in their TasksPage strip and AddTaskDialog dropdown automatically.
+**`src/components/tasks/TaskCard.tsx`**
+- Replace single avatar with an avatar stack: show up to 3 overlapping `Avatar`s (`-ml-2` overlap) and a `+N` chip when more. Tooltip on hover lists names. Falls back to single avatar when only one assignee.
 
-Files: 1 migration (table + helper update) + edits to `supabase/functions/tasks/index.ts`. No frontend changes required.
+**`src/components/tasks/TaskDetailSheet.tsx`**
+- "Assigned to" section: render the same avatar stack with names beneath, primary marked. Add a `+ Add` button that opens an inline assignee multi-select popover (reuses the same combobox component used in `AddTaskDialog`). Each non-primary chip gets an `x` to remove.
+- Wire to `useAddTaskAssignees` / `useRemoveTaskAssignee`.
 
-## 2. Multi-assignee tasks
+## 2. Quotations frontend
 
-**Today**: `tasks.assigned_to` is a single text column.
+**`src/hooks/useQuotations.ts` (new)** — wraps the `quotations` edge function:
+- `useQuotations(filters)` — list with filters (status, requester, account, date range, search).
+- `useQuotation(id)` — single quotation with items + activities.
+- `useCreateQuotation()`, `useUpdateQuotation()`, `useUpdateQuotationStatus()`, `useDeleteQuotation()`.
+- `useAddQuotationItem()`, `useUpdateQuotationItem()`, `useRemoveQuotationItem()`.
+- `useExportQuotationsCsv(filters)` — calls `export_csv`, returns CSV string for download.
 
-**Fix**: introduce `task_assignees (task_id, user_id, assigned_at, assigned_by)`. Keep `tasks.assigned_to` as the **primary** assignee for backward compatibility with every existing query, badge, RLS policy, and notification path. Multi-assignment becomes additive.
+**`src/components/accounts/RequestQuotationDialog.tsx` (new)**
+- Props: `accountId`, `preselectedServiceIds: string[]`, `open`, `onOpenChange`.
+- Body: editable list of selected services (toggle off any), optional note (textarea), currency `Select` (USD/EUR/GBP/AED/SAR), optional `total_amount` override input.
+- Submit → `accounts.request_quotation` action with `{ account_id, account_service_ids, currency, notes, total_amount }`. Toast on success, close.
 
-Backend (`supabase/functions/tasks/index.ts`):
-- `create` accepts `assignees: string[]`. The first goes into `assigned_to` (primary, preserves all existing behavior); the rest go into `task_assignees` rows.
-- `update` accepts `add_assignees` / `remove_assignees`.
-- `list_*` actions union-include any task where the caller is in `task_assignees` (in addition to `assigned_to`/`created_by`).
-- Notifications fan out to every assignee on create / status change / due-date events using the existing `broadcastNotification` helper.
+**`src/components/accounts/AccountSolutionsPanel.tsx` (edit)**
+- Show controls only when `currentUser.role` is in `['chairman','vice_president','head_of_sales','sales_lead']`.
+- Per-row: `Checkbox` + small "Send to accounting" icon button (opens dialog with that one preselected).
+- Header: bulk "Send selected to accounting" button (enabled when ≥1 row checked).
 
-Frontend:
-- `AddTaskDialog.tsx` — replace the single Assign-to combobox with a multi-select. The combobox keeps the same `useAssignableUsers` data; checkmarks become multi-select with chips above the field. First selection becomes primary (visually marked).
-- `TaskDetailSheet.tsx` — render an avatar stack of assignees with a "+" to add more (opens the same combobox).
-- `TaskCard.tsx` — show a small avatar stack instead of one avatar when assignees > 1.
-- `useTasks.ts` — `Task` gains `assignees: { user_id, display_name, avatar_url }[]`. Every list response is enriched server-side.
+**`src/components/quotations/QuotationsFilterBar.tsx` (new)** — search input, status `Select`, requester combobox (uses `useDirectoryData`), account combobox (uses `useAccountsContacts`), date range picker, "Reset" button. Mirrors `LeadsFilterBar` patterns.
 
-RLS stays the same; the `tasks` SELECT policy gets one extra OR clause: `EXISTS (SELECT 1 FROM task_assignees WHERE task_id = tasks.id AND user_id = current_user)`.
+**`src/components/quotations/QuotationsTable.tsx` (new)** — columns: Reference, Account, Requested by (avatar + name), Items count, Total + currency, Status badge (color-coded), Created, Updated, Actions (View, Edit for accounting, Delete for `head_of_accounting`). Row click opens detail sheet. Selection checkboxes for bulk export.
 
-Files: migration (`task_assignees` + RLS update) + tasks edge function + 4 frontend files.
+**`src/components/quotations/QuotationDetailSheet.tsx` (new)** — header (reference, status badge, account name); editable status `Select` (accounting only); account snapshot card; line items table with inline qty/unit_price edits (accounting only) and add/remove rows; notes; activity timeline rendered from `quotation_activities`.
 
-## 3. Quotations workflow on Accounts → Accounting
+**`src/pages/QuotationsPage.tsx` (new)** — header (title, "Export CSV" button using current filters), `QuotationsFilterBar`, `QuotationsTable`, `QuotationDetailSheet` controlled by `selectedQuotationId` state. Mirrors `LeadsPage` structure.
 
-**Flow**:
-1. Executive (chairman / VP / head_of_sales / sales_lead) opens an Account → Solutions tab.
-2. New per-row button "Send to accounting" and a header button "Send all to accounting".
-3. Both open a small dialog: pick which solutions, optional note, optional total amount, currency. Submit creates a `quotations` row with `status = 'requested'`.
-4. All accounting users (`head_of_accounting`, `accounting_employee`) get an in-app notification (existing `broadcastNotification` path: title "New quotation request", body "<requester> requested a quotation for <account>"). Click goes to `/quotations/:id`.
-5. New page `/quotations` for accounting roles + executives:
-   - Table with columns: Reference, Account, Requested by, Solutions count, Total, Currency, Status, Created, Updated.
-   - Filters: status, requester, account, date range, search by account name / reference.
-   - Actions per row: View detail sheet, Edit (accounting only), Soft-delete (accounting head only), Export selected to CSV, Export all (filtered) to CSV.
-   - Detail sheet: full account snapshot, line-item table of `quotation_items` (service name, description, qty, unit_price, line_total), inline notes, status timeline, audit log.
-
-### Data model
-
-```
-quotations
-  id, reference (auto: Q-YYYY-NNNN), account_id, requested_by,
-  status ('requested'|'in_review'|'sent'|'accepted'|'rejected'|'cancelled'),
-  total_amount numeric, currency text default 'USD',
-  notes text, sent_at, decided_at,
-  created_at, updated_at, deleted_at
-
-quotation_items
-  id, quotation_id, account_service_id (nullable — snapshot if service later deleted),
-  service_name, description, quantity int default 1,
-  unit_price numeric, line_total numeric, sort_order
-
-quotation_activities  (mirrors lead_activities pattern)
-  id, quotation_id, actor_id, activity_type, title, changes jsonb, metadata jsonb, created_at
+**`src/App.tsx` (edit)** — add route:
+```text
+/quotations  →  ProtectedRoute allowedRoles=[
+  'chairman','vice_president','head_of_operations',
+  'head_of_accounting','accounting_employee','sales_lead'
+]  →  QuotationsPage
 ```
 
-RLS: SELECT for the requester, the account owner, and any user with role `head_of_accounting`, `accounting_employee`, `chairman`, `vice_president`, `head_of_operations`. Writes via service role only.
+**`src/config/navigation.ts` (edit)** — add under "Organization":
+```text
+{ title: 'Quotations', path: '/quotations', icon: FileText,
+  allowedRoles: ['chairman','vice_president','head_of_operations',
+                 'head_of_accounting','accounting_employee','sales_lead'] }
+```
 
-### Backend
-
-New edge function `supabase/functions/quotations/index.ts` — actions: `list` (with filters), `get`, `create` (executives + sales_lead), `update` (accounting), `update_status`, `add_item`, `update_item`, `remove_item`, `delete` (head_of_accounting only), `export_csv` (server-side CSV string).
-
-`supabase/functions/accounts/index.ts` (existing) — gains `request_quotation` action which is just sugar for creating a quotation from chosen `account_services` rows.
-
-### Frontend
-
-- `src/components/accounts/AccountSolutionsPanel.tsx` — add row checkboxes (when caller is exec/sales_lead), per-row "Send to accounting" icon button, header "Send selected to accounting" button. Opens new `RequestQuotationDialog`.
-- `src/components/accounts/RequestQuotationDialog.tsx` (new) — preselected items, optional note, currency, total override.
-- `src/hooks/useQuotations.ts` (new) — `useQuotations(filters)`, `useQuotation(id)`, `useCreateQuotation`, `useUpdateQuotation`, `useUpdateQuotationStatus`, `useDeleteQuotation`.
-- `src/pages/QuotationsPage.tsx` (new) — table + filters + export, mirrors `LeadsPage` structure.
-- `src/components/quotations/QuotationsFilterBar.tsx`, `QuotationsTable.tsx`, `QuotationDetailSheet.tsx`, `QuotationItemRow.tsx` (new).
-- `src/App.tsx` — `/quotations` and `/quotations/:id` routes, allowed roles: accounting + executive + sales lead.
-- `src/config/navigation.ts` — new "Quotations" entry under Organization, allowed roles `head_of_accounting`, `accounting_employee`, `chairman`, `vice_president`, `head_of_operations`, `sales_lead`.
-- Notification trigger: in the quotations function on `create`, fan out to every user with role `head_of_accounting` or `accounting_employee` using the existing notifications insert + Realtime broadcast pattern. Click-through `/quotations/:id` uses the `reference_id` / `reference_type = 'quotation'` notification metadata convention already in use.
-
-### Out of scope
-
-- PDF rendering of a quotation (CSV export only this round).
-- Email delivery to the customer — internal workflow only; "sent" is a manual status flip by accounting.
-- Approval chains beyond simple status flips.
-- Editing solution prices on the Account itself (prices live on `quotation_items`; the account's `account_services` table stays metadata-only).
+**Notification click-through** — `useNotifications` already routes by `reference_type`. Add the case `'quotation'` → `/quotations?open=<reference_id>`. `QuotationsPage` reads the `open` query param on mount and opens the detail sheet.
 
 ## File impact
 
-```
-Migration (1)
-  add table       project_members
-  add table       task_assignees
-  add table       quotations
-  add table       quotation_items
-  add table       quotation_activities
-  update fn       has_project_access  (+ project_members branch)
-  update RLS      tasks               (+ task_assignees branch)
-  RLS             new tables
+```text
+edit  src/hooks/useTasks.ts                              assignees type + add/remove hooks
+edit  src/components/tasks/AddTaskDialog.tsx             multi-select assignees
+edit  src/components/tasks/TaskCard.tsx                  avatar stack
+edit  src/components/tasks/TaskDetailSheet.tsx           assignee stack + add/remove
 
-Edge functions
-  new   supabase/functions/quotations/index.ts
-  edit  supabase/functions/tasks/index.ts          multi-assignee + project_members upsert
-  edit  supabase/functions/projects/index.ts       include project_members in canSeeProject
-  edit  supabase/functions/accounts/index.ts       request_quotation passthrough
-
-Frontend
-  new   src/hooks/useQuotations.ts
-  new   src/pages/QuotationsPage.tsx
-  new   src/components/quotations/QuotationsFilterBar.tsx
-  new   src/components/quotations/QuotationsTable.tsx
-  new   src/components/quotations/QuotationDetailSheet.tsx
-  new   src/components/accounts/RequestQuotationDialog.tsx
-  edit  src/components/accounts/AccountSolutionsPanel.tsx
-  edit  src/components/tasks/AddTaskDialog.tsx        multi-select assignees
-  edit  src/components/tasks/TaskDetailSheet.tsx      assignee stack + add more
-  edit  src/components/tasks/TaskCard.tsx             avatar stack
-  edit  src/hooks/useTasks.ts                         assignees array
-  edit  src/App.tsx                                    /quotations route
-  edit  src/config/navigation.ts                       Quotations nav entry
+new   src/hooks/useQuotations.ts
+new   src/pages/QuotationsPage.tsx
+new   src/components/quotations/QuotationsFilterBar.tsx
+new   src/components/quotations/QuotationsTable.tsx
+new   src/components/quotations/QuotationDetailSheet.tsx
+new   src/components/accounts/RequestQuotationDialog.tsx
+edit  src/components/accounts/AccountSolutionsPanel.tsx  selection + send-to-accounting buttons
+edit  src/App.tsx                                         /quotations route
+edit  src/config/navigation.ts                            Quotations nav entry
+edit  src/hooks/useNotifications.ts                       quotation click-through
 ```
+
+No backend, migration, or edge-function changes — backend is already done from the previous steps.
 
