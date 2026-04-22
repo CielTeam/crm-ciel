@@ -280,52 +280,53 @@ Deno.serve(async (req) => {
       const roles = await getActorRoles(admin, actorId);
       const isLead = roles.some(r => LEAD_ROLES.includes(r));
 
-      let query = admin.from('tasks').select('*');
+      // Helper to fetch tasks where the actor is in task_assignees (extra tab participation)
+      const fetchExtraAssigneeTasks = async (): Promise<TaskRecord[]> => {
+        const { data: rows } = await admin.from('task_assignees').select('task_id').eq('user_id', actorId);
+        const ids = ((rows as { task_id: string }[] | null) || []).map(r => r.task_id);
+        if (!ids.length) return [];
+        const { data: ts } = await admin.from('tasks').select('*').in('id', ids);
+        return (ts as TaskRecord[] | null) || [];
+      };
+
+      const sortMerged = (tasks: TaskRecord[]): TaskRecord[] => {
+        const map = new Map<string, TaskRecord>();
+        for (const t of tasks) map.set(t.id, t);
+        return [...map.values()].sort((a, b) => {
+          if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+          if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+      };
+
+      let merged: TaskRecord[] = [];
 
       if (tab === 'my_tasks') {
-        query = query.eq('created_by', actorId);
+        const { data } = await admin.from('tasks').select('*').eq('created_by', actorId)
+          .order('pinned', { ascending: false }).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
+        merged = sortMerged((data as TaskRecord[]) || []);
       } else if (tab === 'assigned') {
-        query = query.eq('assigned_to', actorId);
+        const { data: primary } = await admin.from('tasks').select('*').eq('assigned_to', actorId);
+        const extras = await fetchExtraAssigneeTasks();
+        merged = sortMerged([...((primary as TaskRecord[]) || []), ...extras]);
       } else if (tab === 'assigned_by_me') {
-        query = query.eq('created_by', actorId).eq('task_type', 'assigned');
+        const { data } = await admin.from('tasks').select('*').eq('created_by', actorId).eq('task_type', 'assigned');
+        merged = sortMerged((data as TaskRecord[]) || []);
       } else if (tab === 'team_tasks' && isLead) {
         const memberIds = await getActorDepartmentMemberIds(admin, actorId, roles);
         if (memberIds.length === 0) return jsonResponse({ tasks: [] });
-        // Use separate queries to avoid .or() with special chars in Auth0 IDs
-        const { data: assignedData } = await admin.from('tasks').select('*').in('assigned_to', memberIds)
-          .order('pinned', { ascending: false }).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
-        const { data: createdData } = await admin.from('tasks').select('*').in('created_by', memberIds)
-          .order('pinned', { ascending: false }).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
-        const taskMap = new Map<string, TaskRecord>();
-        for (const t of (assignedData || []) as TaskRecord[]) taskMap.set(t.id, t);
-        for (const t of (createdData || []) as TaskRecord[]) taskMap.set(t.id, t);
-        const merged = [...taskMap.values()].sort((a, b) => {
-          if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-          if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        });
-        return jsonResponse({ tasks: merged });
+        const { data: assignedData } = await admin.from('tasks').select('*').in('assigned_to', memberIds);
+        const { data: createdData } = await admin.from('tasks').select('*').in('created_by', memberIds);
+        merged = sortMerged([...((assignedData as TaskRecord[]) || []), ...((createdData as TaskRecord[]) || [])]);
       } else {
-        // Use separate queries for safety with special chars in user IDs
-        const { data: createdData } = await admin.from('tasks').select('*').eq('created_by', actorId)
-          .order('pinned', { ascending: false }).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
-        const { data: assignedData } = await admin.from('tasks').select('*').eq('assigned_to', actorId)
-          .order('pinned', { ascending: false }).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
-        const taskMap = new Map<string, TaskRecord>();
-        for (const t of (createdData || []) as TaskRecord[]) taskMap.set(t.id, t);
-        for (const t of (assignedData || []) as TaskRecord[]) taskMap.set(t.id, t);
-        const merged = [...taskMap.values()].sort((a, b) => {
-          if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-          if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        });
-        return jsonResponse({ tasks: merged });
+        const { data: createdData } = await admin.from('tasks').select('*').eq('created_by', actorId);
+        const { data: assignedData } = await admin.from('tasks').select('*').eq('assigned_to', actorId);
+        const extras = await fetchExtraAssigneeTasks();
+        merged = sortMerged([...((createdData as TaskRecord[]) || []), ...((assignedData as TaskRecord[]) || []), ...extras]);
       }
 
-      query = query.order('pinned', { ascending: false }).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
-      const { data, error } = await query;
-      if (error) throw error;
-      return jsonResponse({ tasks: data || [] });
+      const enriched = await enrichTasksWithAssignees(admin, merged);
+      return jsonResponse({ tasks: enriched });
     }
 
     // ─── LIST MANAGEMENT (paginated, hierarchy-scoped) ───
