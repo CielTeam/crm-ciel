@@ -18,7 +18,8 @@ import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { useTaskActivity, useTaskComments, useAddTaskComment, useAssignableUsers, useReassignTask, type Task, type TaskActivityLog } from '@/hooks/useTasks';
+import { useTaskActivity, useTaskComments, useAddTaskComment, useAssignableUsers, useReassignTask, useAddTaskAssignees, useRemoveTaskAssignee, type Task, type TaskActivityLog } from '@/hooks/useTasks';
+import { AssigneeAvatarStack } from './AssigneeAvatarStack';
 import { useAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/useAttachments';
 import { useProjects } from '@/hooks/useProjects';
 import { AttachToProjectDialog } from '@/components/projects/AttachToProjectDialog';
