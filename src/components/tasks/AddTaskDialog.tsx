@@ -120,7 +120,8 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
       description: description.trim() || undefined,
       priority,
       due_date: dueDateISO,
-      assigned_to: assignedTo && assignedTo !== 'unassigned' ? assignedTo : null,
+      assignees: assigneeIds.length ? assigneeIds : undefined,
+      assigned_to: assigneeIds.length ? assigneeIds[0] : null,
       estimated_duration: buildDuration(),
       project_id: !hideProjectField && projectId ? projectId : null,
     });
@@ -129,7 +130,9 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
   };
 
   const canAssign = assignableUsers.length > 0;
-  const selectedUser = assignableUsers.find((u) => u.user_id === assignedTo);
+  const selectedUsers = assigneeIds
+    .map((id) => assignableUsers.find((u) => u.user_id === id))
+    .filter((u): u is NonNullable<typeof u> => !!u);
   const titleInvalid = titleTouched && !title.trim();
 
   const handleDurationHours = (val: string) => {
