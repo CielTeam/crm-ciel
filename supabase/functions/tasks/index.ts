@@ -439,6 +439,15 @@ Deno.serve(async (req) => {
       const { data: updated, error } = await admin.from('tasks').update({ project_id: finalProjectId }).eq('id', task_id).select().single();
       if (error) throw error;
 
+      // Grant project access to all current assignees of the task
+      if (finalProjectId) {
+        await grantProjectAccess(admin, finalProjectId, task.assigned_to, actorId);
+        const { data: extras } = await admin.from('task_assignees').select('user_id').eq('task_id', task_id);
+        for (const r of (extras as { user_id: string }[] | null) || []) {
+          await grantProjectAccess(admin, finalProjectId, r.user_id, actorId);
+        }
+      }
+
       await logActivity(admin, task_id, actorId, null, null, finalProjectId ? `Moved to project: ${projectName}` : 'Removed from project');
       await admin.from('audit_logs').insert({ actor_id: actorId, action: 'task.attach_to_project', target_type: 'task', target_id: task_id, metadata: { project_id: finalProjectId } });
       return jsonResponse({ task: updated });
