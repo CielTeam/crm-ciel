@@ -163,18 +163,27 @@ export function TaskCard({ task, assignee, creator, currentUserId, onStatusChang
               </span>
             )}
 
-            {person && (
+            {!isPersonal && task.assignees && task.assignees.length > 1 ? (
               <div className="flex items-center gap-1.5">
-                <Avatar className="h-5 w-5">
-                  <AvatarImage src={person.avatarUrl || undefined} alt={person.displayName} />
-                  <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                    {initials || <User className="h-3 w-3" />}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="truncate max-w-[100px]">
-                  {isCreator ? person.displayName : `From: ${person.displayName}`}
+                <AssigneeAvatarStack assignees={task.assignees} size="sm" max={3} />
+                <span className="text-xs text-muted-foreground">
+                  {task.assignees.length} assignees
                 </span>
               </div>
+            ) : (
+              person && (
+                <div className="flex items-center gap-1.5">
+                  <Avatar className="h-5 w-5">
+                    <AvatarImage src={person.avatarUrl || undefined} alt={person.displayName} />
+                    <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                      {initials || <User className="h-3 w-3" />}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="truncate max-w-[100px]">
+                    {isCreator ? person.displayName : `From: ${person.displayName}`}
+                  </span>
+                </div>
+              )
             )}
           </div>
 
