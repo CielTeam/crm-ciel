@@ -35,6 +35,16 @@ export interface Task {
   ticket_id?: string | null;
   project_id?: string | null;
   project_sort_order?: number;
+  assignees?: TaskAssigneeMember[];
+}
+
+export interface TaskAssigneeMember {
+  user_id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  email?: string | null;
+  role?: string | null;
+  is_primary: boolean;
 }
 
 export interface TaskActivityLog {
