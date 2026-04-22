@@ -33,6 +33,7 @@ interface AddTaskDialogProps {
     priority: string;
     due_date?: string | null;
     assigned_to?: string | null;
+    assignees?: string[];
     estimated_duration?: string | null;
     project_id?: string | null;
   }) => void;
