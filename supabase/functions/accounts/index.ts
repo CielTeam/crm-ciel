@@ -556,10 +556,10 @@ Deno.serve(async (req) => {
       if (!roles.some((r: string) => REQUEST_QUOTATION_ROLES.includes(r))) {
         return json({ error: 'Forbidden — insufficient role to request quotations' }, 403);
       }
-      const { account_id, service_ids, notes, currency, total_amount } = payload;
+      const { account_id, account_service_ids, notes, currency, total_amount } = payload;
       if (!account_id) return json({ error: 'account_id required' }, 400);
-      if (!Array.isArray(service_ids) || service_ids.length === 0) {
-        return json({ error: 'At least one service_id required' }, 400);
+      if (!Array.isArray(account_service_ids) || account_service_ids.length === 0) {
+        return json({ error: 'At least one account_service_id required' }, 400);
       }
 
       const { data: acct } = await admin.from('accounts')
@@ -567,7 +567,7 @@ Deno.serve(async (req) => {
       if (!acct) return json({ error: 'Account not found' }, 404);
 
       const { data: services, error: svcErr } = await admin.from('account_services')
-        .select('*').in('id', service_ids).eq('account_id', account_id).is('deleted_at', null);
+        .select('*').in('id', account_service_ids).eq('account_id', account_id).is('deleted_at', null);
       if (svcErr) throw svcErr;
       if (!services || services.length === 0) return json({ error: 'No matching services found' }, 404);
 
