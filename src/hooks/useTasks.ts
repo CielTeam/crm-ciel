@@ -347,3 +347,35 @@ export function useReassignTask() {
     },
   });
 }
+
+export function useAddTaskAssignees() {
+  const qc = useQueryClient();
+  const invoke = useTaskInvoke();
+
+  return useMutation({
+    mutationFn: async (payload: { task_id: string; user_ids: string[] }) => {
+      const data = await invoke({ action: 'add_assignees', ...payload });
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['task-activity', variables.task_id] });
+    },
+  });
+}
+
+export function useRemoveTaskAssignee() {
+  const qc = useQueryClient();
+  const invoke = useTaskInvoke();
+
+  return useMutation({
+    mutationFn: async (payload: { task_id: string; user_id: string }) => {
+      const data = await invoke({ action: 'remove_assignee', ...payload });
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['task-activity', variables.task_id] });
+    },
+  });
+}
