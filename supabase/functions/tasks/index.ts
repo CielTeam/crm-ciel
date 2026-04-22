@@ -389,6 +389,9 @@ Deno.serve(async (req) => {
       const filtered = tasks.filter(t => visibleIds.has(t.created_by) || (!!t.assigned_to && visibleIds.has(t.assigned_to)));
       const enrichedLead = await enrichTasksWithAssignees(admin, filtered);
       return jsonResponse({ tasks: enrichedLead });
+    }
+
+    // ─── LIST BY ACCOUNT ───
     if (action === 'list_by_account') {
       const { account_id } = payload;
       if (!account_id) return jsonResponse({ error: 'account_id required' }, 400);
