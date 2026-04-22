@@ -38,3 +38,7 @@ verify_jwt = false
 
 [functions.reminders-dispatch]
 verify_jwt = false
+
+[functions.quotations]
+verify_jwt = false
+
