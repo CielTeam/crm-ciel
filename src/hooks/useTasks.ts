@@ -164,6 +164,7 @@ export function useCreateTask() {
       priority?: string;
       due_date?: string | null;
       assigned_to?: string | null;
+      assignees?: string[];
       estimated_duration?: string | null;
       lead_id?: string | null;
       account_id?: string | null;
