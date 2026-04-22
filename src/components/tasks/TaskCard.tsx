@@ -12,6 +12,7 @@ import { AcceptDeclineDialog } from './AcceptDeclineDialog';
 import { SubmitTaskDialog } from './SubmitTaskDialog';
 import { ReviewTaskDialog } from './ReviewTaskDialog';
 import { getTimeToStart, getTimeToComplete, getWaitingTime } from '@/lib/taskTimings';
+import { AssigneeAvatarStack } from './AssigneeAvatarStack';
 import type { Task } from '@/hooks/useTasks';
 
 const priorityConfig: Record<string, { label: string; className: string }> = {
