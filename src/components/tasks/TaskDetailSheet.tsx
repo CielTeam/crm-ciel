@@ -235,8 +235,108 @@ export function TaskDetailSheet({
           {/* People */}
           <div className="grid grid-cols-2 gap-4">
             <PersonBadge person={creator} label="Created by" />
-            {!isPersonal && <PersonBadge person={assignee} label="Assigned to" />}
+            {!isPersonal && (!task.assignees || task.assignees.length <= 1) && (
+              <PersonBadge person={assignee} label="Assigned to" />
+            )}
           </div>
+
+          {/* Multi-assignee block */}
+          {!isPersonal && task.assignees && task.assignees.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Assignees ({task.assignees.length})
+                </h4>
+                {isCreator && (
+                  <Popover open={addAssigneeOpen} onOpenChange={setAddAssigneeOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs">
+                        <UserRoundPlus className="h-3.5 w-3.5 mr-1" /> Add
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-72 p-0" align="end">
+                      <Command>
+                        <CommandInput placeholder="Search users..." />
+                        <CommandList>
+                          <CommandEmpty>No users found.</CommandEmpty>
+                          <CommandGroup>
+                            {assignableUsers
+                              .filter((u) => !task.assignees!.some((a) => a.user_id === u.user_id))
+                              .map((user) => {
+                                const ini = user.display_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+                                return (
+                                  <CommandItem
+                                    key={user.user_id}
+                                    value={`${user.display_name || ''} ${user.email || ''}`}
+                                    onSelect={() => {
+                                      addAssignees.mutate(
+                                        { task_id: task.id, user_ids: [user.user_id] },
+                                        {
+                                          onSuccess: () => {
+                                            toast.success(`Added ${user.display_name}`);
+                                            setAddAssigneeOpen(false);
+                                          },
+                                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to add'),
+                                        }
+                                      );
+                                    }}
+                                  >
+                                    <Avatar className="mr-2 h-6 w-6">
+                                      <AvatarImage src={user.avatar_url || undefined} />
+                                      <AvatarFallback className="text-[10px] bg-primary/10 text-primary">{ini}</AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex flex-col min-w-0 flex-1">
+                                      <span className="truncate text-sm font-medium">{user.display_name || user.user_id}</span>
+                                      <span className="truncate text-xs text-muted-foreground">{user.email}</span>
+                                    </div>
+                                  </CommandItem>
+                                );
+                              })}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 flex-wrap">
+                <AssigneeAvatarStack assignees={task.assignees} size="md" max={5} />
+                <div className="flex flex-wrap gap-1.5">
+                  {task.assignees.map((a) => (
+                    <span
+                      key={a.user_id}
+                      className="inline-flex items-center gap-1 rounded-full bg-muted pl-2 pr-1.5 py-0.5 text-xs"
+                    >
+                      <span className="truncate max-w-[120px]">{a.display_name || 'Unknown'}</span>
+                      {a.is_primary && (
+                        <Badge variant="secondary" className="h-4 px-1 text-[9px]">Primary</Badge>
+                      )}
+                      {!a.is_primary && isCreator && (
+                        <button
+                          type="button"
+                          aria-label={`Remove ${a.display_name}`}
+                          className="text-muted-foreground hover:text-destructive ml-0.5"
+                          onClick={() =>
+                            removeAssignee.mutate(
+                              { task_id: task.id, user_id: a.user_id },
+                              {
+                                onSuccess: () => toast.success('Assignee removed'),
+                                onError: (err) =>
+                                  toast.error(err instanceof Error ? err.message : 'Failed to remove'),
+                              }
+                            )
+                          }
+                        >
+                          ×
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {canReassign && (
             <div>
