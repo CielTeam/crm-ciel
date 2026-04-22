@@ -1271,6 +1271,38 @@ export type Database = {
           },
         ]
       }
+      project_members: {
+        Row: {
+          added_at: string
+          added_by: string | null
+          id: string
+          project_id: string
+          user_id: string
+        }
+        Insert: {
+          added_at?: string
+          added_by?: string | null
+          id?: string
+          project_id: string
+          user_id: string
+        }
+        Update: {
+          added_at?: string
+          added_by?: string | null
+          id?: string
+          project_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_members_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           color: string | null
@@ -1319,6 +1351,172 @@ export type Database = {
         }
         Relationships: []
       }
+      quotation_activities: {
+        Row: {
+          activity_type: string
+          actor_id: string
+          changes: Json
+          created_at: string
+          id: string
+          metadata: Json
+          quotation_id: string
+          title: string
+        }
+        Insert: {
+          activity_type: string
+          actor_id: string
+          changes?: Json
+          created_at?: string
+          id?: string
+          metadata?: Json
+          quotation_id: string
+          title: string
+        }
+        Update: {
+          activity_type?: string
+          actor_id?: string
+          changes?: Json
+          created_at?: string
+          id?: string
+          metadata?: Json
+          quotation_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quotation_activities_quotation_id_fkey"
+            columns: ["quotation_id"]
+            isOneToOne: false
+            referencedRelation: "quotations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quotation_counters: {
+        Row: {
+          last_number: number
+          year: number
+        }
+        Insert: {
+          last_number?: number
+          year: number
+        }
+        Update: {
+          last_number?: number
+          year?: number
+        }
+        Relationships: []
+      }
+      quotation_items: {
+        Row: {
+          account_service_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          line_total: number | null
+          quantity: number
+          quotation_id: string
+          service_name: string
+          sort_order: number
+          unit_price: number | null
+        }
+        Insert: {
+          account_service_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          line_total?: number | null
+          quantity?: number
+          quotation_id: string
+          service_name: string
+          sort_order?: number
+          unit_price?: number | null
+        }
+        Update: {
+          account_service_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          line_total?: number | null
+          quantity?: number
+          quotation_id?: string
+          service_name?: string
+          sort_order?: number
+          unit_price?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quotation_items_account_service_id_fkey"
+            columns: ["account_service_id"]
+            isOneToOne: false
+            referencedRelation: "account_services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotation_items_quotation_id_fkey"
+            columns: ["quotation_id"]
+            isOneToOne: false
+            referencedRelation: "quotations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quotations: {
+        Row: {
+          account_id: string
+          created_at: string
+          currency: string
+          decided_at: string | null
+          deleted_at: string | null
+          id: string
+          notes: string | null
+          reference: string | null
+          requested_by: string
+          sent_at: string | null
+          status: string
+          total_amount: number | null
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          currency?: string
+          decided_at?: string | null
+          deleted_at?: string | null
+          id?: string
+          notes?: string | null
+          reference?: string | null
+          requested_by: string
+          sent_at?: string | null
+          status?: string
+          total_amount?: number | null
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          currency?: string
+          decided_at?: string | null
+          deleted_at?: string | null
+          id?: string
+          notes?: string | null
+          reference?: string | null
+          requested_by?: string
+          sent_at?: string | null
+          status?: string
+          total_amount?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quotations_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_activity_logs: {
         Row: {
           actor_id: string
@@ -1350,6 +1548,38 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "task_activity_logs_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_assignees: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          id: string
+          task_id: string
+          user_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          id?: string
+          task_id: string
+          user_id: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          id?: string
+          task_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_assignees_task_id_fkey"
             columns: ["task_id"]
             isOneToOne: false
             referencedRelation: "tasks"
@@ -1752,6 +1982,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_view_quotation: {
+        Args: { _quotation_id: string; _user_id: string }
+        Returns: boolean
+      }
       get_visible_user_ids: {
         Args: { _user_id: string }
         Returns: {
