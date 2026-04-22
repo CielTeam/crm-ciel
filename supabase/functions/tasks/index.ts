@@ -184,6 +184,59 @@ async function logActivity(client: ReturnType<typeof createClient>, taskId: stri
   await client.from('task_activity_logs').insert({ task_id: taskId, actor_id: actorId, old_status: oldStatus, new_status: newStatus, note: note ?? null });
 }
 
+// Grant project access to a user (idempotent)
+async function grantProjectAccess(admin: ReturnType<typeof createClient>, projectId: string | null | undefined, userId: string | null | undefined, addedBy: string) {
+  if (!projectId || !userId) return;
+  try {
+    await admin.from('project_members')
+      .upsert({ project_id: projectId, user_id: userId, added_by: addedBy }, { onConflict: 'project_id,user_id' });
+  } catch { /* best effort */ }
+}
+
+// Enrich a list of tasks with their assignees (multi-assignee support)
+type AssigneeOut = { user_id: string; display_name: string | null; avatar_url: string | null; is_primary: boolean };
+async function enrichTasksWithAssignees(admin: ReturnType<typeof createClient>, tasks: TaskRecord[]): Promise<(TaskRecord & { assignees: AssigneeOut[] })[]> {
+  if (!tasks.length) return [];
+  const taskIds = tasks.map(t => t.id);
+  const { data: extras } = await admin.from('task_assignees').select('task_id, user_id').in('task_id', taskIds);
+  const extraRows = (extras as { task_id: string; user_id: string }[] | null) || [];
+  const allUserIds = new Set<string>();
+  for (const t of tasks) if (t.assigned_to) allUserIds.add(t.assigned_to);
+  for (const r of extraRows) allUserIds.add(r.user_id);
+  let profileMap = new Map<string, { display_name: string | null; avatar_url: string | null }>();
+  if (allUserIds.size) {
+    const { data: profs } = await admin.from('profiles').select('user_id, display_name, avatar_url').in('user_id', [...allUserIds]);
+    profileMap = new Map(((profs as ProfileRow[] | null) || []).map(p => [p.user_id, { display_name: p.display_name, avatar_url: p.avatar_url }]));
+  }
+  const byTask = new Map<string, AssigneeOut[]>();
+  for (const t of tasks) {
+    const list: AssigneeOut[] = [];
+    if (t.assigned_to) {
+      const p = profileMap.get(t.assigned_to);
+      list.push({ user_id: t.assigned_to, display_name: p?.display_name ?? null, avatar_url: p?.avatar_url ?? null, is_primary: true });
+    }
+    byTask.set(t.id, list);
+  }
+  for (const r of extraRows) {
+    const list = byTask.get(r.task_id) || [];
+    if (list.some(a => a.user_id === r.user_id)) continue;
+    const p = profileMap.get(r.user_id);
+    list.push({ user_id: r.user_id, display_name: p?.display_name ?? null, avatar_url: p?.avatar_url ?? null, is_primary: false });
+    byTask.set(r.task_id, list);
+  }
+  return tasks.map(t => ({ ...t, assignees: byTask.get(t.id) || [] }));
+}
+
+// Notify a list of users (insert + broadcast)
+async function notifyUsers(admin: ReturnType<typeof createClient>, userIds: string[], notification: { type: string; title: string; body?: string | null; reference_id?: string | null; reference_type?: string | null }) {
+  for (const uid of userIds) {
+    try {
+      await admin.from('notifications').insert({ user_id: uid, ...notification });
+      await broadcastNotification(admin, uid, notification);
+    } catch { /* best effort */ }
+  }
+}
+
 function jsonResponse(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
