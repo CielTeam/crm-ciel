@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, X, Calendar, Wrench } from 'lucide-react';
+import { Plus, X, Calendar, Wrench, Send } from 'lucide-react';
 import { format, isPast, differenceInDays } from 'date-fns';
 import {
   useAccountServices,
@@ -12,8 +13,12 @@ import {
   useDeleteAccountService,
   type AccountService,
 } from '@/hooks/useAccountsContacts';
+import { useAuth } from '@/contexts/AuthContext';
+import { RequestQuotationDialog } from './RequestQuotationDialog';
 
 const SERVICE_TYPES = ['SSL Certificate', 'Digital Certificate', 'Digital Signature', 'ACME', 'Domain Registration', 'Web Hosting', 'Email Security', 'Code Signing', 'Custom'];
+
+const QUOTATION_REQUESTER_ROLES = ['chairman', 'vice_president', 'head_of_operations', 'head_of_marketing', 'sales_lead'];
 
 interface Props { accountId: string }
 
@@ -28,14 +33,22 @@ function statusBadge(svc: AccountService): { label: string; tone: string } {
 }
 
 export function AccountSolutionsPanel({ accountId }: Props) {
+  const { roles } = useAuth();
+  const canRequestQuotation = roles.some((r) => QUOTATION_REQUESTER_ROLES.includes(r));
+
   const { data: services, isLoading } = useAccountServices(accountId);
   const addService = useAddAccountService();
   const deleteService = useDeleteAccountService();
+
   const [adding, setAdding] = useState(false);
   const [type, setType] = useState('');
   const [customName, setCustomName] = useState('');
   const [startDate, setStartDate] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [quotationOpen, setQuotationOpen] = useState(false);
+  const [preselected, setPreselected] = useState<string[]>([]);
 
   const reset = () => {
     setType('');
@@ -61,6 +74,26 @@ export function AccountSolutionsPanel({ accountId }: Props) {
     } catch { /* toast handled */ }
   };
 
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const openBulk = () => {
+    setPreselected(Array.from(selected));
+    setQuotationOpen(true);
+  };
+
+  const openSingle = (id: string) => {
+    setPreselected([id]);
+    setQuotationOpen(true);
+  };
+
+  const sortedServices = useMemo(() => services || [], [services]);
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -69,11 +102,18 @@ export function AccountSolutionsPanel({ accountId }: Props) {
           <h3 className="text-sm font-semibold text-foreground">Solutions</h3>
           <Badge variant="outline">{services?.length || 0}</Badge>
         </div>
-        {!adding && (
-          <Button size="sm" onClick={() => setAdding(true)}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> Add Solution
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canRequestQuotation && selected.size > 0 && (
+            <Button size="sm" variant="outline" onClick={openBulk}>
+              <Send className="h-3.5 w-3.5 mr-1" /> Send {selected.size} to accounting
+            </Button>
+          )}
+          {!adding && (
+            <Button size="sm" onClick={() => setAdding(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> Add Solution
+            </Button>
+          )}
+        </div>
       </div>
 
       {adding && (
@@ -119,17 +159,25 @@ export function AccountSolutionsPanel({ accountId }: Props) {
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : !services || services.length === 0 ? (
+      ) : !sortedServices || sortedServices.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground border rounded-md">
           <Wrench className="h-7 w-7 mx-auto mb-2 opacity-40" />
           <p className="text-sm">No solutions added yet.</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {services.map((s) => {
+          {sortedServices.map((s) => {
             const badge = statusBadge(s);
             return (
               <div key={s.id} className="border rounded-lg p-3 flex items-start justify-between gap-2">
+                {canRequestQuotation && (
+                  <Checkbox
+                    className="mt-1"
+                    checked={selected.has(s.id)}
+                    onCheckedChange={() => toggleSelect(s.id)}
+                    aria-label={`Select ${s.service_name}`}
+                  />
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <p className="text-sm font-medium text-foreground truncate">{s.service_name}</p>
@@ -148,20 +196,43 @@ export function AccountSolutionsPanel({ accountId }: Props) {
                     </span>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-destructive"
-                  onClick={() => deleteService.mutate({ service_id: s.id, account_id: accountId })}
-                  disabled={deleteService.isPending}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  {canRequestQuotation && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-primary"
+                      title="Send to accounting"
+                      onClick={() => openSingle(s.id)}
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-destructive"
+                    onClick={() => deleteService.mutate({ service_id: s.id, account_id: accountId })}
+                    disabled={deleteService.isPending}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             );
           })}
         </div>
       )}
+
+      <RequestQuotationDialog
+        accountId={accountId}
+        preselectedServiceIds={preselected}
+        open={quotationOpen}
+        onOpenChange={(v) => {
+          setQuotationOpen(v);
+          if (!v) setSelected(new Set());
+        }}
+      />
     </div>
   );
 }
