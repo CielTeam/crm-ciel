@@ -33,6 +33,7 @@ interface AddTaskDialogProps {
     priority: string;
     due_date?: string | null;
     assigned_to?: string | null;
+    assignees?: string[];
     estimated_duration?: string | null;
     project_id?: string | null;
   }) => void;
@@ -69,7 +70,7 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
   const [dueTime, setDueTime] = useState('');
   const [durationHours, setDurationHours] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('');
-  const [assignedTo, setAssignedTo] = useState('');
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [projectId, setProjectId] = useState<string>('');
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [assignPopoverOpen, setAssignPopoverOpen] = useState(false);
@@ -84,7 +85,7 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
     setDueTime('');
     setDurationHours('');
     setDurationMinutes('');
-    setAssignedTo('');
+    setAssigneeIds([]);
     setProjectId('');
   };
 
@@ -119,7 +120,8 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
       description: description.trim() || undefined,
       priority,
       due_date: dueDateISO,
-      assigned_to: assignedTo && assignedTo !== 'unassigned' ? assignedTo : null,
+      assignees: assigneeIds.length ? assigneeIds : undefined,
+      assigned_to: assigneeIds.length ? assigneeIds[0] : null,
       estimated_duration: buildDuration(),
       project_id: !hideProjectField && projectId ? projectId : null,
     });
@@ -128,7 +130,9 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
   };
 
   const canAssign = assignableUsers.length > 0;
-  const selectedUser = assignableUsers.find((u) => u.user_id === assignedTo);
+  const selectedUsers = assigneeIds
+    .map((id) => assignableUsers.find((u) => u.user_id === id))
+    .filter((u): u is NonNullable<typeof u> => !!u);
   const titleInvalid = titleTouched && !title.trim();
 
   const handleDurationHours = (val: string) => {
@@ -302,7 +306,48 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
             <>
               <Separator />
               <div className="space-y-1.5">
-                <Label className="text-sm font-medium">Assign To</Label>
+                <Label className="text-sm font-medium">
+                  Assign To{' '}
+                  <span className="text-xs text-muted-foreground font-normal">
+                    (leave empty for personal task)
+                  </span>
+                </Label>
+
+                {/* Selected chips */}
+                {selectedUsers.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pb-1">
+                    {selectedUsers.map((u, idx) => (
+                      <span
+                        key={u.user_id}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-muted pl-1 pr-2 py-0.5 text-xs"
+                      >
+                        <Avatar className="h-5 w-5">
+                          <AvatarImage src={u.avatar_url || undefined} />
+                          <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
+                            {getInitials(u.display_name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="truncate max-w-[120px]">{u.display_name}</span>
+                        {idx === 0 && (
+                          <Badge variant="secondary" className="h-4 px-1 text-[9px]">
+                            Primary
+                          </Badge>
+                        )}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${u.display_name}`}
+                          className="ml-0.5 text-muted-foreground hover:text-foreground"
+                          onClick={() =>
+                            setAssigneeIds((prev) => prev.filter((id) => id !== u.user_id))
+                          }
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 <Popover open={assignPopoverOpen} onOpenChange={setAssignPopoverOpen}>
                   <PopoverTrigger asChild>
                     <Button
@@ -311,22 +356,12 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
                       aria-expanded={assignPopoverOpen}
                       className="w-full justify-between font-normal"
                     >
-                      {selectedUser ? (
-                        <span className="flex items-center gap-2 truncate">
-                          <Avatar className="h-5 w-5">
-                            <AvatarImage src={selectedUser.avatar_url || undefined} />
-                            <AvatarFallback className="text-[10px]">
-                              {getInitials(selectedUser.display_name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="truncate">{selectedUser.display_name}</span>
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-2 text-muted-foreground">
-                          <User className="h-4 w-4" />
-                          Select user...
-                        </span>
-                      )}
+                      <span className="flex items-center gap-2 text-muted-foreground">
+                        <User className="h-4 w-4" />
+                        {selectedUsers.length === 0
+                          ? 'Add assignees...'
+                          : `Add more (${selectedUsers.length} selected)`}
+                      </span>
                       <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
@@ -336,49 +371,49 @@ export function AddTaskDialog({ open, onOpenChange, onSubmit, isLoading, hidePro
                       <CommandList>
                         <CommandEmpty>No users found.</CommandEmpty>
                         <CommandGroup>
-                          <CommandItem
-                            value="__personal__"
-                            onSelect={() => {
-                              setAssignedTo('');
-                              setAssignPopoverOpen(false);
-                            }}
-                          >
-                            <User className="mr-2 h-4 w-4 text-muted-foreground" />
-                            <span>Personal task (no assignment)</span>
-                            <Check className={cn('ml-auto h-4 w-4', !assignedTo ? 'opacity-100' : 'opacity-0')} />
-                          </CommandItem>
-                          {assignableUsers.map((user) => (
-                            <CommandItem
-                              key={user.user_id}
-                              value={`${user.display_name || ''} ${user.email || ''}`}
-                              onSelect={() => {
-                                setAssignedTo(user.user_id);
-                                setAssignPopoverOpen(false);
-                              }}
-                            >
-                              <Avatar className="mr-2 h-6 w-6">
-                                <AvatarImage src={user.avatar_url || undefined} />
-                                <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                                  {getInitials(user.display_name)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="flex flex-col min-w-0 flex-1">
-                                <span className="truncate text-sm font-medium">{user.display_name || user.user_id}</span>
-                                <span className="truncate text-xs text-muted-foreground">{user.email}</span>
-                              </div>
-                              {user.role && (
-                                <Badge variant="secondary" className="ml-2 text-[10px] shrink-0">
-                                  {formatRole(user.role)}
-                                </Badge>
-                              )}
-                              <Check className={cn('ml-2 h-4 w-4 shrink-0', assignedTo === user.user_id ? 'opacity-100' : 'opacity-0')} />
-                            </CommandItem>
-                          ))}
+                          {assignableUsers.map((user) => {
+                            const checked = assigneeIds.includes(user.user_id);
+                            return (
+                              <CommandItem
+                                key={user.user_id}
+                                value={`${user.display_name || ''} ${user.email || ''}`}
+                                onSelect={() => {
+                                  setAssigneeIds((prev) =>
+                                    prev.includes(user.user_id)
+                                      ? prev.filter((id) => id !== user.user_id)
+                                      : [...prev, user.user_id]
+                                  );
+                                }}
+                              >
+                                <Avatar className="mr-2 h-6 w-6">
+                                  <AvatarImage src={user.avatar_url || undefined} />
+                                  <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                                    {getInitials(user.display_name)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span className="truncate text-sm font-medium">{user.display_name || user.user_id}</span>
+                                  <span className="truncate text-xs text-muted-foreground">{user.email}</span>
+                                </div>
+                                {user.role && (
+                                  <Badge variant="secondary" className="ml-2 text-[10px] shrink-0">
+                                    {formatRole(user.role)}
+                                  </Badge>
+                                )}
+                                <Check className={cn('ml-2 h-4 w-4 shrink-0', checked ? 'opacity-100' : 'opacity-0')} />
+                              </CommandItem>
+                            );
+                          })}
                         </CommandGroup>
                       </CommandList>
                     </Command>
                   </PopoverContent>
                 </Popover>
+                {selectedUsers.length > 1 && (
+                  <p className="text-[11px] text-muted-foreground">
+                    First selection is the primary assignee.
+                  </p>
+                )}
               </div>
             </>
           )}

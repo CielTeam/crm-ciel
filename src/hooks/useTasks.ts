@@ -35,6 +35,16 @@ export interface Task {
   ticket_id?: string | null;
   project_id?: string | null;
   project_sort_order?: number;
+  assignees?: TaskAssigneeMember[];
+}
+
+export interface TaskAssigneeMember {
+  user_id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  email?: string | null;
+  role?: string | null;
+  is_primary: boolean;
 }
 
 export interface TaskActivityLog {
@@ -154,6 +164,7 @@ export function useCreateTask() {
       priority?: string;
       due_date?: string | null;
       assigned_to?: string | null;
+      assignees?: string[];
       estimated_duration?: string | null;
       lead_id?: string | null;
       account_id?: string | null;
@@ -329,6 +340,38 @@ export function useReassignTask() {
     mutationFn: async (payload: { task_id: string; new_assigned_to: string }) => {
       const data = await invoke({ action: 'reassign', ...payload });
       return data.task as Task;
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['task-activity', variables.task_id] });
+    },
+  });
+}
+
+export function useAddTaskAssignees() {
+  const qc = useQueryClient();
+  const invoke = useTaskInvoke();
+
+  return useMutation({
+    mutationFn: async (payload: { task_id: string; user_ids: string[] }) => {
+      const data = await invoke({ action: 'add_assignees', ...payload });
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['task-activity', variables.task_id] });
+    },
+  });
+}
+
+export function useRemoveTaskAssignee() {
+  const qc = useQueryClient();
+  const invoke = useTaskInvoke();
+
+  return useMutation({
+    mutationFn: async (payload: { task_id: string; user_id: string }) => {
+      const data = await invoke({ action: 'remove_assignee', ...payload });
+      return data;
     },
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
