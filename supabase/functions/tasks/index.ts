@@ -370,7 +370,8 @@ Deno.serve(async (req) => {
       if (!isFullScope) {
         tasks = tasks.filter(t => visibleIds.has(t.created_by) || (!!t.assigned_to && visibleIds.has(t.assigned_to)));
       }
-      return jsonResponse({ tasks, total: count ?? tasks.length, page, page_size: pageSize });
+      const enrichedMgmt = await enrichTasksWithAssignees(admin, tasks);
+      return jsonResponse({ tasks: enrichedMgmt, total: count ?? enrichedMgmt.length, page, page_size: pageSize });
     }
 
     // ─── LIST BY LEAD ───
@@ -386,10 +387,8 @@ Deno.serve(async (req) => {
       visibleIds.add(actorId);
       const tasks = (data || []) as TaskRecord[];
       const filtered = tasks.filter(t => visibleIds.has(t.created_by) || (!!t.assigned_to && visibleIds.has(t.assigned_to)));
-      return jsonResponse({ tasks: filtered });
-    }
-
-    // ─── LIST BY ACCOUNT ───
+      const enrichedLead = await enrichTasksWithAssignees(admin, filtered);
+      return jsonResponse({ tasks: enrichedLead });
     if (action === 'list_by_account') {
       const { account_id } = payload;
       if (!account_id) return jsonResponse({ error: 'account_id required' }, 400);
@@ -401,7 +400,8 @@ Deno.serve(async (req) => {
       visibleIds.add(actorId);
       const tasks = (data || []) as TaskRecord[];
       const filtered = tasks.filter(t => visibleIds.has(t.created_by) || (!!t.assigned_to && visibleIds.has(t.assigned_to)));
-      return jsonResponse({ tasks: filtered });
+      const enrichedAcct = await enrichTasksWithAssignees(admin, filtered);
+      return jsonResponse({ tasks: enrichedAcct });
     }
 
     // ─── ATTACH TO PROJECT ───
