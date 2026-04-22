@@ -13,6 +13,7 @@ const REFERENCE_ROUTES: Record<string, string> = {
   task: '/tasks',
   conversation: '/messages',
   calendar_event: '/calendar',
+  quotation: '/quotations',
 };
 
 const TYPE_CONFIG: Record<string, { icon: typeof Bell; color: string; label: string }> = {
@@ -36,6 +37,8 @@ export default function NotificationsPage() {
     if (route) {
       if (n.reference_type === 'calendar_event' && n.reference_id) {
         navigate(`${route}?event=${n.reference_id}`);
+      } else if (n.reference_type === 'quotation' && n.reference_id) {
+        navigate(`${route}?open=${n.reference_id}`);
       } else {
         navigate(route);
       }

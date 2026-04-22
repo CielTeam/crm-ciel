@@ -28,6 +28,7 @@ import AccountsContactsPage from "./pages/AccountsContactsPage";
 import OpportunitiesPage from "./pages/OpportunitiesPage";
 import TicketsPage from "./pages/TicketsPage";
 import AllTasksPage from "./pages/AllTasksPage";
+import QuotationsPage from "./pages/QuotationsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -129,6 +130,14 @@ const App = () => (
                   element={
                     <ProtectedRoute allowedRoles={[...LEADS_ROLES]}>
                       <OpportunitiesPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/quotations"
+                  element={
+                    <ProtectedRoute allowedRoles={['chairman','vice_president','head_of_operations','head_of_accounting','accounting_employee','sales_lead']}>
+                      <QuotationsPage />
                     </ProtectedRoute>
                   }
                 />

@@ -15,6 +15,7 @@ import {
   Ticket,
   ListChecks,
   FolderKanban,
+  FileText,
 } from 'lucide-react';
 import type { NavGroup } from '@/types/navigation';
 import type { AppRole } from '@/types/roles';
@@ -65,6 +66,12 @@ export const NAV_GROUPS: NavGroup[] = [
         path: '/opportunities',
         icon: Briefcase,
         allowedRoles: LEADS_ROLES,
+      },
+      {
+        title: 'Quotations',
+        path: '/quotations',
+        icon: FileText,
+        allowedRoles: ['chairman','vice_president','head_of_operations','head_of_accounting','accounting_employee','sales_lead'],
       },
       { title: 'Settings', path: '/settings', icon: Settings },
     ],
