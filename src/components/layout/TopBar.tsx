@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Bell, LogOut, User, ChevronDown } from 'lucide-react';
+import { Bell, LogOut, User, ChevronDown, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -15,6 +15,9 @@ import { ROLE_LABELS } from '@/types/roles';
 import { useNavigate } from 'react-router-dom';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { Badge } from '@/components/ui/badge';
+import { useIsFetching, useQueryClient } from '@tanstack/react-query';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { toast } from 'sonner';
 
 export function TopBar() {
   const { user, primaryRole, logout } = useAuth();
