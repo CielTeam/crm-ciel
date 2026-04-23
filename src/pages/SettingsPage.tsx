@@ -50,7 +50,7 @@ async function resizeImageToSquare(file: File, size: number): Promise<{ base64: 
 }
 
 export default function SettingsPage() {
-  const { user, roles, refreshProfile } = useAuth();
+  const { user, roles, refreshProfile, getToken } = useAuth();
   const soundPrefs = useSoundPreferences();
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
