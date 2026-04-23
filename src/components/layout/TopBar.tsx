@@ -23,10 +23,17 @@ export function TopBar() {
   const { user, primaryRole, logout } = useAuth();
   const navigate = useNavigate();
   const { data: unreadCount = 0 } = useUnreadCount();
+  const queryClient = useQueryClient();
+  const isFetching = useIsFetching();
 
   useEffect(() => {
     document.title = unreadCount > 0 ? `(${unreadCount > 99 ? '99+' : unreadCount}) CIEL CRM` : 'CIEL CRM';
   }, [unreadCount]);
+
+  const handleRefresh = () => {
+    void queryClient.invalidateQueries();
+    toast.success('Refreshing data…');
+  };
 
   const initials = user?.displayName
     ?.split(' ')
@@ -48,6 +55,23 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2">
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={handleRefresh}
+                aria-label="Refresh page data"
+              >
+                <RefreshCw className={`h-4 w-4 ${isFetching > 0 ? 'animate-spin' : ''}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Refresh page data</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
         <Button
           variant="ghost"
           size="icon"
