@@ -122,6 +122,7 @@ export default function SettingsPage() {
     if (!stagedPayload) return;
     setUploading(true);
     try {
+      const token = await getToken();
       const { error } = await supabase.functions.invoke('sync-profile', {
         body: {
           action: 'upload_avatar',
@@ -129,6 +130,7 @@ export default function SettingsPage() {
           content_type: stagedPayload.contentType,
           file_name: stagedPayload.fileName,
         },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       toast.success('Profile photo updated');
