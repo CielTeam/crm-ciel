@@ -127,12 +127,136 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { email, display_name, avatar_url } = await req.json();
+    const body = await req.json();
+    const { action } = body;
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
+    // ─── Action: update_profile (display_name, avatar_url) ───
+    if (action === 'update_profile') {
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if ('display_name' in body) {
+        const cleaned = sanitizeString(body.display_name, 100);
+        if (!cleaned || cleaned.length < 2) {
+          return new Response(JSON.stringify({ error: 'Display name must be 2-100 characters' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        updates.display_name = cleaned;
+      }
+      if ('avatar_url' in body) {
+        updates.avatar_url = body.avatar_url === null ? null : sanitizeString(body.avatar_url, 500);
+      }
+
+      const { data: updated, error: updErr } = await supabaseAdmin
+        .from('profiles')
+        .update(updates)
+        .eq('user_id', user_id)
+        .select()
+        .single();
+
+      if (updErr) {
+        return new Response(JSON.stringify({ error: updErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: roles } = await supabaseAdmin
+        .from('user_roles').select('role').eq('user_id', user_id);
+
+      return new Response(
+        JSON.stringify({ profile: updated, roles: (roles || []).map((r: { role: string }) => r.role) }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ─── Action: upload_avatar ───
+    if (action === 'upload_avatar') {
+      const { file_base64, content_type, file_name } = body;
+      const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+      if (!file_base64 || typeof file_base64 !== 'string' || !allowed.includes(content_type)) {
+        return new Response(JSON.stringify({ error: 'Invalid file. Must be JPG, PNG, or WEBP.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Decode base64 (strip data URL prefix if present)
+      const b64 = file_base64.includes(',') ? file_base64.split(',')[1] : file_base64;
+      let bytes: Uint8Array;
+      try {
+        const binary = atob(b64);
+        bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      } catch {
+        return new Response(JSON.stringify({ error: 'Invalid base64 data' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Max 2 MB
+      if (bytes.length > 2 * 1024 * 1024) {
+        return new Response(JSON.stringify({ error: 'File too large (max 2 MB)' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const ext = content_type === 'image/png' ? 'png' : content_type === 'image/webp' ? 'webp' : 'jpg';
+      const safeName = sanitizeString(file_name, 80)?.replace(/[^a-zA-Z0-9._-]/g, '_') || 'avatar';
+      const path = `${user_id}/${Date.now()}_${safeName}.${ext}`;
+
+      // Delete previous avatar files under this user's prefix
+      const { data: existing } = await supabaseAdmin.storage.from('avatars').list(user_id);
+      if (existing && existing.length > 0) {
+        const toRemove = existing.map((f) => `${user_id}/${f.name}`);
+        await supabaseAdmin.storage.from('avatars').remove(toRemove);
+      }
+
+      // Upload
+      const { error: upErr } = await supabaseAdmin.storage
+        .from('avatars')
+        .upload(path, bytes, { contentType: content_type, upsert: false });
+      if (upErr) {
+        return new Response(JSON.stringify({ error: upErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: pub } = supabaseAdmin.storage.from('avatars').getPublicUrl(path);
+      const publicUrl = pub.publicUrl;
+
+      const { data: updated, error: updErr } = await supabaseAdmin
+        .from('profiles')
+        .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
+        .eq('user_id', user_id)
+        .select()
+        .single();
+      if (updErr) {
+        return new Response(JSON.stringify({ error: updErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: roles } = await supabaseAdmin
+        .from('user_roles').select('role').eq('user_id', user_id);
+
+      return new Response(
+        JSON.stringify({ profile: updated, roles: (roles || []).map((r: { role: string }) => r.role) }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ─── Default: login-time sync (backward compatibility) ───
+    const { email, display_name, avatar_url } = body;
 
     // Sanitize inputs
     const cleanEmail = sanitizeString(email, 255);

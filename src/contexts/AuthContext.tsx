@@ -31,6 +31,7 @@ interface AuthState {
   login: (loginHint?: string) => void;
   logout: () => void;
   getToken: () => Promise<string>;
+  refreshProfile: () => Promise<void>;
 }
 
 interface SyncProfileResponse {
@@ -169,6 +170,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, [auth0Logout]);
 
+  const refreshProfile = useCallback(async () => {
+    if (!auth0IsAuth || !auth0User) return;
+    const email = auth0User.email ?? '';
+    const name = auth0User.name ?? email ?? 'User';
+    const avatar = auth0User.picture;
+    await syncProfile(email, name, avatar);
+  }, [auth0IsAuth, auth0User, syncProfile]);
+
   const primaryRole = roles.length > 0 ? roles[0] : null;
 
   const value = useMemo<AuthState>(
@@ -183,6 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login,
       logout,
       getToken,
+      refreshProfile,
     }),
     [
       auth0IsAuth,
@@ -195,6 +205,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login,
       logout,
       getToken,
+      refreshProfile,
     ]
   );
 
