@@ -147,8 +147,10 @@ export default function SettingsPage() {
   const handleRemoveAvatar = async () => {
     setRemoving(true);
     try {
+      const token = await getToken();
       const { error } = await supabase.functions.invoke('sync-profile', {
         body: { action: 'update_profile', avatar_url: null },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       toast.success('Profile photo removed');
