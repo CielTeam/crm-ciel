@@ -77,8 +77,10 @@ export default function SettingsPage() {
     if (!nameChanged || !nameValid) return;
     setSavingName(true);
     try {
+      const token = await getToken();
       const { error } = await supabase.functions.invoke('sync-profile', {
         body: { action: 'update_profile', display_name: trimmedName },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       toast.success('Name updated');
