@@ -50,7 +50,7 @@ async function resizeImageToSquare(file: File, size: number): Promise<{ base64: 
 }
 
 export default function SettingsPage() {
-  const { user, roles, refreshProfile } = useAuth();
+  const { user, roles, refreshProfile, getToken } = useAuth();
   const soundPrefs = useSoundPreferences();
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
@@ -77,8 +77,10 @@ export default function SettingsPage() {
     if (!nameChanged || !nameValid) return;
     setSavingName(true);
     try {
+      const token = await getToken();
       const { error } = await supabase.functions.invoke('sync-profile', {
         body: { action: 'update_profile', display_name: trimmedName },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       toast.success('Name updated');
@@ -120,6 +122,7 @@ export default function SettingsPage() {
     if (!stagedPayload) return;
     setUploading(true);
     try {
+      const token = await getToken();
       const { error } = await supabase.functions.invoke('sync-profile', {
         body: {
           action: 'upload_avatar',
@@ -127,6 +130,7 @@ export default function SettingsPage() {
           content_type: stagedPayload.contentType,
           file_name: stagedPayload.fileName,
         },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       toast.success('Profile photo updated');
@@ -143,8 +147,10 @@ export default function SettingsPage() {
   const handleRemoveAvatar = async () => {
     setRemoving(true);
     try {
+      const token = await getToken();
       const { error } = await supabase.functions.invoke('sync-profile', {
         body: { action: 'update_profile', avatar_url: null },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       toast.success('Profile photo removed');
