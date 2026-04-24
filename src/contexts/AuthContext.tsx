@@ -172,11 +172,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     if (!auth0IsAuth || !auth0User) return;
-    const email = auth0User.email ?? '';
-    const name = auth0User.name ?? email ?? 'User';
-    const avatar = auth0User.picture;
-    await syncProfile(email, name, avatar);
-  }, [auth0IsAuth, auth0User, syncProfile]);
+    const userId = profile?.id;
+    if (!userId) {
+      // Fall back to login-style sync when we don't yet have a profile id
+      const email = auth0User.email ?? '';
+      const name = auth0User.name ?? email ?? 'User';
+      const avatar = auth0User.picture;
+      await syncProfile(email, name, avatar);
+      return;
+    }
+
+    try {
+      const [{ data: profileRow }, { data: roleRows }] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('user_id, email, display_name, avatar_url, team_id')
+          .eq('user_id', userId)
+          .maybeSingle(),
+        supabase.from('user_roles').select('role').eq('user_id', userId),
+      ]);
+
+      if (profileRow) {
+        setProfile({
+          id: profileRow.user_id,
+          email: profileRow.email ?? auth0User.email ?? '',
+          displayName: profileRow.display_name ?? auth0User.name ?? auth0User.email ?? 'User',
+          avatarUrl: profileRow.avatar_url ?? undefined,
+          teamId: profileRow.team_id ?? undefined,
+        });
+      }
+
+      if (roleRows) {
+        setRoles(roleRows.map((r) => r.role as AppRole));
+      }
+    } catch (err) {
+      console.error('Failed to refresh profile:', err);
+    }
+  }, [auth0IsAuth, auth0User, profile?.id, syncProfile]);
 
   const primaryRole = roles.length > 0 ? roles[0] : null;
 
