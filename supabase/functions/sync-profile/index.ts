@@ -210,12 +210,14 @@ Deno.serve(async (req) => {
 
       const ext = content_type === 'image/png' ? 'png' : content_type === 'image/webp' ? 'webp' : 'jpg';
       const safeName = sanitizeString(file_name, 80)?.replace(/[^a-zA-Z0-9._-]/g, '_') || 'avatar';
-      const path = `${user_id}/${Date.now()}_${safeName}.${ext}`;
+      // Supabase Storage rejects '|' in object keys; sanitize Auth0 user_id (e.g. "auth0|abc")
+      const safeUserId = user_id.replace(/[|]/g, '_');
+      const path = `${safeUserId}/${Date.now()}_${safeName}.${ext}`;
 
       // Delete previous avatar files under this user's prefix
-      const { data: existing } = await supabaseAdmin.storage.from('avatars').list(user_id);
+      const { data: existing } = await supabaseAdmin.storage.from('avatars').list(safeUserId);
       if (existing && existing.length > 0) {
-        const toRemove = existing.map((f) => `${user_id}/${f.name}`);
+        const toRemove = existing.map((f) => `${safeUserId}/${f.name}`);
         await supabaseAdmin.storage.from('avatars').remove(toRemove);
       }
 
