@@ -276,13 +276,11 @@ Deno.serve(async (req) => {
     let profileError;
 
     if (existingProfile && existingProfile.length > 0) {
-      // Profile exists — update it
+      // Profile exists — only refresh email/status. Do NOT overwrite user-edited display_name or avatar_url.
       const result = await supabaseAdmin
         .from("profiles")
         .update({
           email: cleanEmail,
-          display_name: cleanDisplayName,
-          avatar_url: cleanAvatarUrl,
           status: 'active',
           updated_at: new Date().toISOString(),
         })
